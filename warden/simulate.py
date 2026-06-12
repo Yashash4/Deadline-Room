@@ -35,7 +35,7 @@ AMENDED_RECORDS = 2_100_000  # A1: the hour-6 forensic revision (spec 2.11)
 
 @dataclass
 class KillSchedule:
-    """kill[(branch, attempt)] = 'A' or 'B' — crash that attempt at that position."""
+    """kill[(branch, attempt)] = 'A' or 'B', crash that attempt at that position."""
     kills: dict[tuple[str, int], str] = field(default_factory=dict)
 
 
@@ -53,9 +53,9 @@ class RunResult:
 def run_incident(
     incident_id: str = "inc-8842",
     kill_schedule: KillSchedule | None = None,
-    contradiction_in: str | None = None,   # branch that initially mis-states the start time
-    amendment: bool = False,               # A1: fire the hour-6 fact revision beat
-    nis2_counters_first: bool = False,     # A1: exercise the bounded counter round
+    contradiction_in: str | None = None,  # branch that initially mis-states the start time
+    amendment: bool = False,              # A1: fire the hour-6 fact revision beat
+    nis2_counters_first: bool = False,    # A1: exercise the bounded counter round
 ) -> RunResult:
     kills = (kill_schedule or KillSchedule()).kills
     band = FakeBand()
@@ -110,7 +110,7 @@ def run_incident(
                 band.kill_in_flight(agent)  # died before posting anything
                 log.append("chaos", {"branch": b, "attempt": attempt, "position": "A"})
                 # state machine: branch is stuck in DRAFTING; the retry's
-                # DRAFT_STARTED will be rejected as illegal, which is fine —
+                # DRAFT_STARTED will be rejected as illegal, which is fine, 
                 # the Warden treats a repeat DRAFT_STARTED on a DRAFTING
                 # branch as a recovery no-op (recorded as a rejection).
                 continue

@@ -1,4 +1,4 @@
-"""test_holiday_clock.py (A3) — the SEC business-day clock skips weekends
+"""test_holiday_clock.py (A3), the SEC business-day clock skips weekends
 and US federal holidays, including the June 16 -> June 23 Juneteenth case."""
 
 from datetime import datetime, timezone

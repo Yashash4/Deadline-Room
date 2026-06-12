@@ -115,6 +115,22 @@ def main() -> int:
         rec("6 SPIKE-12 isolation", "WARN",
             f"un-mentioned agent2 sees it (next={agent2_next_sees}, ctx={agent2_ctx_sees}): no transport isolation")
 
+    # 6b. message lifecycle (PER-CHAT under the message, verified 2026-06-13):
+    #     processing -> processed advances /next; failed takes {"error": str}.
+    c, d = call(KEY1, "POST", f"/agent/chats/{cid}/messages",
+                {"message": {"content": "Lifecycle probe for the drafter.",
+                             "mentions": [{"id": ID2}]}})
+    c, d = call(KEY2, "GET", f"/agent/chats/{cid}/messages/next")
+    if c == 200 and isinstance(d, dict) and d.get("data"):
+        mid = d["data"]["id"]
+        c_pr, _ = call(KEY2, "POST", f"/agent/chats/{cid}/messages/{mid}/processing")
+        c_pd, _ = call(KEY2, "POST", f"/agent/chats/{cid}/messages/{mid}/processed", {})
+        ok = c_pr == 200 and c_pd == 200
+        rec("6b lifecycle processing->processed", "PASS" if ok else "FAIL",
+            f"processing HTTP {c_pr}, processed HTTP {c_pd}")
+    else:
+        rec("6b lifecycle processing->processed", "WARN", f"no message to drain (HTTP {c})")
+
     # 7. context rehydrate (agent1, the poster, should always see full room)
     c, d = call(KEY1, "GET", f"/agent/chats/{cid}/context")
     rec("7 /context rehydrate (agent1)", "PASS" if c == 200 else "FAIL", f"HTTP {c}", d if c != 200 else None)

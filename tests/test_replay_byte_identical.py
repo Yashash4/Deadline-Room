@@ -1,4 +1,4 @@
-"""test_replay_byte_identical.py — feed a saved run log back in and assert
+"""test_replay_byte_identical.py, feed a saved run log back in and assert
 a byte-for-byte identical trace. Plus the contradiction-diff and SEC
 business-day clock guarantees."""
 

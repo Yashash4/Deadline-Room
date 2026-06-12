@@ -1,4 +1,4 @@
-"""test_amendment_cycle.py (A1) — proves the agent-to-agent collaboration is
+"""test_amendment_cycle.py (A1), proves the agent-to-agent collaboration is
 real and deterministic: FACT_AMENDED reopens released branches, the SEC
 amendment cannot advance until a concur envelope exists, the bounded loop
 terminates, and post-reconciliation amendments pass the UTC-canonicalized

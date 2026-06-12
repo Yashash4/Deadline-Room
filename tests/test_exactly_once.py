@@ -1,4 +1,4 @@
-"""test_exactly_once.py — run the incident N times with randomized kill
+"""test_exactly_once.py, run the incident N times with randomized kill
 points (both crash positions) and assert the filing set is invariant and
 never double-counted. Direct fix for the postmortem's 'ship tests' lesson."""
 
