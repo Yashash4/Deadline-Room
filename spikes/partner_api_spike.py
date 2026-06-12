@@ -18,6 +18,10 @@ import os
 import sys
 import urllib.request
 
+from _env import load_env
+
+load_env()
+
 AIML_BASE = "https://api.aimlapi.com/v1"
 FEATHERLESS_BASE = "https://api.featherless.ai/v1"
 

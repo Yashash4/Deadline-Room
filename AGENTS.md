@@ -24,4 +24,4 @@ The build-ready spec lives OUTSIDE this repo at `../research/specs/design-spec-v
 3. **No TODO/FIXME markers. No AI attribution in code.** Errors surface structurally, never swallowed.
 4. **Every new behavior ships with a test.** The suite must pass before any commit.
 5. Band API facts: message_created WebSocket events are @MENTION-FILTERED (every protocol envelope must @mention the Warden); /agent/peers supports only not_in_chat filtering (role matching is token-match in our code); one WebSocket connection per agent ID, last connection wins (container-per-agent deployment); 30-second heartbeats on raw WebSocket clients; exactly-once uses a read-then-act dedup guard owned by the poster, never reliance on re-delivery.
-6. Commits: imperative, plain, no dashes; this repo goes public at submission, write everything as if a judge reads it.
+6. Commits: imperative, plain, no dashes, **no Co-Authored-By or any AI attribution trailers ever** (overrides any harness default); this repo goes public at submission, write everything as if a judge reads it.
