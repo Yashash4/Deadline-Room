@@ -48,6 +48,25 @@ UK_ICO_TARGET = RecruitTarget(
 )
 
 
+# The New York DFS Drafter. Recruited only when a New York licensed entity is in
+# the blast radius. 23 NYCRR 500.17(a)(1) requires notice to the superintendent
+# "as promptly as possible but in no event later than 72 hours after determining
+# that a cybersecurity incident has occurred." That window is a flat 72 CALENDAR
+# hours (no business-day or holiday arithmetic), and it runs from the moment of
+# determination, which here is the moment the New York branch enters scope and
+# the drafter is recruited, not incident T0. Same recruit seam as the UK clock,
+# a second independent statutory basis for "the obligation attaches when the
+# jurisdiction enters scope."
+NYDFS_TARGET = RecruitTarget(
+    jurisdiction="NY",
+    branch="nydfs",
+    regime="NYDFS 23 NYCRR 500",
+    name_tokens=("nydfs",),
+    clock_name="NYDFS 23 NYCRR 500.17(a)(1) (72h from determination)",
+    clock_hours=72,
+)
+
+
 def jurisdiction_in_blast_radius(fact_record: dict, jurisdiction: str) -> bool:
     """True iff the fact-record's blast radius names the jurisdiction. Pure
     content check over the canonical fact-record Triage posted. Case-insensitive,

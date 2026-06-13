@@ -103,6 +103,18 @@ UK_DRAFTER = Role(
     model="MiniMaxAI/MiniMax-M2",
 )
 
+# The NYDFS Drafter is recruited at RUNTIME (floor/recruit.py), only when a New
+# York licensed entity is in the incident blast radius. It is a real Band agent
+# (keys in .env as BAND_*_NYDFS) but it is not added to the room at startup; the
+# Warden discovers and recruits it live when the content demands it. It runs on a
+# SECOND open-model family (Qwen on Featherless): a US bank self-hosting an open
+# model for its New York regulator filing, the data-sovereignty story.
+NYDFS_DRAFTER = Role(
+    role="drafter", name="NYDFS Drafter", branch="nydfs", regime="NYDFS 23 NYCRR 500",
+    key_env="BAND_API_KEY_NYDFS", id_env="BAND_AGENT_ID_NYDFS",
+    model="Qwen/Qwen2.5-72B-Instruct",
+)
+
 # Materiality is an LLM judgment role (floor/materiality.py) that decides whether
 # the SEC clock is triggered at all. On dev it runs on Featherless. It is not a
 # separate Band agent on the floor; it is invoked in-process by the Warden's

@@ -272,6 +272,43 @@ def _render_recruit(rec: dict) -> str:
     return "".join(parts)
 
 
+def _render_nydfs_recruit(rec: dict) -> str:
+    """Render the NYDFS runtime-recruit beat: the same content-driven recruit seam
+    the UK clock uses, a SECOND jurisdiction recruited live with its own different
+    time math. 23 NYCRR 500.17(a)(1) is a flat 72 CALENDAR-hour notice from the
+    moment of determination (the recruit moment), running straight through
+    weekends and holidays, the deliberate contrast with the SEC business-day clock.
+    If the blast radius did not name a New York entity, show that no recruit
+    happened (the content-driven proof)."""
+    if not rec:
+        return ""
+    parts = ["<h2>5d. NYDFS runtime recruit (a sixth jurisdiction, "
+             "second open model family)</h2>"]
+    radius = ", ".join(str(x) for x in rec.get("blast_radius", []))
+    if not rec.get("recruited"):
+        parts.append(
+            "<p class='sub'>Blast radius: <code>" + _esc(radius) + "</code>. It does "
+            "NOT name a New York licensed entity, so the Warden did NOT recruit the "
+            "NYDFS Drafter. The recruit is content-driven, not hardcoded.</p>")
+        return "".join(parts)
+    parts.append(
+        "<p class='ok'><strong>New York licensed entity in the blast radius: the "
+        "Warden discovered and recruited the NYDFS Drafter at runtime, and the "
+        "referee never changed one line.</strong></p>")
+    parts.append(
+        "<p class='sub'>Blast radius: <code>" + _esc(radius) + "</code>. Discovered "
+        f"peer <code>{_esc(rec.get('peer_id'))}</code> by token-match over the live "
+        f"peer list (only a not_in_chat filter exists), then add_participant.</p>")
+    parts.append(
+        f"<p class='sub'>The {_esc(rec.get('clock_name'))} started at the RECRUIT "
+        f"(determination) moment <code>{_esc(rec.get('clock_started_at'))}</code>, "
+        f"not at incident T0. This is the late-started sixth clock. It is a flat 72 "
+        f"CALENDAR hours: no business-day or holiday arithmetic, so it runs straight "
+        f"through weekends and holidays, the deliberate contrast with the SEC "
+        f"4-business-day clock.</p>")
+    return "".join(parts)
+
+
 def _render_release(rel: dict) -> str:
     """Render the two-key release gate: both human sign-offs (Lena and the GC) per
     released branch, proving segregation of duties (one key alone never releases)."""
@@ -587,6 +624,7 @@ def _render_html(p: dict) -> str:
     chaos_block = _render_chaos(p.get("chaos", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
+    nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
     pending = p.get("pending", [])
     pending_section = (
@@ -736,6 +774,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {materiality_block}
 
 {recruit_block}
+
+{nydfs_recruit_block}
 
 <h2>6. Cross-filing contradiction diff</h2>
 {diff_summary}

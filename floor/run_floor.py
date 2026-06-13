@@ -76,7 +76,7 @@ from floor.materiality import (  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
 from floor.recruit import (  # noqa: E402
-    UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
+    NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.shell_adapter import LiveBand  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
@@ -137,9 +137,51 @@ UK_IN_SCOPE_FACTS = {
     "blast_radius": ["EU: Meridian Trust Bank N.V.",
                      "UK: Meridian Trust UK Ltd (London subsidiary)"],
 }
-# The default blast radius names only the EU entity, so the UK recruit never
-# fires on a normal run.
+
+# NYDFS runtime recruit: the moment a New York licensed entity is found in the
+# blast radius and the NYDFS Drafter is recruited. Its flat 72 CALENDAR-hour
+# clock (23 NYCRR 500.17(a)(1)) starts HERE, at the determination/recruit moment,
+# not at incident T0, and runs straight through weekends and holidays.
+TS_NYDFS_RECRUIT = "2026-06-16T03:42:00+00:00"
+TS_NYDFS_FACTS = "2026-06-16T03:43:00+00:00"
+TS_NYDFS_DRAFT = "2026-06-16T03:57:00+00:00"
+
+# A fact-record whose blast radius INCLUDES a New York licensed entity: the
+# content that drives the NYDFS runtime recruit. The no-recruit fixture has a
+# blast radius that does NOT name a New York nexus, proving it is content-driven.
+NYDFS_IN_SCOPE_FACTS = {
+    **CANONICAL_FACTS,
+    "blast_radius": ["EU: Meridian Trust Bank N.V.",
+                     "NY: Meridian Trust New York branch (NYDFS-licensed)"],
+}
+
+# The default blast radius names only the EU entity, so neither the UK nor the
+# NYDFS recruit fires on a normal run.
 CANONICAL_FACTS["blast_radius"] = ["EU: Meridian Trust Bank N.V."]
+
+
+def _recruit_fact_record(uk_recruit: bool, nydfs_recruit: bool) -> dict:
+    """Build the fact-record whose blast radius names exactly the jurisdictions
+    whose recruit beats are active. With no recruit the default EU-only radius is
+    used, so a recruit flag that is off still proves the content-driven negative
+    (no entity, no recruit).
+
+    UK-only and NYDFS-only resolve to the module fixtures UK_IN_SCOPE_FACTS /
+    NYDFS_IN_SCOPE_FACTS verbatim, so the existing tests that monkeypatch those
+    fixtures (to force the no-recruit negative) keep their exact seam. Only when
+    BOTH recruits run is a merged blast radius built so each phase finds its own
+    jurisdiction."""
+    if uk_recruit and nydfs_recruit:
+        radius = list(UK_IN_SCOPE_FACTS.get("blast_radius", []))
+        for entry in NYDFS_IN_SCOPE_FACTS.get("blast_radius", []):
+            if entry not in radius:
+                radius.append(entry)
+        return {**CANONICAL_FACTS, "blast_radius": radius}
+    if uk_recruit:
+        return UK_IN_SCOPE_FACTS
+    if nydfs_recruit:
+        return NYDFS_IN_SCOPE_FACTS
+    return CANONICAL_FACTS
 
 # Materiality fixtures. The MATERIAL fact-record is the real incident (millions of
 # regulated records, core banking). The IMMATERIAL one is a small, contained,
@@ -227,7 +269,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               uk_recruit: bool = False, materiality: bool = False,
               materiality_fn=None, sec_facts: dict | None = None,
               uk_peers: list | None = None, second_opinion: bool = False,
-              second_opinion_fn=None) -> dict:
+              second_opinion_fn=None, nydfs_recruit: bool = False,
+              nydfs_peers: list | None = None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -255,7 +298,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            provider_set, uk_recruit=uk_recruit, materiality=materiality,
                            materiality_fn=materiality_fn, sec_facts=sec_facts,
                            uk_peers=uk_peers, second_opinion=second_opinion,
-                           second_opinion_fn=second_opinion_fn)
+                           second_opinion_fn=second_opinion_fn,
+                           nydfs_recruit=nydfs_recruit, nydfs_peers=nydfs_peers)
 
 
 # ----------------------------------------------------------------------------
@@ -270,9 +314,16 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     sec_facts: dict | None = None,
                     uk_peers: list | None = None,
                     second_opinion: bool = False,
-                    second_opinion_fn=None) -> dict:
+                    second_opinion_fn=None,
+                    nydfs_recruit: bool = False,
+                    nydfs_peers: list | None = None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
+
+    nydfs_recruit: drive the content-driven NYDFS runtime-recruit beat. The
+    recruit fires only when the fact-record blast radius names a New York
+    licensed entity. It shares the exact recruit seam the UK clock uses; its flat
+    72-calendar-hour clock (23 NYCRR 500.17(a)(1)) starts at the recruit moment.
 
     materiality: run the SEC materiality assessment before the SEC branch drafts.
     If the verdict is not material, the Warden SUPPRESSES the SEC branch (terminal,
@@ -289,9 +340,11 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top.
     base_mode = "normal" if mode == "amendment" else mode
-    # When the UK recruit beat runs, Triage's fact-record carries a blast radius
-    # naming a UK subsidiary; that content is what drives the recruit.
-    fact_record = UK_IN_SCOPE_FACTS if uk_recruit else CANONICAL_FACTS
+    # When a recruit beat runs, Triage's fact-record carries a blast radius naming
+    # that jurisdiction's entity; that content is what drives the recruit. With
+    # both recruits the blast radius names both, so each phase finds its own
+    # jurisdiction and the no-recruit proof still holds when a flag is off.
+    fact_record = _recruit_fact_record(uk_recruit, nydfs_recruit)
     release_gate = TwoKeyReleaseGate()
 
     if live:
@@ -302,6 +355,16 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         if uk_recruit:
             _require_live(roster.UK_DRAFTER, "UK ICO Drafter",
                           f"{roster.UK_DRAFTER.key_env} / {roster.UK_DRAFTER.id_env}")
+        if nydfs_recruit:
+            # The NYDFS live path needs a SEVENTH Band agent that only a human can
+            # create in the Band UI. Surface the exact human step, never fake a key.
+            if not roster.NYDFS_DRAFTER.live:
+                raise RuntimeError(
+                    "NYDFS Drafter agent not configured. A human must create the "
+                    "NYDFS remote agent in the Band UI, then add BAND_API_KEY_NYDFS "
+                    "and BAND_AGENT_ID_NYDFS to code/.env. (This is the only live "
+                    "step the NYDFS sixth-clock beat needs; tests run via FakeBand "
+                    "with no key.)")
 
     log = RunLog()
     trace = StepTrace(log)
@@ -351,6 +414,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # an actual recruit).
     branch_corr = {r.branch: f"{INCIDENT_ID}:{r.branch}" for r in DRAFTER_ROLES}
     branch_corr["uk"] = f"{INCIDENT_ID}:uk"
+    branch_corr["nydfs"] = f"{INCIDENT_ID}:nydfs"
     DRAFTER_BRANCHES_THIS_RUN = [r.branch for r in DRAFTER_ROLES]
     clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early", INCIDENT_T0, 24)
     clocks.start_hours("NIS2 full notification (72h)", branch_corr["nis2"], INCIDENT_T0, 72)
@@ -463,6 +527,27 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             claims_by_branch["uk"] = recruit_record.pop("claims")
             filings.append(recruit_record.pop("filing"))
 
+    # ---- NYDFS runtime recruit (content-driven). The NYDFS Drafter is discovered
+    # and recruited LIVE only if the blast radius names a New York licensed entity.
+    # Its flat 72 CALENDAR-hour clock (23 NYCRR 500.17(a)(1)) starts at the
+    # determination/recruit moment, not at T0, and runs straight through weekends
+    # and holidays. It is the SIXTH clock and flows through the SAME deterministic
+    # gates as every other branch with ZERO edit to the warden/ core. ------------
+    nydfs_recruit_record = None
+    if nydfs_recruit:
+        nydfs_recruit_record = _nydfs_recruit_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+            warden=warden, triage=triage, drafters=drafters, clients=clients,
+            warden_id=warden_id, triage_id=triage_id, room_id=room_id,
+            fact_record=fact_record, branch_corr=branch_corr,
+            draft_fns=draft_fns, draft_timeout=draft_timeout,
+            provider_set=provider_set, nydfs_peers=nydfs_peers, live=live,
+        )
+        if nydfs_recruit_record["recruited"]:
+            DRAFTER_BRANCHES_THIS_RUN.append("nydfs")
+            claims_by_branch["nydfs"] = nydfs_recruit_record.pop("claims")
+            filings.append(nydfs_recruit_record.pop("filing"))
+
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
         sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
@@ -515,6 +600,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         amendment=amendment,
         provider_set=provider_set, provider_validation=provider_validation,
         materiality=materiality_record, recruit=recruit_record,
+        nydfs_recruit=nydfs_recruit_record,
         release_gate=release_gate,
         released_branches=[b for b in DRAFTER_BRANCHES_THIS_RUN
                            if sm.state(branch_corr[b]).value == "released"],
@@ -1145,11 +1231,25 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
 # MOMENT (not T0), and the UK drafter files. If the blast radius does NOT name
 # the UK, no recruit happens: the recruit is content-driven, not hardcoded.
 # ----------------------------------------------------------------------------
-def _uk_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafters,
-                      clients, warden_id, triage_id, room_id, fact_record,
-                      branch_corr, draft_fns, draft_timeout, provider_set,
-                      uk_peers, live) -> dict:
-    target = UK_ICO_TARGET
+def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
+                   ordinal, sm, trace, log, clocks, ledger, warden, triage,
+                   drafters, clients, warden_id, triage_id, room_id, fact_record,
+                   branch_corr, draft_fns, draft_timeout, provider_set,
+                   peers_override, live) -> dict:
+    """One content-driven runtime recruit, generalized over a RecruitTarget.
+
+    Both the UK ICO clock and the NYDFS clock flow through this single path: the
+    blast radius is scanned for the target jurisdiction, the target's drafter is
+    token-matched among peers NOT yet in the room, recruited via add_participant,
+    and its statutory clock is started at the RECRUIT moment (not incident T0)
+    because the obligation attaches when the jurisdiction enters scope. The
+    function is fully target-driven (jurisdiction, branch, regime, name_tokens,
+    clock_name, clock_hours all read off `target`), so adding a regulator is
+    adding a RecruitTarget + a Role, never a new branch of logic here.
+
+    `role` is the roster Role whose Band key/model back the drafter. `ordinal` is
+    the human label for the clock's position on the strip (e.g. "fifth", "sixth").
+    `peers_override` injects the discoverable peer list in tests."""
     in_scope = jurisdiction_in_blast_radius(fact_record, target.jurisdiction)
     log.append("recruit_scan", {
         "jurisdiction": target.jurisdiction,
@@ -1157,73 +1257,76 @@ def _uk_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafter
         "in_scope": in_scope,
     })
     if not in_scope:
-        # Content-driven: the blast radius does not touch the UK, so the Warden
-        # does NOT recruit. This is the proof that the recruit is not hardcoded.
+        # Content-driven: the blast radius does not touch the jurisdiction, so the
+        # Warden does NOT recruit. This is the proof the recruit is not hardcoded.
         trace.say(f"[R] Blast radius does not name a {target.jurisdiction} "
-                  f"subsidiary; no runtime recruit. ({fact_record.get('blast_radius', [])})")
+                  f"entity; no runtime recruit. ({fact_record.get('blast_radius', [])})")
         return {"recruited": False, "in_scope": False,
+                "jurisdiction": target.jurisdiction, "regime": target.regime,
+                "branch": target.branch,
                 "blast_radius": fact_record.get("blast_radius", [])}
 
-    trace.say(f"[R1] Triage fact-record reveals a {target.jurisdiction} subsidiary "
+    trace.say(f"[R1] Triage fact-record reveals a {target.jurisdiction} entity "
               f"in the blast radius. Warden discovering the {target.regime} Drafter "
               f"over the live peer list ...")
 
-    # 1. Discover the UK ICO Drafter among peers NOT yet in the room (token-match).
-    peers = uk_peers if uk_peers is not None else warden.peers(not_in_chat=room_id)
+    # 1. Discover the target's drafter among peers NOT yet in the room (token-match).
+    peers = peers_override if peers_override is not None else warden.peers(not_in_chat=room_id)
     peer = find_peer(peers, target.name_tokens)
     if peer is None:
         raise RuntimeError(
             f"{target.regime} Drafter not found among peers for runtime recruit "
             f"(tokens {target.name_tokens}); peers seen: {peers}")
-    uk_id = peer_id(peer)
-    if not uk_id:
+    agent_id = peer_id(peer)
+    if not agent_id:
         raise RuntimeError(f"discovered {target.regime} peer has no id: {peer}")
     log.append("recruit", {"jurisdiction": target.jurisdiction, "branch": target.branch,
-                           "peer_id": uk_id, "ts": TS_UK_RECRUIT,
+                           "peer_id": agent_id, "ts": ts_recruit,
                            "matched_tokens": list(target.name_tokens)})
-    trace.say(f"[R2] Found {target.regime} Drafter peer {uk_id} by token-match; "
+    trace.say(f"[R2] Found {target.regime} Drafter peer {agent_id} by token-match; "
               f"recruiting into room {room_id} via add_participant ...")
 
     # 2. Recruit it into the live room.
-    warden.add_participant(uk_id, room_id)
+    warden.add_participant(agent_id, room_id)
     trace.record_handoff("Warden", f"{target.regime} Drafter", "runtime_recruit", "")
 
-    # 3. The UK 72h GDPR clock starts AT THE RECRUIT MOMENT, not at T0. This is
-    #    the late-started fifth clock the Examiner Packet shows.
+    # 3. The statutory clock starts AT THE RECRUIT MOMENT, not at T0. This is the
+    #    late-started clock the Examiner Packet shows. start_hours is reused
+    #    unchanged: target.clock_hours flat hours from the recruit timestamp.
     corr = branch_corr[target.branch]
-    clocks.start_hours(target.clock_name, corr, TS_UK_RECRUIT, target.clock_hours)
+    clocks.start_hours(target.clock_name, corr, ts_recruit, target.clock_hours)
     log.append("clock_started", {"clock": target.clock_name, "correlation_id": corr,
-                                 "started_at": TS_UK_RECRUIT,
+                                 "started_at": ts_recruit,
                                  "deadline": clocks.get(corr).deadline.isoformat(),
                                  "late_started_at_recruit": True})
     trace.say(f"[R3] {target.clock_name} started at the recruit moment "
-              f"{TS_UK_RECRUIT} (NOT incident T0).")
+              f"{ts_recruit} (NOT incident T0).")
 
-    # 4. The UK branch opens its protocol: Triage @mentions the recruited drafter
-    #    with the fact-record. FACT_RECORD_POSTED on the UK branch.
-    _proto(sm, trace, corr, Event.FACT_RECORD_POSTED, TS_UK_FACTS, "triage", "triage")
+    # 4. The branch opens its protocol: Triage @mentions the recruited drafter
+    #    with the fact-record. FACT_RECORD_POSTED on the branch.
+    _proto(sm, trace, corr, Event.FACT_RECORD_POSTED, ts_facts, "triage", "triage")
 
-    # 5. Build the live UK client (or use the injected one), join, draft, post.
-    uk_client = _uk_client(clients, drafters, peer, uk_id)
-    uk_client.join(room_id)
-    uk_facts = {k: fact_record[k] for k in
-                ("incident_start_utc", "records_affected", "attacker", "containment")}
-    uk_fn = _uk_draft_fn(draft_fns, draft_timeout, provider_set)
+    # 5. Build the live drafter client (or use the injected one), join, draft, post.
+    client = _recruit_client(target, role, clients)
+    client.join(room_id)
+    recruit_facts = {k: fact_record[k] for k in
+                     ("incident_start_utc", "records_affected", "attacker", "containment")}
+    fn = _recruit_draft_fn(target, role, draft_fns, draft_timeout, provider_set)
 
-    _proto(sm, trace, corr, Event.DRAFT_STARTED, TS_UK_DRAFT, "uk_drafter", "drafter")
-    prose = uk_fn(uk_facts)
-    body = build_draft_body(prose, target.branch, uk_facts)
+    _proto(sm, trace, corr, Event.DRAFT_STARTED, ts_draft, actor, "drafter")
+    prose = fn(recruit_facts)
+    body = build_draft_body(prose, target.branch, recruit_facts)
     dedup_key = f"draft:{target.branch}:{INCIDENT_ID}:round-1"
-    ledger.record(dedup_key, 1, TS_UK_DRAFT)
-    uk_client.post(
+    ledger.record(dedup_key, 1, ts_draft)
+    client.post(
         f"{target.regime} mandatory notification draft attached.\n\n{body}",
         mentions=[warden_id], dedup_key=dedup_key)
-    _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_UK_DRAFT, "uk_drafter", "drafter")
+    _proto(sm, trace, corr, Event.DRAFT_POSTED, ts_draft, actor, "drafter")
     trace.record_handoff(f"{target.regime} Drafter", "Warden", "draft", "")
     claims = parse_claims(body)
-    uk_provider, uk_model = roster.resolve(roster.UK_DRAFTER, provider_set)
+    provider, model = roster.resolve(role, provider_set)
     trace.say(f"[R4] {target.regime} Drafter (recruited at runtime) filed on "
-              f"{uk_provider}:{uk_model}.")
+              f"{provider}:{model}.")
 
     return {
         "recruited": True,
@@ -1232,39 +1335,76 @@ def _uk_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafter
         "jurisdiction": target.jurisdiction,
         "regime": target.regime,
         "branch": target.branch,
-        "peer_id": uk_id,
-        "recruit_ts": TS_UK_RECRUIT,
+        "ordinal": ordinal,
+        "peer_id": agent_id,
+        "recruit_ts": ts_recruit,
         "clock_name": target.clock_name,
-        "clock_started_at": TS_UK_RECRUIT,
+        "clock_started_at": ts_recruit,
         "claims": claims,
         "filing": {"regime": target.regime, "by": f"{target.regime} Drafter",
-                   "model": uk_model, "provider": uk_provider, "text": body,
+                   "model": model, "provider": provider, "text": body,
                    "recruited_at_runtime": True},
     }
 
 
-def _uk_client(clients, drafters, peer, uk_id):
-    """Resolve the UK drafter client. Tests inject it under clients['uk']; live
-    runs build a LiveBand on the UK agent key."""
-    if clients is not None and "uk" in clients:
-        return clients["uk"]
-    return LiveBand(api_key=roster.UK_DRAFTER.agent_key, agent_name="uk_drafter",
-                    dedup_namespace="draft:uk")
+def _uk_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafters,
+                      clients, warden_id, triage_id, room_id, fact_record,
+                      branch_corr, draft_fns, draft_timeout, provider_set,
+                      uk_peers, live) -> dict:
+    """The UK ICO runtime recruit, expressed on the generalized _recruit_phase."""
+    return _recruit_phase(
+        UK_ICO_TARGET, role=roster.UK_DRAFTER, ts_recruit=TS_UK_RECRUIT,
+        ts_facts=TS_UK_FACTS, ts_draft=TS_UK_DRAFT, actor="uk_drafter",
+        ordinal="fifth", sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+        warden=warden, triage=triage, drafters=drafters, clients=clients,
+        warden_id=warden_id, triage_id=triage_id, room_id=room_id,
+        fact_record=fact_record, branch_corr=branch_corr, draft_fns=draft_fns,
+        draft_timeout=draft_timeout, provider_set=provider_set,
+        peers_override=uk_peers, live=live)
 
 
-def _uk_draft_fn(draft_fns, timeout, provider_set):
-    if draft_fns is not None and "uk" in draft_fns:
-        return draft_fns["uk"]
-    provider, model = roster.resolve(roster.UK_DRAFTER, provider_set)
+def _nydfs_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafters,
+                         clients, warden_id, triage_id, room_id, fact_record,
+                         branch_corr, draft_fns, draft_timeout, provider_set,
+                         nydfs_peers, live) -> dict:
+    """The NYDFS runtime recruit, expressed on the same generalized _recruit_phase
+    the UK clock uses. 23 NYCRR 500.17(a)(1): a flat 72-CALENDAR-hour notice to
+    the superintendent from the moment the entity determines a reportable
+    cybersecurity event occurred, which here is the recruit moment, not T0."""
+    return _recruit_phase(
+        NYDFS_TARGET, role=roster.NYDFS_DRAFTER, ts_recruit=TS_NYDFS_RECRUIT,
+        ts_facts=TS_NYDFS_FACTS, ts_draft=TS_NYDFS_DRAFT, actor="nydfs_drafter",
+        ordinal="sixth", sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+        warden=warden, triage=triage, drafters=drafters, clients=clients,
+        warden_id=warden_id, triage_id=triage_id, room_id=room_id,
+        fact_record=fact_record, branch_corr=branch_corr, draft_fns=draft_fns,
+        draft_timeout=draft_timeout, provider_set=provider_set,
+        peers_override=nydfs_peers, live=live)
+
+
+def _recruit_client(target, role, clients):
+    """Resolve the recruited drafter's client. Tests inject it under
+    clients[target.branch]; live runs build a LiveBand on the role's agent key."""
+    if clients is not None and target.branch in clients:
+        return clients[target.branch]
+    return LiveBand(api_key=role.agent_key, agent_name=f"{target.branch}_drafter",
+                    dedup_namespace=f"draft:{target.branch}")
+
+
+def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set):
+    if draft_fns is not None and target.branch in draft_fns:
+        return draft_fns[target.branch]
+    provider, model = roster.resolve(role, provider_set)
 
     def fn(claim_facts):
         body_facts = dict(claim_facts)
-        # MiniMax-M2 is a reasoning model: it spends a few hundred tokens on an
-        # internal preamble before any visible content, so a 700-token budget can
-        # return empty. A larger budget draws the filing out. Featherless is
-        # flat-rate, so the extra tokens cost nothing on the dev plan.
+        # The recruited drafters run on reasoning open models (MiniMax for UK,
+        # Qwen for NYDFS) that spend a few hundred tokens on an internal preamble
+        # before any visible content, so a 700-token budget can return empty. A
+        # larger budget draws the filing out. Featherless is flat-rate, so the
+        # extra tokens cost nothing on the dev plan.
         return draft_filing(body_facts, model=model, provider=provider,
-                            regime=roster.UK_DRAFTER.regime, timeout=timeout,
+                            regime=role.regime, timeout=timeout,
                             max_tokens=2000)
     return fn
 
@@ -1433,6 +1573,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      breached, filings, mode, ledger, replay_info,
                      amendment=None, provider_set=roster.PROVIDER_DEV,
                      provider_validation=None, materiality=None, recruit=None,
+                     nydfs_recruit=None,
                      release_gate=None, released_branches=None) -> dict:
     clock_rows = []
     for c in clocks.all():
@@ -1508,6 +1649,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         packet["materiality"] = materiality
     if recruit is not None:
         packet["recruit"] = recruit
+    if nydfs_recruit is not None:
+        packet["nydfs_recruit"] = nydfs_recruit
     if release_gate is not None:
         packet["release"] = {
             "required_roles": sorted(REQUIRED_ROLES),
@@ -1727,6 +1870,14 @@ def main() -> int:
                              "radius names a UK subsidiary, so the Warden discovers and "
                              "recruits the UK ICO Drafter live and starts a 5th clock at "
                              "the recruit moment")
+    parser.add_argument("--nydfs-recruit", action="store_true",
+                        help="content-driven NYDFS runtime recruit: Triage's blast "
+                             "radius names a New York licensed entity, so the Warden "
+                             "discovers and recruits the NYDFS Drafter live and starts "
+                             "a sixth clock (23 NYCRR 500.17(a)(1), a flat 72 calendar "
+                             "hours from determination) at the recruit moment. Needs a "
+                             "seventh Band agent: BAND_API_KEY_NYDFS / "
+                             "BAND_AGENT_ID_NYDFS, created by a human in the Band UI")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -1773,7 +1924,8 @@ def main() -> int:
           f"provider={args.provider} ===\n")
     packet = run_floor(mode=mode, provider_set=args.provider,
                        uk_recruit=args.uk_recruit, materiality=args.materiality,
-                       sec_facts=sec_facts, second_opinion=args.second_opinion)
+                       sec_facts=sec_facts, second_opinion=args.second_opinion,
+                       nydfs_recruit=args.nydfs_recruit)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0
