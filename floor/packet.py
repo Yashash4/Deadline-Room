@@ -107,6 +107,70 @@ def _render_chaos(chaos: dict) -> str:
     return "".join(parts)
 
 
+def _render_reconciliation(rec: dict) -> str:
+    """Render the amendment beat: the fact revision, the reopened branches, the
+    agent-to-agent reconciliation exchange (who @mentioned whom, the proposed vs
+    concurred figure, the hash-linked envelope chain), and that the diff passed
+    only after concurrence. User-facing framing is 'transparent deliberation with
+    an audit trail', never 'negotiation'."""
+    if not rec:
+        return ""
+    old = rec.get("old_value")
+    new = rec.get("new_value")
+    reopened = ", ".join(b.upper() for b in rec.get("reopened_branches", []))
+    parts = ["<h2>6b. Amendment: transparent deliberation with an audit trail</h2>"]
+    parts.append(
+        f"<p class='sub'>After release, Triage revised "
+        f"<code>{_esc(rec.get('fact_key'))}</code> from "
+        f"<code>{_esc(f'{old:,}' if isinstance(old, int) else old)}</code> to "
+        f"<code>{_esc(f'{new:,}' if isinstance(new, int) else new)}</code> "
+        f"(Band message {_esc(rec.get('amend_message_id'))}). The {_esc(reopened)} "
+        f"branches reopened (FACT_AMENDED) and reconciled one shared "
+        f"characterization with each other before re-filing.</p>")
+    if rec.get("blocked_before_reconciliation"):
+        parts.append(
+            "<p class='bad'><strong>The Warden BLOCKED the amendment before "
+            "reconciliation.</strong> "
+            f"{_esc(rec.get('block_reason'))}</p>")
+    # The agent-to-agent exchange.
+    ex_rows = [
+        [i + 1, e.get("from"), e.get("to"), e.get("verdict"),
+         f"{e.get('proposed_value'):,}" if isinstance(e.get("proposed_value"), int)
+         else e.get("proposed_value"),
+         e.get("characterization"), e.get("band_message_id")]
+        for i, e in enumerate(rec.get("exchange", []))
+    ]
+    parts.append("<p class='sub'>The reconciliation exchange (each turn is a real "
+                 "Band @mention from one drafter to the other):</p>")
+    parts.append(_rows(
+        ["#", "From", "To (@mention)", "Verdict", "Figure", "Characterization",
+         "Band message id"], ex_rows))
+    conc = rec.get("concurred_value")
+    parts.append(
+        f"<p class='ok'>Both drafters CONCURRED on "
+        f"<code>{_esc(f'{conc:,}' if isinstance(conc, int) else conc)}</code> "
+        f"characterized as: {_esc(rec.get('concurred_characterization'))}</p>")
+    if rec.get("diff_passed_only_after_concur"):
+        parts.append(
+            "<p class='ok'>The amended contradiction diff passed GREEN only after "
+            "concurrence; the Warden held it BLOCKED until then.</p>")
+    # The hash-linked envelope chain (tamper-evident, replay-verifiable).
+    chain_rows = [
+        [i + 1, e.get("verdict"), e.get("from"), e.get("to"),
+         (e.get("sha256") or "")[:16] + "...",
+         ((e.get("prior_envelope_hash") or "")[:16] + "...")
+         if e.get("prior_envelope_hash") else "(none)"]
+        for i, e in enumerate(rec.get("envelope_chain", []))
+    ]
+    parts.append("<p class='sub'>The hash-linked envelope chain (each turn links "
+                 "to the prior by SHA-256, so the audit trail is tamper-evident "
+                 "and replay-verifiable):</p>")
+    parts.append(_rows(
+        ["#", "Verdict", "From", "To", "Envelope SHA-256", "Links to prior"],
+        chain_rows))
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -145,6 +209,7 @@ def _render_html(p: dict) -> str:
         for f in filings
     )
     diff_summary = _render_diff(diff)
+    reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     pending = p.get("pending", [])
     pending_section = (
@@ -212,6 +277,8 @@ code {{ background: #0a0c10; padding: 1px 5px; border-radius: 4px; }}
 
 <h2>6. Cross-filing contradiction diff</h2>
 {diff_summary}
+
+{reconciliation_block}
 
 <h2>7. Drafted filings</h2>
 {filing_blocks or '<p>No filings drafted.</p>'}

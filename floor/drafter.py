@@ -86,3 +86,75 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     if not content:
         raise DrafterError("featherless returned empty content")
     return content
+
+
+def draft_characterization(*, regime: str, old_records: int, new_records: int,
+                           role: str, counterpart_text: str = "",
+                           model: str = DEFAULT_MODEL, api_key: str | None = None,
+                           max_tokens: int = 160, timeout: int = 90) -> str:
+    """Draft ONE short reconciliation sentence: how this drafter proposes to
+    characterize the revised record count for its regulator, so the two filings
+    share one phrasing of the same number.
+
+    This is the only LLM step in the amendment beat. It writes prose only; the
+    structured figure and verdict are attached by the drafter process, not the
+    model, so the value the Warden gates on stays deterministic. Returns a single
+    plain sentence (no markdown, no quotes). Raises DrafterError on failure.
+    """
+    key = api_key or os.environ.get("FEATHERLESS_API_KEY", "")
+    if not key:
+        raise DrafterError("FEATHERLESS_API_KEY not set")
+
+    system = (
+        "You are a regulatory breach-notification drafter reconciling a revised "
+        "figure with a counterpart drafter so both filings characterize the same "
+        "number identically. Reply with ONE plain sentence, under 30 words, no "
+        "markdown, no quotation marks, no preamble. State only how to phrase the "
+        "revised affected-record count for the regulator."
+    )
+    if role == "propose":
+        user = (
+            f"You draft the {regime} filing. Forensics revised affected records "
+            f"from {old_records:,} to {new_records:,}. Propose to the counterpart "
+            f"drafter one shared way to characterize {new_records:,} affected "
+            f"records in both filings."
+        )
+    else:
+        user = (
+            f"You draft the {regime} filing. The counterpart proposed this "
+            f"characterization of {new_records:,} affected records: "
+            f"\"{counterpart_text}\". Reply concurring with a single shared "
+            f"sentence that both filings will use."
+        )
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+    }
+    try:
+        r = requests.post(
+            FEATHERLESS_BASE + "/chat/completions",
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+            json=payload, timeout=timeout,
+        )
+    except requests.RequestException as e:
+        raise DrafterError(f"featherless transport error: {e}") from e
+    if r.status_code != 200:
+        raise DrafterError(f"featherless HTTP {r.status_code}: {r.text[:300]}")
+    body = r.json()
+    try:
+        content = body["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, AttributeError) as e:
+        raise DrafterError(f"featherless malformed response: {body}") from e
+    if not content:
+        raise DrafterError("featherless returned empty characterization")
+    # One clean sentence: collapse whitespace, drop wrapping quotes.
+    content = " ".join(content.split())
+    if len(content) >= 2 and content[0] in "\"'" and content[-1] in "\"'":
+        content = content[1:-1].strip()
+    return content

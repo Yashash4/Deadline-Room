@@ -18,6 +18,18 @@ Three runnable modes, each against live Band + Featherless:
                        processed). On recovery it re-drains /next, the dedup
                        ledger drops the duplicate, and the filing lands exactly
                        once. No double draft.
+  amendment            AFTER the SEC and NIS2 filings are released, Triage posts
+                       a fact amendment (records_affected jumps from 48,211 to
+                       2,100,000). The Warden's FACT_AMENDED transition reopens
+                       the two released branches into the amending state. The SEC
+                       Drafter @mentions the NIS2 Drafter through Band proposing
+                       how to characterize the revised figure; the NIS2 Drafter
+                       replies @mentioning back. The exchange rides hash-linked
+                       reconciliation envelopes (warden/negotiation.py) so the
+                       chain is tamper-evident and replay-verifiable. The Warden's
+                       deterministic guard holds the amended diff BLOCKED until
+                       the two drafters have concurred on the shared figure; only
+                       then do the amended filings pass green and re-release.
 
 Drafters run SEQUENTIALLY: Featherless allows only one big model at a time and
 caps model switches, so the racing-clocks STORY is carried by the Warden tracking
@@ -29,6 +41,7 @@ Run live:
   py floor/run_floor.py                       (normal)
   py floor/run_floor.py --inject-contradiction
   py floor/run_floor.py --chaos
+  py floor/run_floor.py --amendment
 """
 
 from __future__ import annotations
@@ -44,14 +57,18 @@ if str(_CODE) not in sys.path:
 sys.path.insert(0, str(_CODE / "spikes"))
 
 from warden.clocks import ClockEngine  # noqa: E402
-from warden.diff import diff_claims  # noqa: E402
+from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import Disposition, IdempotencyLedger  # noqa: E402
+from warden.negotiation import (  # noqa: E402
+    NegotiationEnvelope, NegotiationGuard, Verdict)
 from warden.replay import RunLog, replay  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import roster  # noqa: E402
 from floor.claims import parse_claims  # noqa: E402
-from floor.drafter import build_draft_body, draft_filing  # noqa: E402
+from floor.drafter import (  # noqa: E402
+    build_draft_body, draft_characterization, draft_filing)
+from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
 
@@ -89,6 +106,17 @@ TS_DIFF = "2026-06-16T04:00:00+00:00"
 TS_RESOLVE = "2026-06-16T04:20:00+00:00"
 TS_RELEASE = "2026-06-16T05:00:00+00:00"
 
+# A1: the hour-6 fact amendment beat. records_affected is revised upward as
+# forensics complete; the SEC and NIS2 branches reopen and reconcile.
+AMENDED_RECORDS = 2_100_000
+AMENDMENT_BRANCHES = ("sec", "nis2")
+TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
+TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
+# The containment framing the amended filings settle on (deterministic, attached
+# by the drafter process, not the model).
+AMEND_CONTAINMENT_FRAMING = "contained as of 2026-06-16T07:00:00+00:00"
+AMEND_DATA_BOUNDS = ("name", "address", "account_number")
+
 
 class StepTrace:
     """Collects the step-by-step trace, the typed transitions, the @mention
@@ -101,6 +129,7 @@ class StepTrace:
         self.handoffs: list[dict] = []
         self.lifecycle: dict[str, list[str]] = {}
         self.chaos_events: list[dict] = []
+        self.negotiation: list[dict] = []
 
     def say(self, line: str) -> None:
         self.lines.append(line)
@@ -119,6 +148,10 @@ class StepTrace:
     def record_chaos(self, event: dict) -> None:
         self.chaos_events.append(event)
         self.log.append("chaos", event)
+
+    def record_negotiation(self, event: dict) -> None:
+        self.negotiation.append(event)
+        self.log.append("negotiation", event)
 
 
 def _proto(sm: ProtocolStateMachine, trace: StepTrace, corr: str, event: Event,
@@ -167,9 +200,12 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
 # ----------------------------------------------------------------------------
 def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     clients: dict | None, draft_fns: dict | None) -> dict:
-    if mode not in ("normal", "inject_contradiction", "chaos"):
+    if mode not in ("normal", "inject_contradiction", "chaos", "amendment"):
         raise ValueError(f"unknown mode: {mode}")
     live = clients is None
+    # The amendment beat reuses the clean release path as its base, then layers
+    # the FACT_AMENDED reopen + agent-to-agent reconciliation on top.
+    base_mode = "normal" if mode == "amendment" else mode
 
     if live:
         _require_live(roster.WARDEN, "Warden", "BAND_API_KEY / BAND_AGENT_ID")
@@ -245,7 +281,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # ---- Drafters run SEQUENTIALLY (Featherless: one big model at a time)
     filings: list[dict] = []
     claims_by_branch: dict[str, object] = {}
-    chaos_branch = "sec" if mode == "chaos" else None
+    chaos_branch = "sec" if base_mode == "chaos" else None
 
     for r in DRAFTER_ROLES:
         branch = r.branch
@@ -253,7 +289,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         client = drafters[branch]
         # The facts this drafter asserts. In inject_contradiction the SEC drafter
         # carries a perturbed incident_start; everyone else carries canonical.
-        claim_facts = _claim_facts_for(branch, mode, corrupted=True)
+        claim_facts = _claim_facts_for(branch, base_mode, corrupted=True)
         fn = _draft_fn_for(branch, r, draft_fns, draft_timeout)
 
         trace.say(f"[5.{branch}] {r.regime} Drafter draining /next for the mention ...")
@@ -280,7 +316,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
 
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
-        sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
+        sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
     )
 
     # ---- Signoff + human release stops every released branch's clock --
@@ -294,7 +330,21 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_RELEASE})
     trace.say(f"[8] Warden opened signoff; human released; clocks stopped")
 
-    breached = [c.name for c in clocks.breaches(TS_RELEASE)]
+    # ---- A1: the amendment beat (agent-to-agent reconciliation) --------
+    amendment = None
+    if mode == "amendment":
+        amendment = _amendment_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+            triage=triage, warden=warden, drafters=drafters,
+            warden_id=warden_id, triage_id=triage_id, drafter_ids=drafter_ids,
+            branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
+        )
+        # The amended figure becomes the reconciled record of those branches.
+        for b in AMENDMENT_BRANCHES:
+            claims_by_branch[b] = amendment["amended_claims"][b]
+
+    breached = [c.name for c in clocks.breaches(TS_AMEND_RELEASE if mode == "amendment"
+                                               else TS_RELEASE)]
 
     # ---- Byte-identical replay ----------------------------------------
     original_sha = log.sha256()
@@ -309,6 +359,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         breached, filings, mode, ledger,
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
                      "byte_identical": byte_identical},
+        amendment=amendment,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -422,6 +473,26 @@ def _drain(client, regime, trace, poll: float = 2.0, max_loops: int = 12):
     return None
 
 
+def _drain_for_envelope(client, regime, trace, poll: float = 2.0,
+                        max_loops: int = 12):
+    """Drain /next until a message carrying a [RECONCILE] block surfaces, marking
+    any intervening mentioned messages (for example the Triage fact-amendment
+    fan-out) processed so the cursor advances. Returns the reconciliation message
+    or None."""
+    for _ in range(max_loops):
+        msg = _drain(client, regime, trace, poll=poll, max_loops=1)
+        if not msg:
+            return None
+        if "[RECONCILE]" in (msg.get("content", "") or ""):
+            return msg
+        # Not the reconciliation envelope: clear it so /next advances.
+        mid = msg["id"]
+        client.mark(mid, "processing")
+        client.mark(mid, "processed")
+        trace.record_lifecycle(mid, "processed")
+    return None
+
+
 def _is_fake(client) -> bool:
     return client.__class__.__name__ == "FakeBandClient"
 
@@ -523,6 +594,256 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
 
 
 # ----------------------------------------------------------------------------
+# A1: the amendment beat. AFTER release, Triage revises records_affected. The SEC
+# and NIS2 branches reopen (FACT_AMENDED). The two drafters reconcile through
+# Band, agent to agent (SEC @mentions NIS2; NIS2 @mentions back), riding
+# hash-linked reconciliation envelopes. The Warden's deterministic guard holds
+# the amended diff BLOCKED until a concur envelope exists; only then do the
+# amended filings pass green and re-release. Zero LLM in the Warden: the drafters'
+# characterization prose is the only model output.
+# ----------------------------------------------------------------------------
+def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters,
+                     warden_id, triage_id, drafter_ids, branch_corr,
+                     draft_fns, draft_timeout) -> dict:
+    guard = NegotiationGuard()
+    sec, nis2 = "sec", "nis2"
+    sec_id, nis2_id = drafter_ids[sec], drafter_ids[nis2]
+    old_records = CANONICAL_FACTS["records_affected"]
+
+    # 1. Triage posts the fact amendment, @mentioning both affected drafters. The
+    #    Warden fires FACT_AMENDED on each released branch: released -> amending.
+    amend_text = (
+        "FACT AMENDMENT. Forensics revised records_affected from "
+        f"{old_records:,} to {AMENDED_RECORDS:,}. SEC and NIS2 Drafters: reopen "
+        "your released filings, reconcile one shared characterization of the new "
+        "figure with each other, then re-file.\n"
+        f"[AMENDMENT]\nfact_key=records_affected\nold={old_records}\n"
+        f"new={AMENDED_RECORDS}\n[/AMENDMENT]"
+    )
+    amend_res = triage.post(amend_text, mentions=[sec_id, nis2_id],
+                            dedup_key=f"amend:{INCIDENT_ID}:records_affected")
+    amend_msg_id = _msg_id(amend_res)
+    trace.record_handoff("Triage", "SEC Drafter", "fact_amendment", amend_msg_id)
+    trace.record_handoff("Triage", "NIS2 Drafter", "fact_amendment", amend_msg_id)
+    log.append("fact_amendment", {"fact_key": "records_affected", "old": old_records,
+                                  "new": AMENDED_RECORDS, "ts": TS_AMEND,
+                                  "band_message_id": amend_msg_id})
+    for b in AMENDMENT_BRANCHES:
+        _proto(sm, trace, branch_corr[b], Event.FACT_AMENDED, TS_AMEND, "triage", "triage")
+    trace.say(f"[A1] Triage posted the fact amendment {old_records:,} -> "
+              f"{AMENDED_RECORDS:,}; SEC and NIS2 branches reopened to amending "
+              f"(msg {amend_msg_id})")
+
+    # 2. The guard is consulted BEFORE any reconciliation: with no concur
+    #    envelope for the round, the amended diff is BLOCKED. This is the
+    #    "amendment is a no-op until concur" invariant, shown live.
+    pre = guard.can_submit_amendment(branch_corr[sec], amend_round=1)
+    log.append("negotiation_guard", {"check": "can_submit_amendment",
+                                     "phase": "pre_reconciliation",
+                                     "allowed": pre.allowed, "reason": pre.reason})
+    if pre.allowed:
+        raise RuntimeError("guard let the amendment through before reconciliation")
+    trace.say(f"[A2] Warden guard BLOCKED the amendment before reconciliation: "
+              f"{pre.reason}")
+
+    # 3. SEC Drafter drains the amendment mention, drafts its proposed
+    #    characterization (Featherless), and posts a PROPOSE envelope @mentioning
+    #    the NIS2 Drafter. A real agent-to-agent Band message, mention by id.
+    sec_client = drafters[sec]
+    sec_msg = _drain(sec_client, "SEC", trace, poll=(0.0 if _is_fake(sec_client) else 2.0))
+    if not sec_msg:
+        raise RuntimeError("SEC Drafter never saw the fact amendment")
+    sec_client.mark(sec_msg["id"], "processing")
+    trace.record_lifecycle(sec_msg["id"], "processing")
+
+    propose_fn = _characterize_fn_for(sec, "SEC", "propose", draft_fns, draft_timeout)
+    propose_char = propose_fn("")
+    proposal = NegotiationEnvelope(
+        correlation_id=branch_corr[sec], amend_round=1, from_agent="sec_drafter",
+        to_agent="nis2_drafter", fact_key="records_affected",
+        proposed_value=AMENDED_RECORDS, characterization=propose_char,
+        data_category_bounds=AMEND_DATA_BOUNDS,
+        containment_framing=AMEND_CONTAINMENT_FRAMING, verdict=Verdict.PROPOSE,
+        ts_utc=TS_AMEND, prior_envelope_hash=None)
+    propose_res = sec_client.post(
+        "SEC Drafter reconciliation proposal for the revised figure.\n\n"
+        + emit_envelope(proposal),
+        mentions=[nis2_id], dedup_key=f"reconcile:{INCIDENT_ID}:sec:round-1")
+    propose_mid = _msg_id(propose_res)
+    sec_client.mark(sec_msg["id"], "processing")
+    sec_client.mark(sec_msg["id"], "processed")
+    trace.record_lifecycle(sec_msg["id"], "processed")
+    trace.record_handoff("SEC Drafter", "NIS2 Drafter", "reconcile_propose", propose_mid)
+    trace.say(f"[A3] SEC Drafter @mentioned NIS2 Drafter proposing how to "
+              f"characterize {AMENDED_RECORDS:,} (msg {propose_mid})")
+
+    # 4. NIS2 Drafter drains the proposal mention, drafts a concurring
+    #    characterization (Featherless), and posts a CONCUR envelope hash-linked
+    #    to the proposal, @mentioning the SEC Drafter back. The NIS2 inbox may
+    #    still hold the Triage fact-amendment mention ahead of the proposal;
+    #    /next serves oldest-first, so clear intervening mentions until the
+    #    reconciliation envelope surfaces.
+    nis2_client = drafters[nis2]
+    nis2_msg = _drain_for_envelope(nis2_client, "NIS2", trace,
+                                   poll=(0.0 if _is_fake(nis2_client) else 2.0))
+    if not nis2_msg:
+        raise RuntimeError("NIS2 Drafter never saw the SEC reconciliation proposal")
+    nis2_client.mark(nis2_msg["id"], "processing")
+    trace.record_lifecycle(nis2_msg["id"], "processing")
+
+    # The Warden parses the proposal envelope off the room (no LLM) and admits it
+    # to the guard. This is the deterministic side: structure, not judgment.
+    parsed_proposal = parse_envelope(nis2_msg.get("content", ""))
+    pd = guard.post(parsed_proposal)
+    log.append("negotiation_guard", {"check": "post_propose", "allowed": pd.allowed,
+                                     "reason": pd.reason})
+    if not pd.allowed:
+        raise RuntimeError(f"guard rejected the proposal envelope: {pd.reason}")
+    trace.record_negotiation({**parsed_proposal.canonical(),
+                              "envelope_sha256": parsed_proposal.sha256(),
+                              "band_message_id": propose_mid})
+
+    concur_fn = _characterize_fn_for(nis2, "NIS2", "concur", draft_fns, draft_timeout)
+    concur_char = concur_fn(parsed_proposal.characterization)
+    concur = NegotiationEnvelope(
+        correlation_id=branch_corr[nis2], amend_round=1, from_agent="nis2_drafter",
+        to_agent="sec_drafter", fact_key="records_affected",
+        proposed_value=AMENDED_RECORDS, characterization=concur_char,
+        data_category_bounds=AMEND_DATA_BOUNDS,
+        containment_framing=AMEND_CONTAINMENT_FRAMING, verdict=Verdict.CONCUR,
+        ts_utc=TS_AMEND, prior_envelope_hash=parsed_proposal.sha256())
+    concur_res = nis2_client.post(
+        "NIS2 Drafter concurs on the shared characterization.\n\n"
+        + emit_envelope(concur),
+        mentions=[sec_id], dedup_key=f"reconcile:{INCIDENT_ID}:nis2:round-1")
+    concur_mid = _msg_id(concur_res)
+    nis2_client.mark(nis2_msg["id"], "processed")
+    trace.record_lifecycle(nis2_msg["id"], "processed")
+    trace.record_handoff("NIS2 Drafter", "SEC Drafter", "reconcile_concur", concur_mid)
+    trace.say(f"[A4] NIS2 Drafter @mentioned SEC Drafter back, CONCUR "
+              f"(hash-linked to the proposal, msg {concur_mid})")
+
+    # The Warden admits the concur envelope (deterministic hash-link check).
+    cd = guard.post(concur)
+    log.append("negotiation_guard", {"check": "post_concur", "allowed": cd.allowed,
+                                     "reason": cd.reason})
+    if not cd.allowed:
+        raise RuntimeError(f"guard rejected the concur envelope: {cd.reason}")
+    trace.record_negotiation({**concur.canonical(), "envelope_sha256": concur.sha256(),
+                              "band_message_id": concur_mid})
+
+    # 5. A concur now exists. Each branch may submit its amendment. Both produce
+    #    the amended filing with the reconciled figure and post it back.
+    amended_claims: dict[str, FactClaims] = {}
+    amended_filings: list[dict] = []
+    for b in AMENDMENT_BRANCHES:
+        corr = branch_corr[b]
+        gate = guard.can_submit_amendment(corr, amend_round=1)
+        log.append("negotiation_guard", {"check": "can_submit_amendment",
+                                         "phase": "post_reconciliation", "branch": b,
+                                         "allowed": gate.allowed, "reason": gate.reason})
+        if not gate.allowed:
+            raise RuntimeError(f"guard still blocks {b} after concur: {gate.reason}")
+        amend_facts = {
+            "incident_start_utc": CANONICAL_FACTS["incident_start_utc"],
+            "records_affected": AMENDED_RECORDS,
+            "attacker": CANONICAL_FACTS["attacker"],
+            "containment": Containment.CONTAINED.value,
+        }
+        body = build_draft_body(
+            f"{('Amended 8-K (Item 1.05)' if b == 'sec' else 'NIS2 intermediate report')}: "
+            f"records affected revised to {AMENDED_RECORDS:,}. "
+            f"{concur.characterization}", b, amend_facts)
+        entry = ledger.record(f"draft:{b}:{INCIDENT_ID}:amend-1", 1, TS_AMEND)
+        log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
+                              "disposition": entry.disposition.value})
+        drafters[b].post(
+            "{} amended filing attached.\n\n{}".format(b.upper(), body),
+            mentions=[warden_id], dedup_key=f"draft:{b}:{INCIDENT_ID}:amend-1")
+        _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_AMEND, f"{b}_drafter", "drafter")
+        amended_claims[b] = parse_claims(body)
+        amended_filings.append({
+            "regime": "SEC" if b == "sec" else "NIS2",
+            "by": ("SEC" if b == "sec" else "NIS2") + " Drafter",
+            "model": (roster.SEC_DRAFTER.model if b == "sec" else roster.NIS2_DRAFTER.model),
+            "text": body})
+    trace.say(f"[A5] Both branches submitted their amendments at the reconciled "
+              f"figure {AMENDED_RECORDS:,}")
+
+    # 6. Amendment diff: the value-match gate (concurred figure must match across
+    #    both branches) AND the full UTC-canonicalized contradiction diff.
+    value_gate = guard.can_pass_diff(
+        1, {b: c.canonical()["records_affected"] for b, c in amended_claims.items()})
+    log.append("negotiation_guard", {"check": "can_pass_diff",
+                                     "allowed": value_gate.allowed,
+                                     "reason": value_gate.reason})
+    if not value_gate.allowed:
+        raise RuntimeError(f"amended branches diverge from the concurred figure: "
+                           f"{value_gate.reason}")
+    conflicts = diff_claims(list(amended_claims.values()))
+    log.append("diff", {"phase": "amendment",
+                        "conflicts": [c.human() for c in conflicts]})
+    if conflicts:
+        raise RuntimeError(f"amended filings still contradict: {conflicts}")
+    for b in AMENDMENT_BRANCHES:
+        corr = branch_corr[b]
+        _proto(sm, trace, corr, Event.DIFF_PASSED, TS_AMEND_RELEASE, "warden", "warden")
+        _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_AMEND_RELEASE, "warden", "warden")
+        _proto(sm, trace, corr, Event.HUMAN_RELEASED, TS_AMEND_RELEASE, "lena", "human_owner")
+    trace.say(f"[A6] Amended diff GREEN only after concurrence; both amendments "
+              f"signed and released")
+
+    return {
+        "fact_key": "records_affected",
+        "old_value": old_records,
+        "new_value": AMENDED_RECORDS,
+        "reopened_branches": list(AMENDMENT_BRANCHES),
+        "amend_message_id": amend_msg_id,
+        "pre_reconciliation_block": {"allowed": pre.allowed, "reason": pre.reason},
+        "exchange": [
+            {"from": "SEC Drafter", "to": "NIS2 Drafter", "verdict": "propose",
+             "proposed_value": AMENDED_RECORDS, "characterization": proposal.characterization,
+             "band_message_id": propose_mid, "envelope_sha256": proposal.sha256(),
+             "prior_envelope_hash": None},
+            {"from": "NIS2 Drafter", "to": "SEC Drafter", "verdict": "concur",
+             "proposed_value": AMENDED_RECORDS, "characterization": concur.characterization,
+             "band_message_id": concur_mid, "envelope_sha256": concur.sha256(),
+             "prior_envelope_hash": parsed_proposal.sha256()},
+        ],
+        "concurred_value": AMENDED_RECORDS,
+        "concurred_characterization": concur.characterization,
+        "diff_passed_only_after_concur": True,
+        "amended_filings": amended_filings,
+        "amended_claims": amended_claims,
+        "envelope_history": [
+            {"verdict": e.verdict.value, "from": e.from_agent, "to": e.to_agent,
+             "sha256": e.sha256(), "prior_envelope_hash": e.prior_envelope_hash}
+            for e in guard.history()
+        ],
+    }
+
+
+def _characterize_fn_for(branch, regime, role, draft_fns, timeout):
+    """Resolve the characterization drafter for one reconciliation turn. Tests
+    inject draft_fns keyed by f'{branch}:characterize'; live runs call
+    Featherless. Returns a fn(counterpart_text) -> one-sentence characterization."""
+    if draft_fns is not None:
+        injected = draft_fns.get(f"{branch}:characterize")
+        if injected is not None:
+            return injected
+
+    def fn(counterpart_text: str) -> str:
+        return draft_characterization(
+            regime=regime, old_records=CANONICAL_FACTS["records_affected"],
+            new_records=AMENDED_RECORDS, role=role,
+            counterpart_text=counterpart_text,
+            model=(roster.SEC_DRAFTER.model if branch == "sec"
+                   else roster.NIS2_DRAFTER.model),
+            timeout=timeout)
+    return fn
+
+
+# ----------------------------------------------------------------------------
 # Helpers shared by the full floor.
 # ----------------------------------------------------------------------------
 def _require_live(role, label, envs) -> None:
@@ -587,7 +908,8 @@ def _msg_id(post_result) -> str:
 
 
 def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
-                     breached, filings, mode, ledger, replay_info) -> dict:
+                     breached, filings, mode, ledger, replay_info,
+                     amendment=None) -> dict:
     clock_rows = []
     for c in clocks.all():
         clock_rows.append({
@@ -599,7 +921,10 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
     final_claims = {b: c.canonical() for b, c in claims_by_branch.items()}
-    return {
+    all_filings = list(filings)
+    if amendment is not None:
+        all_filings = all_filings + amendment["amended_filings"]
+    packet = {
         "incident": {
             "incident_id": INCIDENT_ID,
             "band_room_id": room_id,
@@ -617,7 +942,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "final_claims": final_claims,
             "green": not blocked or resolved is not None,
         },
-        "filings": filings,
+        "filings": all_filings,
         "chaos": {
             "events": trace.chaos_events,
             "duplicates_dropped": ledger.duplicates_dropped(),
@@ -629,6 +954,24 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         "replay": replay_info,
         "pending": [],
     }
+    if amendment is not None:
+        # User-facing framing: transparent deliberation with an audit trail, not
+        # "negotiation". The hash-linked envelope chain is the audit trail.
+        packet["reconciliation"] = {
+            "fact_key": amendment["fact_key"],
+            "old_value": amendment["old_value"],
+            "new_value": amendment["new_value"],
+            "reopened_branches": amendment["reopened_branches"],
+            "amend_message_id": amendment["amend_message_id"],
+            "blocked_before_reconciliation": not amendment["pre_reconciliation_block"]["allowed"],
+            "block_reason": amendment["pre_reconciliation_block"]["reason"],
+            "exchange": amendment["exchange"],
+            "concurred_value": amendment["concurred_value"],
+            "concurred_characterization": amendment["concurred_characterization"],
+            "diff_passed_only_after_concur": amendment["diff_passed_only_after_concur"],
+            "envelope_chain": amendment["envelope_history"],
+        }
+    return packet
 
 
 # ----------------------------------------------------------------------------
@@ -823,12 +1166,16 @@ def main() -> int:
                         help="feed one drafter a perturbed fact so the Warden's diff blocks, then resolve")
     parser.add_argument("--chaos", action="store_true",
                         help="kill a drafter mid-handoff; show exactly-once recovery")
+    parser.add_argument("--amendment", action="store_true",
+                        help="after release, Triage revises a load-bearing fact; the SEC "
+                             "and NIS2 Drafters reconcile through Band before re-filing")
     args = parser.parse_args()
-    if args.inject_contradiction and args.chaos:
-        print("Pick one of --inject-contradiction or --chaos, not both.")
+    if sum([args.inject_contradiction, args.chaos, args.amendment]) > 1:
+        print("Pick one of --inject-contradiction, --chaos, or --amendment.")
         return 1
     mode = "inject_contradiction" if args.inject_contradiction else \
-           "chaos" if args.chaos else "normal"
+           "chaos" if args.chaos else \
+           "amendment" if args.amendment else "normal"
 
     try:
         from _env import load_env  # spikes/_env.py
