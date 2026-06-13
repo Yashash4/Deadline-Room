@@ -174,7 +174,8 @@ def _proto(sm: ProtocolStateMachine, trace: StepTrace, corr: str, event: Event,
 def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               warden=None, drafter=None, draft_fn=None,
               mode: str = "normal", clients: dict | None = None,
-              draft_fns: dict | None = None) -> dict:
+              draft_fns: dict | None = None,
+              provider_set: str = roster.PROVIDER_DEV) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -186,22 +187,31 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
       draft_fns={branch: fn} for the multi-drafter path. mode selects the beat:
       "normal", "inject_contradiction", or "chaos".
 
+    provider_set selects which LLM provider configuration the drafters use:
+      "dev"  (default): every role on Featherless, zero AI/ML credit spent.
+      "prod": the prize-winning split (parallel racing drafters on AI/ML API,
+              hero open-model roles on Featherless). Only ever active when
+              explicitly requested, so dev runs never touch AI/ML.
+
     Raises if a required Band agent is not configured or a live call fails.
     """
     out_dir = out_dir or str(Path(__file__).resolve().parent / "out")
     legacy = warden is not None or drafter is not None or draft_fn is not None
     if legacy:
         return _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
-    return _run_full_floor(out_dir, draft_timeout, mode, clients, draft_fns)
+    return _run_full_floor(out_dir, draft_timeout, mode, clients, draft_fns, provider_set)
 
 
 # ----------------------------------------------------------------------------
 # Full floor: Triage agent + three drafters + Warden + diff + chaos + replay.
 # ----------------------------------------------------------------------------
 def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
-                    clients: dict | None, draft_fns: dict | None) -> dict:
+                    clients: dict | None, draft_fns: dict | None,
+                    provider_set: str = roster.PROVIDER_DEV) -> dict:
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment"):
         raise ValueError(f"unknown mode: {mode}")
+    if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
+        raise ValueError(f"unknown provider set: {provider_set!r}")
     live = clients is None
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top.
@@ -219,6 +229,9 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     clocks = ClockEngine()
     ledger = IdempotencyLedger()
 
+    # ---- Provider set: state plainly which LLM configuration is active --------
+    provider_validation = _announce_provider_set(trace, log, provider_set, live)
+
     # ---- Band clients: Warden, Triage, one per drafter ----------------
     warden = _client(clients, "warden", roster.WARDEN, "warden", "warden")
     triage = _client(clients, "triage", roster.TRIAGE, "triage", "triage")
@@ -233,7 +246,9 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     trace.say(f"[1] Warden identity:  {warden_id}")
     trace.say(f"    Triage identity:  {triage_id}")
     for r in DRAFTER_ROLES:
-        trace.say(f"    {r.regime} Drafter:  {drafter_ids[r.branch]} ({r.model})")
+        provider, model = roster.resolve(r, provider_set)
+        trace.say(f"    {r.regime} Drafter:  {drafter_ids[r.branch]} "
+                  f"({provider}:{model})")
 
     # ---- Warden creates the room and recruits Triage + every drafter ---
     room_id = warden.create_chat(f"Deadline Room {INCIDENT_ID} [{mode}]")
@@ -290,7 +305,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         # The facts this drafter asserts. In inject_contradiction the SEC drafter
         # carries a perturbed incident_start; everyone else carries canonical.
         claim_facts = _claim_facts_for(branch, base_mode, corrupted=True)
-        fn = _draft_fn_for(branch, r, draft_fns, draft_timeout)
+        fn = _draft_fn_for(branch, r, draft_fns, draft_timeout, provider_set)
+        _provider, _model = roster.resolve(r, provider_set)
 
         trace.say(f"[5.{branch}] {r.regime} Drafter draining /next for the mention ...")
         landed = _drive_drafter(
@@ -303,7 +319,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         trace.record_handoff(f"{r.regime} Drafter", "Warden", "draft",
                              landed.get("message_id", ""))
         filings.append({"regime": r.regime, "by": f"{r.regime} Drafter",
-                        "model": r.model, "text": landed["text"]})
+                        "model": _model, "provider": _provider,
+                        "text": landed["text"]})
 
         # ---- Warden drains this draft, parses claims, advances the SM ----
         trace.say(f"[6.{branch}] Warden draining /next for the {r.regime} draft ...")
@@ -338,6 +355,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             triage=triage, warden=warden, drafters=drafters,
             warden_id=warden_id, triage_id=triage_id, drafter_ids=drafter_ids,
             branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
+            provider_set=provider_set,
         )
         # The amended figure becomes the reconciled record of those branches.
         for b in AMENDMENT_BRANCHES:
@@ -360,6 +378,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
                      "byte_identical": byte_identical},
         amendment=amendment,
+        provider_set=provider_set, provider_validation=provider_validation,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -604,7 +623,8 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
 # ----------------------------------------------------------------------------
 def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters,
                      warden_id, triage_id, drafter_ids, branch_corr,
-                     draft_fns, draft_timeout) -> dict:
+                     draft_fns, draft_timeout,
+                     provider_set=roster.PROVIDER_DEV) -> dict:
     guard = NegotiationGuard()
     sec, nis2 = "sec", "nis2"
     sec_id, nis2_id = drafter_ids[sec], drafter_ids[nis2]
@@ -656,7 +676,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
     sec_client.mark(sec_msg["id"], "processing")
     trace.record_lifecycle(sec_msg["id"], "processing")
 
-    propose_fn = _characterize_fn_for(sec, "SEC", "propose", draft_fns, draft_timeout)
+    propose_fn = _characterize_fn_for(sec, "SEC", "propose", draft_fns,
+                                      draft_timeout, provider_set)
     propose_char = propose_fn("")
     proposal = NegotiationEnvelope(
         correlation_id=branch_corr[sec], amend_round=1, from_agent="sec_drafter",
@@ -703,7 +724,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
                               "envelope_sha256": parsed_proposal.sha256(),
                               "band_message_id": propose_mid})
 
-    concur_fn = _characterize_fn_for(nis2, "NIS2", "concur", draft_fns, draft_timeout)
+    concur_fn = _characterize_fn_for(nis2, "NIS2", "concur", draft_fns,
+                                     draft_timeout, provider_set)
     concur_char = concur_fn(parsed_proposal.characterization)
     concur = NegotiationEnvelope(
         correlation_id=branch_corr[nis2], amend_round=1, from_agent="nis2_drafter",
@@ -762,10 +784,12 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
             mentions=[warden_id], dedup_key=f"draft:{b}:{INCIDENT_ID}:amend-1")
         _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_AMEND, f"{b}_drafter", "drafter")
         amended_claims[b] = parse_claims(body)
+        amend_role = roster.SEC_DRAFTER if b == "sec" else roster.NIS2_DRAFTER
+        amend_provider, amend_model = roster.resolve(amend_role, provider_set)
         amended_filings.append({
             "regime": "SEC" if b == "sec" else "NIS2",
             "by": ("SEC" if b == "sec" else "NIS2") + " Drafter",
-            "model": (roster.SEC_DRAFTER.model if b == "sec" else roster.NIS2_DRAFTER.model),
+            "model": amend_model, "provider": amend_provider,
             "text": body})
     trace.say(f"[A5] Both branches submitted their amendments at the reconciled "
               f"figure {AMENDED_RECORDS:,}")
@@ -823,23 +847,26 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
     }
 
 
-def _characterize_fn_for(branch, regime, role, draft_fns, timeout):
+def _characterize_fn_for(branch, regime, role, draft_fns, timeout,
+                         provider_set=roster.PROVIDER_DEV):
     """Resolve the characterization drafter for one reconciliation turn. Tests
-    inject draft_fns keyed by f'{branch}:characterize'; live runs call
-    Featherless. Returns a fn(counterpart_text) -> one-sentence characterization."""
+    inject draft_fns keyed by f'{branch}:characterize'; live runs call the active
+    provider for that branch's role. Returns a fn(counterpart_text) -> one-sentence
+    characterization. `role` is the turn ("propose" | "concur")."""
     if draft_fns is not None:
         injected = draft_fns.get(f"{branch}:characterize")
         if injected is not None:
             return injected
+
+    branch_role = roster.SEC_DRAFTER if branch == "sec" else roster.NIS2_DRAFTER
+    provider, model = roster.resolve(branch_role, provider_set)
 
     def fn(counterpart_text: str) -> str:
         return draft_characterization(
             regime=regime, old_records=CANONICAL_FACTS["records_affected"],
             new_records=AMENDED_RECORDS, role=role,
             counterpart_text=counterpart_text,
-            model=(roster.SEC_DRAFTER.model if branch == "sec"
-                   else roster.NIS2_DRAFTER.model),
-            timeout=timeout)
+            model=model, provider=provider, timeout=timeout)
     return fn
 
 
@@ -849,6 +876,76 @@ def _characterize_fn_for(branch, regime, role, draft_fns, timeout):
 def _require_live(role, label, envs) -> None:
     if not role.live:
         raise RuntimeError(f"{label} agent not configured ({envs})")
+
+
+def _announce_provider_set(trace, log, provider_set: str, live: bool) -> dict:
+    """State plainly which LLM provider configuration is active, and for prod do a
+    cheap live availability check on each AI/ML model (one tiny completion each).
+
+    The note is one line in the run output. dev burns zero AI/ML credit by
+    construction: nothing here calls AI/ML unless provider_set is prod AND the run
+    is live. Returns the validation result dict (empty for dev / non-live)."""
+    if provider_set == roster.PROVIDER_DEV:
+        trace.say("[0] Provider set: DEV (every role on Featherless, zero AI/ML "
+                  "credit spent).")
+        log.append("provider_set", {"set": provider_set, "aiml_validation": {}})
+        return {}
+
+    # prod: name the split, then validate the AI/ML models if this is a live run.
+    aiml_models = roster.prod_aiml_validation_models()
+    hero_models = roster.prod_featherless_hero_models()
+    trace.say("[0] Provider set: PROD (AI/ML API parallel racing drafters + "
+              "Featherless hero open models).")
+    trace.say("    AI/ML drafters: "
+              + ", ".join(f"{role}={m}" for role, m in aiml_models.items()))
+    trace.say("    Featherless heroes: "
+              + ", ".join(f"{role}={m}" for role, m in hero_models.items()))
+
+    validation: dict = {}
+    if live:
+        validation = _validate_aiml_models(trace, aiml_models)
+    else:
+        trace.say("    (offline run: skipping the live AI/ML availability check)")
+    log.append("provider_set", {"set": provider_set,
+                                "aiml_models": aiml_models,
+                                "featherless_hero_models": hero_models,
+                                "aiml_validation": validation})
+    return validation
+
+
+def _validate_aiml_models(trace, aiml_models: dict) -> dict:
+    """Fire one tiny AI/ML completion per prod AI/ML model to prove it answers on
+    the key. Keeps spend minimal (max_tokens small). A model id that is
+    unavailable is reported clearly and does NOT crash the run, so a single bad id
+    can be swapped without losing the others."""
+    from floor.drafter import DrafterError, llm_complete
+
+    results: dict = {}
+    trace.say("    Validating AI/ML model availability (one tiny call each) ...")
+    for role_label, model in aiml_models.items():
+        try:
+            # 512 tokens, not 8: some AI/ML models (gemini-3.5-flash) are reasoning
+            # models that spend a few hundred tokens on an internal preamble before
+            # any visible content, so a tiny budget returns empty even though the
+            # model is live and answers fine at the drafter's real 700-token budget.
+            # A short concrete prompt (not "reply ready") draws visible content out.
+            # This is still well under a cent per call.
+            reply = llm_complete(
+                roster.AIMLAPI, model,
+                [{"role": "user",
+                  "content": "In one short sentence, confirm you can draft a "
+                             "regulatory breach notification."}],
+                max_tokens=512, temperature=0.0, timeout=60)
+            results[model] = {"role": role_label, "available": True,
+                              "reply": reply}
+            trace.say(f"      OK   {role_label:14s} {model}  -> {reply!r}")
+        except DrafterError as e:
+            results[model] = {"role": role_label, "available": False,
+                              "error": str(e)}
+            trace.say(f"      MISS {role_label:14s} {model}  UNAVAILABLE: {e}")
+    answered = [m for m, r in results.items() if r.get("available")]
+    trace.say(f"    AI/ML models that answered: {len(answered)}/{len(aiml_models)}")
+    return results
 
 
 def _client(clients, key, role, name, ns):
@@ -868,18 +965,21 @@ def _claim_facts_for(branch: str, mode: str, *, corrupted: bool) -> dict:
     return facts
 
 
-def _draft_fn_for(branch, role, draft_fns, timeout):
+def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER_DEV):
     if draft_fns is not None:
         return draft_fns[branch]
+
+    provider, model = roster.resolve(role, provider_set)
 
     def fn(claim_facts):
         # The LLM drafts prose from the FULL canonical fact-record body plus the
         # branch's asserted incident_start; the structured claims are attached by
-        # the drafter process, not formatted by the model.
+        # the drafter process, not formatted by the model. The provider + model
+        # come from the active provider set (dev = Featherless, prod = the split).
         body_facts = dict(CANONICAL_FACTS)
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
-        return draft_filing(body_facts, model=role.model, regime=role.regime,
-                            timeout=timeout)
+        return draft_filing(body_facts, model=model, provider=provider,
+                            regime=role.regime, timeout=timeout)
     return fn
 
 
@@ -909,7 +1009,8 @@ def _msg_id(post_result) -> str:
 
 def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
                      breached, filings, mode, ledger, replay_info,
-                     amendment=None) -> dict:
+                     amendment=None, provider_set=roster.PROVIDER_DEV,
+                     provider_validation=None) -> dict:
     clock_rows = []
     for c in clocks.all():
         clock_rows.append({
@@ -929,7 +1030,16 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "incident_id": INCIDENT_ID,
             "band_room_id": room_id,
             "mode": mode,
+            "provider_set": provider_set,
             "fact_record": CANONICAL_FACTS,
+        },
+        "providers": {
+            "provider_set": provider_set,
+            "aiml_drafters": roster.prod_aiml_validation_models()
+            if provider_set == roster.PROVIDER_PROD else {},
+            "featherless_heroes": roster.prod_featherless_hero_models()
+            if provider_set == roster.PROVIDER_PROD else {},
+            "aiml_validation": provider_validation or {},
         },
         "trace": trace.lines,
         "handoff_trace": trace.handoffs,
@@ -1169,6 +1279,11 @@ def main() -> int:
     parser.add_argument("--amendment", action="store_true",
                         help="after release, Triage revises a load-bearing fact; the SEC "
                              "and NIS2 Drafters reconcile through Band before re-filing")
+    parser.add_argument("--provider", choices=[roster.PROVIDER_DEV, roster.PROVIDER_PROD],
+                        default=roster.PROVIDER_DEV,
+                        help="LLM provider set: dev (default, all Featherless, zero "
+                             "AI/ML credit) or prod (AI/ML racing drafters + Featherless "
+                             "hero open models)")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment]) > 1:
         print("Pick one of --inject-contradiction, --chaos, or --amendment.")
@@ -1186,8 +1301,14 @@ def main() -> int:
     if not os.environ.get("BAND_API_KEY") or not os.environ.get("FEATHERLESS_API_KEY"):
         print("Missing BAND_API_KEY or FEATHERLESS_API_KEY (load code/.env).")
         return 1
-    print(f"=== Deadline Room floor run (LIVE Band + Featherless) mode={mode} ===\n")
-    packet = run_floor(mode=mode)
+    if args.provider == roster.PROVIDER_PROD and not os.environ.get("AIML_API_KEY"):
+        print("Provider prod needs AIML_API_KEY (load code/.env).")
+        return 1
+    banner = ("LIVE Band + Featherless" if args.provider == roster.PROVIDER_DEV
+              else "LIVE Band + AI/ML API split (prod)")
+    print(f"=== Deadline Room floor run ({banner}) mode={mode} "
+          f"provider={args.provider} ===\n")
+    packet = run_floor(mode=mode, provider_set=args.provider)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0

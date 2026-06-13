@@ -1,8 +1,18 @@
 """LLM drafting for the filing agents.
 
-Featherless is the dev provider (flat-rate, OpenAI-compatible). One big model
-at a time on the plan, so drafters must run SEQUENTIALLY, never concurrently,
-and the small pinned roster avoids the "switch models 4x/minute" cap.
+Two providers, both OpenAI-compatible:
+
+  featherless: the DEV provider (flat-rate). One big model at a time on the plan,
+      so drafters run SEQUENTIALLY, never concurrently, and a small pinned roster
+      avoids the "switch models 4x/minute" cap.
+  aimlapi: the AI/ML API gateway (Authorization: Bearer, base api.aimlapi.com/v1),
+      used by the PROD split for the parallel racing drafters. Concurrency is
+      independent of Featherless.
+
+A single router, `llm_complete(provider, model, messages, ...)`, picks the base
+URL + API key for the named provider and makes one chat completion. Both
+`draft_filing` and `draft_characterization` go through it, so a role's provider
+is just a parameter and dev stays all-Featherless unless prod is requested.
 
 The Warden NEVER calls this. Only drafter processes draft filing text here.
 """
@@ -14,14 +24,71 @@ import os
 
 import requests
 
+from floor import roster
 from floor.claims import emit_claims
 
 FEATHERLESS_BASE = "https://api.featherless.ai/v1"
+AIMLAPI_BASE = "https://api.aimlapi.com/v1"
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3.2"  # fast, clean content, the hero open model
+DEFAULT_PROVIDER = roster.FEATHERLESS
+
+# Per-provider transport config: (base URL, env var holding the API key).
+_PROVIDERS = {
+    roster.FEATHERLESS: (FEATHERLESS_BASE, "FEATHERLESS_API_KEY"),
+    roster.AIMLAPI: (AIMLAPI_BASE, "AIML_API_KEY"),
+}
 
 
 class DrafterError(RuntimeError):
     pass
+
+
+def provider_config(provider: str) -> tuple[str, str]:
+    """Return (base_url, key_env) for a provider, raising on an unknown one."""
+    try:
+        return _PROVIDERS[provider]
+    except KeyError as e:
+        raise DrafterError(f"unknown LLM provider: {provider!r}") from e
+
+
+def llm_complete(provider: str, model: str, messages: list[dict], *,
+                 api_key: str | None = None, max_tokens: int = 700,
+                 temperature: float = 0.2, timeout: int = 90) -> str:
+    """Route one chat completion to the named provider and return the content.
+
+    Both providers are OpenAI-compatible (Authorization: Bearer, /chat/completions),
+    so the only per-provider difference is the base URL and which env var holds the
+    key. Raises DrafterError on a missing key, transport error, non-200, malformed
+    body, or empty content (the caller decides any fallback)."""
+    base, key_env = provider_config(provider)
+    key = api_key or os.environ.get(key_env, "")
+    if not key:
+        raise DrafterError(f"{key_env} not set (provider {provider})")
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    try:
+        r = requests.post(
+            base + "/chat/completions",
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+            json=payload, timeout=timeout,
+        )
+    except requests.RequestException as e:
+        raise DrafterError(f"{provider} transport error: {e}") from e
+    if r.status_code != 200:
+        raise DrafterError(f"{provider} HTTP {r.status_code}: {r.text[:300]}")
+    body = r.json()
+    try:
+        content = body["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, AttributeError, TypeError) as e:
+        raise DrafterError(f"{provider} malformed response: {body}") from e
+    if not content:
+        raise DrafterError(f"{provider} returned empty content")
+    return content
 
 
 def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
@@ -36,15 +103,13 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 
 
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
-                 api_key: str | None = None, regime: str = "NIS2",
-                 max_tokens: int = 700, timeout: int = 90) -> str:
+                 provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
+                 regime: str = "NIS2", max_tokens: int = 700,
+                 timeout: int = 90) -> str:
     """Draft the regulatory notification body for one regime from the canonical
-    fact-record. Returns the model's text. Raises DrafterError on transport or
-    empty-content failure (the caller decides fallback)."""
-    key = api_key or os.environ.get("FEATHERLESS_API_KEY", "")
-    if not key:
-        raise DrafterError("FEATHERLESS_API_KEY not set")
-
+    fact-record on the named provider. Returns the model's text. Raises
+    DrafterError on transport or empty-content failure (the caller decides
+    fallback)."""
     system = (
         "You are a regulatory breach-notification drafter for a bank's incident "
         "response team. You write tight, examiner-ready filings. You state only "
@@ -58,39 +123,18 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         f"Use ONLY these facts. Keep it under 300 words.\n\n"
         f"FACT RECORD (canonical, authoritative):\n{json.dumps(fact_record, indent=2)}"
     )
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": 0.2,
-    }
-    try:
-        r = requests.post(
-            FEATHERLESS_BASE + "/chat/completions",
-            headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
-            json=payload, timeout=timeout,
-        )
-    except requests.RequestException as e:
-        raise DrafterError(f"featherless transport error: {e}") from e
-    if r.status_code != 200:
-        raise DrafterError(f"featherless HTTP {r.status_code}: {r.text[:300]}")
-    body = r.json()
-    try:
-        content = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, AttributeError) as e:
-        raise DrafterError(f"featherless malformed response: {body}") from e
-    if not content:
-        raise DrafterError("featherless returned empty content")
-    return content
+    return llm_complete(
+        provider, model,
+        [{"role": "system", "content": system},
+         {"role": "user", "content": user}],
+        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
 
 
 def draft_characterization(*, regime: str, old_records: int, new_records: int,
                            role: str, counterpart_text: str = "",
-                           model: str = DEFAULT_MODEL, api_key: str | None = None,
+                           model: str = DEFAULT_MODEL,
+                           provider: str = DEFAULT_PROVIDER,
+                           api_key: str | None = None,
                            max_tokens: int = 160, timeout: int = 90) -> str:
     """Draft ONE short reconciliation sentence: how this drafter proposes to
     characterize the revised record count for its regulator, so the two filings
@@ -101,10 +145,6 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
     model, so the value the Warden gates on stays deterministic. Returns a single
     plain sentence (no markdown, no quotes). Raises DrafterError on failure.
     """
-    key = api_key or os.environ.get("FEATHERLESS_API_KEY", "")
-    if not key:
-        raise DrafterError("FEATHERLESS_API_KEY not set")
-
     system = (
         "You are a regulatory breach-notification drafter reconciling a revised "
         "figure with a counterpart drafter so both filings characterize the same "
@@ -126,33 +166,11 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
             f"\"{counterpart_text}\". Reply concurring with a single shared "
             f"sentence that both filings will use."
         )
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": 0.2,
-    }
-    try:
-        r = requests.post(
-            FEATHERLESS_BASE + "/chat/completions",
-            headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
-            json=payload, timeout=timeout,
-        )
-    except requests.RequestException as e:
-        raise DrafterError(f"featherless transport error: {e}") from e
-    if r.status_code != 200:
-        raise DrafterError(f"featherless HTTP {r.status_code}: {r.text[:300]}")
-    body = r.json()
-    try:
-        content = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, AttributeError) as e:
-        raise DrafterError(f"featherless malformed response: {body}") from e
-    if not content:
-        raise DrafterError("featherless returned empty characterization")
+    content = llm_complete(
+        provider, model,
+        [{"role": "system", "content": system},
+         {"role": "user", "content": user}],
+        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
     # One clean sentence: collapse whitespace, drop wrapping quotes.
     content = " ".join(content.split())
     if len(content) >= 2 and content[0] in "\"'" and content[-1] in "\"'":
