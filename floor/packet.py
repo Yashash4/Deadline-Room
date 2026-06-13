@@ -171,6 +171,77 @@ def _render_reconciliation(rec: dict) -> str:
     return "".join(parts)
 
 
+def _render_materiality(m: dict) -> str:
+    """Render the SEC materiality assessment and the suppression decision, if the
+    materiality beat ran. The verdict is the LLM's; the gating is deterministic."""
+    if not m:
+        return ""
+    material = m.get("material")
+    disposition = m.get("disposition")
+    cls = "ok" if material else "bad"
+    verdict_line = ("SEC: MATERIAL, the 4-business-day clock stands and the SEC "
+                    "filing proceeds." if material else
+                    "SEC: suppressed, not material. The 4-business-day clock never "
+                    "triggered and no SEC filing was produced.")
+    parts = ["<h2>5b. SEC materiality assessment</h2>",
+             f"<p class='{cls}'><strong>{_esc(verdict_line)}</strong></p>",
+             f"<p class='sub'>Decision source (LLM judgment role): "
+             f"<code>{_esc(m.get('source'))}</code>. The verdict crosses into the "
+             f"deterministic Warden gate as data; the Warden's gating of the branch "
+             f"({_esc(disposition)}) is pure Python, replay-verifiable.</p>"]
+    if m.get("memo"):
+        parts.append("<p class='sub'>Materiality memo:</p>")
+        parts.append(f"<pre>{_esc(m.get('memo'))}</pre>")
+    return "".join(parts)
+
+
+def _render_recruit(rec: dict) -> str:
+    """Render the UK runtime-recruit beat: the blast-radius content that drove it,
+    the discovered peer, the recruit event, and the late-started fifth clock. If
+    the blast radius did not name the UK, show that no recruit happened (the
+    content-driven proof)."""
+    if not rec:
+        return ""
+    parts = ["<h2>5c. UK ICO runtime recruit (Internet of Agents)</h2>"]
+    radius = ", ".join(str(x) for x in rec.get("blast_radius", []))
+    if not rec.get("recruited"):
+        parts.append(
+            "<p class='sub'>Blast radius: <code>" + _esc(radius) + "</code>. It does "
+            "NOT name a UK subsidiary, so the Warden did NOT recruit the UK ICO "
+            "Drafter. The recruit is content-driven, not hardcoded.</p>")
+        return "".join(parts)
+    parts.append(
+        "<p class='ok'><strong>UK subsidiary in the blast radius: the Warden "
+        "discovered and recruited the UK ICO Drafter at runtime.</strong></p>")
+    parts.append(
+        "<p class='sub'>Blast radius: <code>" + _esc(radius) + "</code>. Discovered "
+        f"peer <code>{_esc(rec.get('peer_id'))}</code> by token-match over the live "
+        f"peer list (only a not_in_chat filter exists), then add_participant.</p>")
+    parts.append(
+        f"<p class='sub'>The {_esc(rec.get('clock_name'))} started at the RECRUIT "
+        f"moment <code>{_esc(rec.get('clock_started_at'))}</code>, not at incident "
+        f"T0. This is the late-started fifth clock.</p>")
+    return "".join(parts)
+
+
+def _render_release(rel: dict) -> str:
+    """Render the two-key release gate: both human sign-offs (Lena and the GC) per
+    released branch, proving segregation of duties (one key alone never releases)."""
+    if not rel or not rel.get("signoffs"):
+        return ""
+    required = ", ".join(rel.get("required_roles", []))
+    rows = [[s.get("correlation_id"), s.get("role"), s.get("actor"), s.get("ts")]
+            for s in rel.get("signoffs", [])]
+    parts = ["<h2>8b. Two-key release (segregation of duties)</h2>",
+             f"<p class='sub'>A filing releases only when BOTH distinct human keys "
+             f"sign: <code>{_esc(required)}</code>. One key alone never turns the "
+             f"lock. Each sign-off is recorded with its human role.</p>",
+             _rows(["Branch", "Role", "Signer", "Signed at"], rows),
+             "<p class='ok'>Every released branch above carries two distinct human "
+             "sign-offs.</p>"]
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -211,6 +282,9 @@ def _render_html(p: dict) -> str:
     diff_summary = _render_diff(diff)
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
+    materiality_block = _render_materiality(p.get("materiality", {}))
+    recruit_block = _render_recruit(p.get("recruit", {}))
+    release_block = _render_release(p.get("release", {}))
     pending = p.get("pending", [])
     pending_section = (
         "<h2>9. Pending (more Band agent keys required)</h2><ul>"
@@ -275,6 +349,10 @@ code {{ background: #0a0c10; padding: 1px 5px; border-radius: 4px; }}
 <h2>5. Statutory clocks</h2>
 {clock_rows}
 
+{materiality_block}
+
+{recruit_block}
+
 <h2>6. Cross-filing contradiction diff</h2>
 {diff_summary}
 
@@ -284,6 +362,8 @@ code {{ background: #0a0c10; padding: 1px 5px; border-radius: 4px; }}
 {filing_blocks or '<p>No filings drafted.</p>'}
 
 {chaos_block}
+
+{release_block}
 
 <h2>8. Byte-identical replay</h2>
 <p>Run-log SHA-256: <span class="hash">{_esc(replay.get('original_sha256', ''))}</span></p>

@@ -59,8 +59,10 @@ sys.path.insert(0, str(_CODE / "spikes"))
 from warden.clocks import ClockEngine  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import Disposition, IdempotencyLedger  # noqa: E402
+from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
+from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
@@ -68,8 +70,11 @@ from floor import roster  # noqa: E402
 from floor.claims import parse_claims  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
+from floor.materiality import assess_materiality  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
+from floor.recruit import (  # noqa: E402
+    UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.shell_adapter import LiveBand  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
@@ -104,7 +109,48 @@ TS_FACTS = "2026-06-16T02:31:00+00:00"
 TS_DRAFT = "2026-06-16T03:11:00+00:00"
 TS_DIFF = "2026-06-16T04:00:00+00:00"
 TS_RESOLVE = "2026-06-16T04:20:00+00:00"
+# Two-key release: the GC signs first, then Lena (Head of IR). Fixed, distinct
+# timestamps so replay is byte-stable and the order is visible in the packet.
+TS_SIGN_GC = "2026-06-16T04:50:00+00:00"
 TS_RELEASE = "2026-06-16T05:00:00+00:00"
+
+# The two distinct human signers of the two-key release gate (segregation of
+# duties). One key alone never releases; both are required.
+RELEASE_SIGNERS = (
+    ("general_counsel", "gc", TS_SIGN_GC),
+    ("head_of_ir", "lena", TS_RELEASE),
+)
+
+# UK runtime recruit: the moment a UK subsidiary is found in the blast radius and
+# the UK ICO Drafter is recruited. Its 72h GDPR clock starts HERE, not at T0.
+TS_UK_RECRUIT = "2026-06-16T03:40:00+00:00"
+TS_UK_FACTS = "2026-06-16T03:41:00+00:00"
+TS_UK_DRAFT = "2026-06-16T03:55:00+00:00"
+
+# A fact-record whose blast radius INCLUDES a UK subsidiary: the content that
+# drives the runtime recruit. The no-recruit fixture uses CANONICAL_FACTS, whose
+# blast radius does NOT name the UK, proving the recruit is content-driven.
+UK_IN_SCOPE_FACTS = {
+    **CANONICAL_FACTS,
+    "blast_radius": ["EU: Meridian Trust Bank N.V.",
+                     "UK: Meridian Trust UK Ltd (London subsidiary)"],
+}
+# The default blast radius names only the EU entity, so the UK recruit never
+# fires on a normal run.
+CANONICAL_FACTS["blast_radius"] = ["EU: Meridian Trust Bank N.V."]
+
+# Materiality fixtures. The MATERIAL fact-record is the real incident (millions of
+# regulated records, core banking). The IMMATERIAL one is a small, contained,
+# non-sensitive event that does not start the SEC clock. The verdict is the LLM's;
+# these only choose which fact-record the assessor sees.
+SEC_MATERIAL_FACTS = dict(CANONICAL_FACTS)
+SEC_IMMATERIAL_FACTS = {
+    **CANONICAL_FACTS,
+    "records_affected": 12,
+    "systems": ["internal staff cafeteria menu board"],
+    "data_categories": ["lunch_preferences"],
+    "containment": "contained",
+}
 
 # A1: the hour-6 fact amendment beat. records_affected is revised upward as
 # forensics complete; the SEC and NIS2 branches reopen and reconcile.
@@ -175,7 +221,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               warden=None, drafter=None, draft_fn=None,
               mode: str = "normal", clients: dict | None = None,
               draft_fns: dict | None = None,
-              provider_set: str = roster.PROVIDER_DEV) -> dict:
+              provider_set: str = roster.PROVIDER_DEV,
+              uk_recruit: bool = False, materiality: bool = False,
+              materiality_fn=None, sec_facts: dict | None = None,
+              uk_peers: list | None = None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -199,7 +248,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
     legacy = warden is not None or drafter is not None or draft_fn is not None
     if legacy:
         return _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
-    return _run_full_floor(out_dir, draft_timeout, mode, clients, draft_fns, provider_set)
+    return _run_full_floor(out_dir, draft_timeout, mode, clients, draft_fns,
+                           provider_set, uk_recruit=uk_recruit, materiality=materiality,
+                           materiality_fn=materiality_fn, sec_facts=sec_facts,
+                           uk_peers=uk_peers)
 
 
 # ----------------------------------------------------------------------------
@@ -207,7 +259,22 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
 # ----------------------------------------------------------------------------
 def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     clients: dict | None, draft_fns: dict | None,
-                    provider_set: str = roster.PROVIDER_DEV) -> dict:
+                    provider_set: str = roster.PROVIDER_DEV,
+                    uk_recruit: bool = False,
+                    materiality: bool = False,
+                    materiality_fn=None,
+                    sec_facts: dict | None = None,
+                    uk_peers: list | None = None) -> dict:
+    """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
+    recruit fires only when the fact-record blast radius names a UK subsidiary.
+
+    materiality: run the SEC materiality assessment before the SEC branch drafts.
+    If the verdict is not material, the Warden SUPPRESSES the SEC branch (terminal,
+    no SEC filing). materiality_fn injects the verdict in tests; sec_facts chooses
+    which fact-record the assessor sees on a live run.
+
+    The two-key release gate (Lena AND the GC) is ALWAYS active: every release on
+    the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
@@ -216,12 +283,19 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top.
     base_mode = "normal" if mode == "amendment" else mode
+    # When the UK recruit beat runs, Triage's fact-record carries a blast radius
+    # naming a UK subsidiary; that content is what drives the recruit.
+    fact_record = UK_IN_SCOPE_FACTS if uk_recruit else CANONICAL_FACTS
+    release_gate = TwoKeyReleaseGate()
 
     if live:
         _require_live(roster.WARDEN, "Warden", "BAND_API_KEY / BAND_AGENT_ID")
         _require_live(roster.TRIAGE, "Triage", "BAND_API_KEY_TRIAGE / BAND_AGENT_ID_TRIAGE")
         for r in DRAFTER_ROLES:
             _require_live(r, f"{r.regime} Drafter", f"{r.key_env} / {r.id_env}")
+        if uk_recruit:
+            _require_live(roster.UK_DRAFTER, "UK ICO Drafter",
+                          f"{roster.UK_DRAFTER.key_env} / {roster.UK_DRAFTER.id_env}")
 
     log = RunLog()
     trace = StepTrace(log)
@@ -264,7 +338,14 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                         "mode": mode})
 
     # ---- Statutory clocks start at T0 ---------------------------------
+    # branch_corr maps every branch that could exist this run to its correlation
+    # id, including the UK branch which only materializes if the runtime recruit
+    # fires. DRAFTER_BRANCHES_THIS_RUN tracks which branches actually drafted, so
+    # the diff and the two-key release iterate the live set (UK appended only on
+    # an actual recruit).
     branch_corr = {r.branch: f"{INCIDENT_ID}:{r.branch}" for r in DRAFTER_ROLES}
+    branch_corr["uk"] = f"{INCIDENT_ID}:uk"
+    DRAFTER_BRANCHES_THIS_RUN = [r.branch for r in DRAFTER_ROLES]
     clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early", INCIDENT_T0, 24)
     clocks.start_hours("NIS2 full notification (72h)", branch_corr["nis2"], INCIDENT_T0, 72)
     clocks.start_hours("DORA major-incident (72h)", branch_corr["dora"], INCIDENT_T0, 72)
@@ -283,7 +364,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     fact_text = (
         "INCIDENT FACT-RECORD (canonical). Drafters: each draft your regime's "
         "mandatory notification from these facts only and post it back "
-        "@mentioning the Warden.\n" + _facts_block(CANONICAL_FACTS)
+        "@mentioning the Warden.\n" + _facts_block(fact_record)
     )
     res = triage.post(fact_text, mentions=mention_all,
                       dedup_key=f"factrecord:{INCIDENT_ID}")
@@ -292,6 +373,23 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         trace.record_handoff("Triage", f"{r.regime} Drafter", "fact_record", fact_msg_id)
     trace.say(f"[4] Triage posted the fact-record, @mentioned all drafters "
               f"(msg {fact_msg_id})")
+
+    # ---- Materiality: decide whether the SEC clock is even triggered ---
+    # The materiality assessment is an LLM judgment role; its verdict crosses into
+    # the deterministic warden/materiality.py gate as data. If "not material", the
+    # Warden emits SUPPRESS on the SEC branch (terminal SUPPRESSED): no SEC filing,
+    # SEC clock stopped. The DECISION is the LLM's; the gating is deterministic.
+    materiality_record = None
+    suppressed_branches: set[str] = set()
+    if materiality:
+        materiality_record = _materiality_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks,
+            branch_corr=branch_corr, provider_set=provider_set,
+            materiality_fn=materiality_fn,
+            sec_facts=sec_facts if sec_facts is not None else fact_record,
+            draft_timeout=draft_timeout)
+        if not materiality_record["material"]:
+            suppressed_branches.add("sec")
 
     # ---- Drafters run SEQUENTIALLY (Featherless: one big model at a time)
     filings: list[dict] = []
@@ -302,6 +400,12 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         branch = r.branch
         corr = branch_corr[branch]
         client = drafters[branch]
+        if branch in suppressed_branches:
+            # A suppressed branch is terminal; it drafts nothing. The Warden does
+            # not drain a draft it will never receive.
+            trace.say(f"[5.{branch}] {r.regime} branch SUPPRESSED (not material); "
+                      f"no filing drafted.")
+            continue
         # The facts this drafter asserts. In inject_contradiction the SEC drafter
         # carries a perturbed incident_start; everyone else carries canonical.
         claim_facts = _claim_facts_for(branch, base_mode, corrupted=True)
@@ -331,21 +435,44 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             raise RuntimeError(f"Warden never observed the {r.regime} draft")
         claims_by_branch[branch] = observed
 
+    # ---- UK runtime recruit (content-driven). The UK ICO Drafter is discovered
+    # and recruited LIVE only if the blast radius names a UK subsidiary. Its 72h
+    # GDPR clock starts at the recruit moment, not at T0. -----------------
+    recruit_record = None
+    if uk_recruit:
+        recruit_record = _uk_recruit_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+            warden=warden, triage=triage, drafters=drafters, clients=clients,
+            warden_id=warden_id, triage_id=triage_id, room_id=room_id,
+            fact_record=fact_record, branch_corr=branch_corr,
+            draft_fns=draft_fns, draft_timeout=draft_timeout,
+            provider_set=provider_set, uk_peers=uk_peers, live=live,
+        )
+        if recruit_record["recruited"]:
+            DRAFTER_BRANCHES_THIS_RUN.append("uk")
+            # The raw FactClaims is for the diff only; it is not JSON-serializable,
+            # so pop it out of the record that lands in the Examiner Packet.
+            claims_by_branch["uk"] = recruit_record.pop("claims")
+            filings.append(recruit_record.pop("filing"))
+
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
         sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
     )
 
-    # ---- Signoff + human release stops every released branch's clock --
-    for r in DRAFTER_ROLES:
-        corr = branch_corr[r.branch]
+    # ---- Two-key signoff + human release. Segregation of duties: a filing
+    # releases only when BOTH Lena (Head of IR) AND the GC sign. One key alone
+    # never turns the lock. The gate is deterministic, composed outside the SM
+    # table; the Warden admits HUMAN_RELEASED only once the gate reports two keys.
+    for corr in [branch_corr[b] for b in DRAFTER_BRANCHES_THIS_RUN]:
         if sm.state(corr).value != "contradiction_checked":
             continue
         _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_DIFF, "warden", "warden")
-        _proto(sm, trace, corr, Event.HUMAN_RELEASED, TS_RELEASE, "lena", "human_owner")
+        _two_key_release(sm, trace, log, release_gate, corr)
         clocks.stop(corr, TS_RELEASE)
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_RELEASE})
-    trace.say(f"[8] Warden opened signoff; human released; clocks stopped")
+    trace.say(f"[8] Warden opened signoff; two-key release (GC + Lena); "
+              f"clocks stopped")
 
     # ---- A1: the amendment beat (agent-to-agent reconciliation) --------
     amendment = None
@@ -379,6 +506,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                      "byte_identical": byte_identical},
         amendment=amendment,
         provider_set=provider_set, provider_validation=provider_validation,
+        materiality=materiality_record, recruit=recruit_record,
+        release_gate=release_gate,
+        released_branches=[b for b in DRAFTER_BRANCHES_THIS_RUN
+                           if sm.state(branch_corr[b]).value == "released"],
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -847,6 +978,233 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
     }
 
 
+# ----------------------------------------------------------------------------
+# Two-key release gate (segregation of duties). A filing at AWAITING_HUMAN_SIGNOFF
+# releases only when BOTH distinct human keys sign: the GC, then Lena (Head of
+# IR). The gate is pure Python composed OUTSIDE the state-machine table. The
+# Warden records each sign-off, asks the gate, and admits HUMAN_RELEASED only
+# once two distinct keys are present. One key alone is recorded as withheld and
+# the branch stays in awaiting_human_signoff.
+# ----------------------------------------------------------------------------
+def _two_key_release(sm, trace, log, release_gate, corr: str) -> bool:
+    """Drive the two-key release for one branch. Returns True iff the branch
+    reached RELEASED. Records each sign-off and the withheld/released decisions in
+    the run log, so the segregation of duties is replay-verifiable."""
+    for role, actor, ts in RELEASE_SIGNERS:
+        decision = release_gate.sign(corr, role, actor, ts)
+        log.append("release_signoff", {
+            "correlation_id": corr, "role": role, "actor": actor, "ts": ts,
+            "released": decision.released,
+            "have_roles": sorted(decision.have_roles),
+            "missing_roles": sorted(decision.missing_roles),
+            "reason": decision.reason,
+        })
+        if not decision.released:
+            # First key only: the lock is NOT turned. The Warden does NOT emit
+            # HUMAN_RELEASED; the branch waits for the second distinct key.
+            trace.say(f"    [release] {corr}: {role} ({actor}) signed; "
+                      f"{decision.reason}")
+            continue
+        # Both keys present. NOW the Warden admits the HUMAN_RELEASED transition.
+        trace.say(f"    [release] {corr}: {role} ({actor}) signed; "
+                  f"both keys present, release admitted")
+        admitted = _proto(sm, trace, corr, Event.HUMAN_RELEASED, ts,
+                          actor, "human_owner")
+        if not admitted:
+            raise RuntimeError(f"two-key release rejected by the state machine for {corr}")
+        return True
+    return False
+
+
+# ----------------------------------------------------------------------------
+# Materiality phase. An LLM judgment role applies the SEC "substantial likelihood"
+# materiality standard to the fact-record. Its typed verdict crosses into the
+# deterministic warden/materiality.py gate as data. If "not material", the Warden
+# emits SUPPRESS on the SEC branch (terminal SUPPRESSED): no SEC filing, SEC clock
+# stopped. The DECISION is the LLM's; the Warden's gating of the branch is
+# deterministic and replay-verifiable.
+# ----------------------------------------------------------------------------
+def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
+                       materiality_fn, sec_facts, draft_timeout) -> dict:
+    corr = branch_corr["sec"]
+    # 1. Obtain the verdict. Tests inject materiality_fn(fact_record) -> verdict;
+    #    live runs call the Featherless materiality assessor.
+    if materiality_fn is not None:
+        verdict = materiality_fn(sec_facts)
+    else:
+        provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+        verdict = assess_materiality(
+            sec_facts, model=model, provider=provider, branch="sec",
+            timeout=draft_timeout)
+    if not isinstance(verdict, MaterialityVerdict):
+        raise RuntimeError("materiality assessor did not return a MaterialityVerdict")
+    log.append("materiality", {
+        "branch": "sec", "material": verdict.material,
+        "disposition": verdict.disposition(), "source": verdict.source,
+        "memo": verdict.memo,
+    })
+
+    # 2. Deterministic gate: proceed iff material.
+    proceed = materiality_gate(verdict)
+    trace.say(f"[4m] Materiality assessment (SEC): "
+              f"{'MATERIAL, clock stands' if proceed else 'NOT MATERIAL, suppressing'} "
+              f"(source {verdict.source})")
+
+    if not proceed:
+        # 3. The Warden drives the SEC branch to the terminal SUPPRESSED state.
+        #    SUPPRESS is legal from INITIATED (the SEC branch has only had
+        #    FACT_RECORD_POSTED), so move FACT_RECORD_READY -> SUPPRESSED.
+        admitted = _proto(sm, trace, corr, Event.SUPPRESS, TS_FACTS,
+                         "materiality", "materiality")
+        if not admitted:
+            raise RuntimeError("materiality SUPPRESS rejected by the state machine")
+        clocks.stop(corr, TS_FACTS)
+        log.append("clock_stopped", {"correlation_id": corr, "ts": TS_FACTS,
+                                     "reason": "sec_suppressed_not_material"})
+        trace.say(f"[4m] SEC branch SUPPRESSED (terminal); SEC 4-business-day "
+                  f"clock stopped, no filing.")
+
+    return {
+        "branch": "sec",
+        "material": verdict.material,
+        "disposition": verdict.disposition(),
+        "memo": verdict.memo,
+        "source": verdict.source,
+    }
+
+
+# ----------------------------------------------------------------------------
+# UK runtime-recruit phase. Triage's fact-record reveals a UK subsidiary in the
+# blast radius; ONLY THEN does the Warden discover the UK ICO Drafter over the
+# live Band peer list (token-match, since /agent/peers offers only not_in_chat),
+# recruit it with add_participant, start the UK 72h GDPR clock AT THE RECRUIT
+# MOMENT (not T0), and the UK drafter files. If the blast radius does NOT name
+# the UK, no recruit happens: the recruit is content-driven, not hardcoded.
+# ----------------------------------------------------------------------------
+def _uk_recruit_phase(*, sm, trace, log, clocks, ledger, warden, triage, drafters,
+                      clients, warden_id, triage_id, room_id, fact_record,
+                      branch_corr, draft_fns, draft_timeout, provider_set,
+                      uk_peers, live) -> dict:
+    target = UK_ICO_TARGET
+    in_scope = jurisdiction_in_blast_radius(fact_record, target.jurisdiction)
+    log.append("recruit_scan", {
+        "jurisdiction": target.jurisdiction,
+        "blast_radius": fact_record.get("blast_radius", []),
+        "in_scope": in_scope,
+    })
+    if not in_scope:
+        # Content-driven: the blast radius does not touch the UK, so the Warden
+        # does NOT recruit. This is the proof that the recruit is not hardcoded.
+        trace.say(f"[R] Blast radius does not name a {target.jurisdiction} "
+                  f"subsidiary; no runtime recruit. ({fact_record.get('blast_radius', [])})")
+        return {"recruited": False, "in_scope": False,
+                "blast_radius": fact_record.get("blast_radius", [])}
+
+    trace.say(f"[R1] Triage fact-record reveals a {target.jurisdiction} subsidiary "
+              f"in the blast radius. Warden discovering the {target.regime} Drafter "
+              f"over the live peer list ...")
+
+    # 1. Discover the UK ICO Drafter among peers NOT yet in the room (token-match).
+    peers = uk_peers if uk_peers is not None else warden.peers(not_in_chat=room_id)
+    peer = find_peer(peers, target.name_tokens)
+    if peer is None:
+        raise RuntimeError(
+            f"{target.regime} Drafter not found among peers for runtime recruit "
+            f"(tokens {target.name_tokens}); peers seen: {peers}")
+    uk_id = peer_id(peer)
+    if not uk_id:
+        raise RuntimeError(f"discovered {target.regime} peer has no id: {peer}")
+    log.append("recruit", {"jurisdiction": target.jurisdiction, "branch": target.branch,
+                           "peer_id": uk_id, "ts": TS_UK_RECRUIT,
+                           "matched_tokens": list(target.name_tokens)})
+    trace.say(f"[R2] Found {target.regime} Drafter peer {uk_id} by token-match; "
+              f"recruiting into room {room_id} via add_participant ...")
+
+    # 2. Recruit it into the live room.
+    warden.add_participant(uk_id, room_id)
+    trace.record_handoff("Warden", f"{target.regime} Drafter", "runtime_recruit", "")
+
+    # 3. The UK 72h GDPR clock starts AT THE RECRUIT MOMENT, not at T0. This is
+    #    the late-started fifth clock the Examiner Packet shows.
+    corr = branch_corr[target.branch]
+    clocks.start_hours(target.clock_name, corr, TS_UK_RECRUIT, target.clock_hours)
+    log.append("clock_started", {"clock": target.clock_name, "correlation_id": corr,
+                                 "started_at": TS_UK_RECRUIT,
+                                 "deadline": clocks.get(corr).deadline.isoformat(),
+                                 "late_started_at_recruit": True})
+    trace.say(f"[R3] {target.clock_name} started at the recruit moment "
+              f"{TS_UK_RECRUIT} (NOT incident T0).")
+
+    # 4. The UK branch opens its protocol: Triage @mentions the recruited drafter
+    #    with the fact-record. FACT_RECORD_POSTED on the UK branch.
+    _proto(sm, trace, corr, Event.FACT_RECORD_POSTED, TS_UK_FACTS, "triage", "triage")
+
+    # 5. Build the live UK client (or use the injected one), join, draft, post.
+    uk_client = _uk_client(clients, drafters, peer, uk_id)
+    uk_client.join(room_id)
+    uk_facts = {k: fact_record[k] for k in
+                ("incident_start_utc", "records_affected", "attacker", "containment")}
+    uk_fn = _uk_draft_fn(draft_fns, draft_timeout, provider_set)
+
+    _proto(sm, trace, corr, Event.DRAFT_STARTED, TS_UK_DRAFT, "uk_drafter", "drafter")
+    prose = uk_fn(uk_facts)
+    body = build_draft_body(prose, target.branch, uk_facts)
+    dedup_key = f"draft:{target.branch}:{INCIDENT_ID}:round-1"
+    ledger.record(dedup_key, 1, TS_UK_DRAFT)
+    uk_client.post(
+        f"{target.regime} mandatory notification draft attached.\n\n{body}",
+        mentions=[warden_id], dedup_key=dedup_key)
+    _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_UK_DRAFT, "uk_drafter", "drafter")
+    trace.record_handoff(f"{target.regime} Drafter", "Warden", "draft", "")
+    claims = parse_claims(body)
+    uk_provider, uk_model = roster.resolve(roster.UK_DRAFTER, provider_set)
+    trace.say(f"[R4] {target.regime} Drafter (recruited at runtime) filed on "
+              f"{uk_provider}:{uk_model}.")
+
+    return {
+        "recruited": True,
+        "in_scope": True,
+        "blast_radius": fact_record.get("blast_radius", []),
+        "jurisdiction": target.jurisdiction,
+        "regime": target.regime,
+        "branch": target.branch,
+        "peer_id": uk_id,
+        "recruit_ts": TS_UK_RECRUIT,
+        "clock_name": target.clock_name,
+        "clock_started_at": TS_UK_RECRUIT,
+        "claims": claims,
+        "filing": {"regime": target.regime, "by": f"{target.regime} Drafter",
+                   "model": uk_model, "provider": uk_provider, "text": body,
+                   "recruited_at_runtime": True},
+    }
+
+
+def _uk_client(clients, drafters, peer, uk_id):
+    """Resolve the UK drafter client. Tests inject it under clients['uk']; live
+    runs build a LiveBand on the UK agent key."""
+    if clients is not None and "uk" in clients:
+        return clients["uk"]
+    return LiveBand(api_key=roster.UK_DRAFTER.agent_key, agent_name="uk_drafter",
+                    dedup_namespace="draft:uk")
+
+
+def _uk_draft_fn(draft_fns, timeout, provider_set):
+    if draft_fns is not None and "uk" in draft_fns:
+        return draft_fns["uk"]
+    provider, model = roster.resolve(roster.UK_DRAFTER, provider_set)
+
+    def fn(claim_facts):
+        body_facts = dict(claim_facts)
+        # MiniMax-M2 is a reasoning model: it spends a few hundred tokens on an
+        # internal preamble before any visible content, so a 700-token budget can
+        # return empty. A larger budget draws the filing out. Featherless is
+        # flat-rate, so the extra tokens cost nothing on the dev plan.
+        return draft_filing(body_facts, model=model, provider=provider,
+                            regime=roster.UK_DRAFTER.regime, timeout=timeout,
+                            max_tokens=2000)
+    return fn
+
+
 def _characterize_fn_for(branch, regime, role, draft_fns, timeout,
                          provider_set=roster.PROVIDER_DEV):
     """Resolve the characterization drafter for one reconciliation turn. Tests
@@ -1010,7 +1368,8 @@ def _msg_id(post_result) -> str:
 def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
                      breached, filings, mode, ledger, replay_info,
                      amendment=None, provider_set=roster.PROVIDER_DEV,
-                     provider_validation=None) -> dict:
+                     provider_validation=None, materiality=None, recruit=None,
+                     release_gate=None, released_branches=None) -> dict:
     clock_rows = []
     for c in clocks.all():
         clock_rows.append({
@@ -1080,6 +1439,21 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "concurred_characterization": amendment["concurred_characterization"],
             "diff_passed_only_after_concur": amendment["diff_passed_only_after_concur"],
             "envelope_chain": amendment["envelope_history"],
+        }
+    if materiality is not None:
+        packet["materiality"] = materiality
+    if recruit is not None:
+        packet["recruit"] = recruit
+    if release_gate is not None:
+        packet["release"] = {
+            "required_roles": sorted(REQUIRED_ROLES),
+            "signoffs": [
+                {"correlation_id": s.correlation_id, "role": s.role,
+                 "actor": s.actor, "ts": s.ts}
+                for b in (released_branches or [])
+                for s in release_gate.signoffs(f"{INCIDENT_ID}:{b}")
+            ],
+            "released_branches": released_branches or [],
         }
     return packet
 
@@ -1284,13 +1658,29 @@ def main() -> int:
                         help="LLM provider set: dev (default, all Featherless, zero "
                              "AI/ML credit) or prod (AI/ML racing drafters + Featherless "
                              "hero open models)")
+    parser.add_argument("--uk-recruit", action="store_true",
+                        help="content-driven UK ICO runtime recruit: Triage's blast "
+                             "radius names a UK subsidiary, so the Warden discovers and "
+                             "recruits the UK ICO Drafter live and starts a 5th clock at "
+                             "the recruit moment")
+    parser.add_argument("--materiality", action="store_true",
+                        help="run the SEC materiality assessment; if the incident is "
+                             "not material the SEC branch is suppressed (no filing)")
+    parser.add_argument("--immaterial", action="store_true",
+                        help="with --materiality, feed the assessor the immaterial "
+                             "fixture so the SEC branch is suppressed on camera")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment]) > 1:
         print("Pick one of --inject-contradiction, --chaos, or --amendment.")
         return 1
+    if args.immaterial and not args.materiality:
+        print("--immaterial requires --materiality.")
+        return 1
     mode = "inject_contradiction" if args.inject_contradiction else \
            "chaos" if args.chaos else \
            "amendment" if args.amendment else "normal"
+    sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
+        else SEC_MATERIAL_FACTS if args.materiality else None
 
     try:
         from _env import load_env  # spikes/_env.py
@@ -1308,7 +1698,9 @@ def main() -> int:
               else "LIVE Band + AI/ML API split (prod)")
     print(f"=== Deadline Room floor run ({banner}) mode={mode} "
           f"provider={args.provider} ===\n")
-    packet = run_floor(mode=mode, provider_set=args.provider)
+    packet = run_floor(mode=mode, provider_set=args.provider,
+                       uk_recruit=args.uk_recruit, materiality=args.materiality,
+                       sec_facts=sec_facts)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0

@@ -36,6 +36,10 @@ class FakeRoom:
         self._seq = 0
         self.messages: list[dict] = []  # {id, sender, content, mentions, status_by:{agent}}
         self.participants: set[str] = set()
+        # Registry of agents that EXIST on the platform but are not yet in the
+        # room, so peers(not_in_chat=room) can surface them for a runtime recruit.
+        # Each entry is {"id":..., "name":..., "handle":...}.
+        self.directory: list[dict] = []
 
     def post(self, sender: str, content: str, mentions: list[str]) -> str:
         self._seq += 1
@@ -58,6 +62,12 @@ class FakeRoom:
             if m["id"] == mid:
                 m["lifecycle"][agent_id] = state
                 return
+
+    def peers_not_in_chat(self) -> list:
+        """Agents in the directory that are not yet participants in the room.
+        Mirrors the live /agent/peers?not_in_chat={room} surface."""
+        return [dict(p) for p in self.directory
+                if p.get("id") not in self.participants]
 
 
 class FakeBandClient:
@@ -88,6 +98,12 @@ class FakeBandClient:
     def add_participant(self, agent_id: str, chat_id: Optional[str] = None) -> dict:
         self._room.participants.add(agent_id)
         return {"data": {"status": "inactive"}}
+
+    def peers(self, not_in_chat: Optional[str] = None) -> list:
+        """Mirror BandAgentShell.peers: agents not yet in the room. The fake
+        ignores the not_in_chat value (there is one room) and reads the shared
+        directory minus current participants."""
+        return self._room.peers_not_in_chat()
 
     def context(self, chat_id: Optional[str] = None) -> list:
         return list(self._room.messages)

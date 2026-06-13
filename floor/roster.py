@@ -92,6 +92,26 @@ TRIAGE = Role(
     model="deepseek-ai/DeepSeek-V3.2",
 )
 
+# The UK ICO Drafter is recruited at RUNTIME (floor/recruit.py), only when a UK
+# subsidiary is in the incident blast radius. It is a real Band agent (keys in
+# .env as BAND_*_UK) but it is not added to the room at startup; the Warden
+# discovers and recruits it live when the content demands it. Its model is the
+# latest MiniMax on Featherless, the open-model data-sovereignty story.
+UK_DRAFTER = Role(
+    role="drafter", name="UK ICO Drafter", branch="uk", regime="UK ICO",
+    key_env="BAND_API_KEY_UK", id_env="BAND_AGENT_ID_UK",
+    model="MiniMaxAI/MiniMax-M2",
+)
+
+# Materiality is an LLM judgment role (floor/materiality.py) that decides whether
+# the SEC clock is triggered at all. On dev it runs on Featherless. It is not a
+# separate Band agent on the floor; it is invoked in-process by the Warden's
+# orchestration and its verdict crosses into the deterministic gate as data.
+MATERIALITY = Role(
+    role="materiality", name="Materiality Assessor", branch="sec", regime="SEC",
+    key_env="", id_env="", model="deepseek-ai/DeepSeek-V3.2",
+)
+
 ALL_ROLES = [WARDEN, NIS2_DRAFTER, SEC_DRAFTER, DORA_DRAFTER, TRIAGE]
 
 
