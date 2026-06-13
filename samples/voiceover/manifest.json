@@ -1,0 +1,60 @@
+{
+  "endpoint": "https://api.aimlapi.com/v1/tts",
+  "model": "openai/tts-1-hd",
+  "clips": [
+    {
+      "clip_id": "cold-open-dinner",
+      "file": "cold-open-dinner.mp3",
+      "voice": "onyx",
+      "model": "openai/tts-1-hd",
+      "text": "The second a bank gets hacked, four government clocks start counting down. Deadline Room runs four parallel filing teams to hit every clock, physically blocks submission if any two reports disagree, and keeps running even when you kill an agent mid-race. The books always come out exactly right.",
+      "bytes": 369600,
+      "sha256": "3471ee2f8e797dc7fa84620b50ac3c0730db0308f9d7162170c03b23c16e5412"
+    },
+    {
+      "clip_id": "separator",
+      "file": "separator.mp3",
+      "voice": "onyx",
+      "model": "openai/tts-1-hd",
+      "text": "Deadline Room is the only system where four government clocks race at once, a no-AI referee blocks submission the instant any two reports disagree, the AI teams correct each other when the facts change, and even when you kill an agent live the books still come out exactly right.",
+      "bytes": 352800,
+      "sha256": "fa2f6fc3cb68945497b096894271d3f27c14e74be970ac5c6fe96118a7daad53"
+    },
+    {
+      "clip_id": "verdict-contradiction",
+      "file": "verdict-contradiction.mp3",
+      "voice": "onyx",
+      "model": "openai/tts-1-hd",
+      "text": "Submission blocked. Two filings disagree on a load-bearing fact. The referee refuses signoff until they reconcile.",
+      "bytes": 143040,
+      "sha256": "855b8dcaeb76670f0864a1445caa33de908faf294fda99379d870c3ce01aa341"
+    },
+    {
+      "clip_id": "guarantee-exactly-once",
+      "file": "guarantee-exactly-once.mp3",
+      "voice": "sage",
+      "model": "openai/tts-1-hd",
+      "text": "Exactly-once verified. Even when an agent is killed mid-filing, the report lands exactly once.",
+      "bytes": 111840,
+      "sha256": "a9637239371a065ec401456c5df10ce33273926f74c5335012834bd958e2cd85"
+    },
+    {
+      "clip_id": "guarantee-replay",
+      "file": "guarantee-replay.mp3",
+      "voice": "sage",
+      "model": "openai/tts-1-hd",
+      "text": "Replay byte-identical. The whole run reproduces from its log, hash for hash.",
+      "bytes": 94080,
+      "sha256": "1b6edce063297915ef2b9bfc3c8d296c4080dcfb5d9eec604892e68c17b5d979"
+    },
+    {
+      "clip_id": "packet-outro",
+      "file": "packet-outro.mp3",
+      "voice": "sage",
+      "model": "openai/tts-1-hd",
+      "text": "Four of four clocks met. Zero contradictions. Exactly-once verified. One amendment reconciled.",
+      "bytes": 112800,
+      "sha256": "e695f7fcc61e5f1ffed110314cee33271c4f7e5ec762cd6f2df13f026628e3b7"
+    }
+  ]
+}
