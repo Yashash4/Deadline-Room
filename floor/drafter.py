@@ -88,7 +88,32 @@ def llm_complete(provider: str, model: str, messages: list[dict], *,
         raise DrafterError(f"{provider} malformed response: {body}") from e
     if not content:
         raise DrafterError(f"{provider} returned empty content")
-    return content
+    return sanitize_llm_text(content)
+
+
+# Models sometimes emit em/en dashes, unicode hyphens, smart quotes, and ellipses.
+# This artifact (the Examiner Packet) must stay free of em/en dashes and reads
+# cleanest in plain ASCII punctuation, so normalize every LLM output at the one
+# chokepoint before it can reach a filing or the packet.
+_PUNCT_MAP = {
+    "—": ", ",   # em dash
+    "–": "-",     # en dash
+    "‒": "-",     # figure dash
+    "―": "-",     # horizontal bar
+    "‑": "-",     # non-breaking hyphen
+    "‐": "-",     # hyphen
+    "‘": "'", "’": "'",          # single smart quotes
+    "“": '"', "”": '"',          # double smart quotes
+    "…": "...",   # ellipsis
+    " ": " ",     # non-breaking space
+}
+
+
+def sanitize_llm_text(text: str) -> str:
+    """Normalize model output to clean ASCII punctuation (no em/en dashes)."""
+    for bad, good in _PUNCT_MAP.items():
+        text = text.replace(bad, good)
+    return text.replace(",  ", ", ")
 
 
 def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:

@@ -554,7 +554,7 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
                       f"(ledger {entry.disposition.value}), no double draft")
             return
         trace.say(f"    {regime} Drafter saw the mention (msg {mid}); calling "
-                  f"Featherless ...")
+                  f"its assigned model ...")
         prose = draft_fn(claim_facts)
         body = build_draft_body(prose, branch, claim_facts)
         ledger.record(dedup_key, attempt, TS_DRAFT)
@@ -1525,7 +1525,7 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     def drafter_handle(message: dict, context: list) -> dict | None:
         mid = message["id"]
         trace.record_lifecycle(mid, "processing")
-        trace.say(f"    NIS2 Drafter saw mention (msg {mid}); calling Featherless "
+        trace.say(f"    NIS2 Drafter saw mention (msg {mid}); calling its model "
                   f"{nis2_role.model} ...")
         text = draft_fn(CANONICAL_FACTS)
         drafted["text"] = text
