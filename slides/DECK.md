@@ -15,7 +15,7 @@ live kill, byte-identical replay, and the contradiction veto.
 - The second a bank gets breached, four government clocks start.
 - Four agent teams race to file four different reports in parallel.
 - A deterministic referee holds the clocks and refuses any unsafe handoff.
-- 104 property tests passing, byte-identical replay, exactly-once under live kill.
+- 133 property tests passing, byte-identical replay, exactly-once under live kill.
 
 Speaker note: open on the cover, the four countdown clocks already ticking and
 the red VETO banner visible. Say the dinner sentence in full before anything

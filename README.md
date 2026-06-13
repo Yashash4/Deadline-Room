@@ -2,7 +2,7 @@
 
 **The second a bank gets breached, four government clocks start. Deadline Room runs the filing teams as agents racing those clocks through Band, while a deterministic referee refuses any handoff that breaks the rules.**
 
-![tests](https://img.shields.io/badge/tests-104%20passing-3fd07f)
+![tests](https://img.shields.io/badge/tests-133%20passing-3fd07f)
 ![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)
 ![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)
 ![license](https://img.shields.io/badge/license-MIT-8b9bb4)
@@ -40,7 +40,7 @@ Every command below was run on this repo against live Band and live Featherless.
 
 | What | Command | What you see |
 |---|---|---|
-| The property suite | `py -m pytest tests/ -q` | `104 passed` |
+| The property suite | `py -m pytest tests/ -q` | `133 passed` |
 | A clean incident, end to end | `py floor/run_floor.py` | Examiner Packet, diff GREEN, replay True |
 | The contradiction veto | `py floor/run_floor.py --inject-contradiction` | the red BLOCKED block, then re-run GREEN |
 | Exactly-once under a live kill | `py floor/run_floor.py --chaos` | the duplicate dropped, filing lands once |
@@ -52,8 +52,8 @@ Every command below was run on this repo against live Band and live Featherless.
 ```
 $ py -m pytest tests/ -q
 ........................................................................ [ 69%]
-................................                                         [100%]
-104 passed in 0.62s
+.............................................................            [100%]
+133 passed in 0.85s
 ```
 
 ### 2. A clean incident: four clocks, the Examiner Packet, byte-identical replay
@@ -270,7 +270,7 @@ py floor/run_floor.py
 cd web && py -m http.server 8000   # then open http://localhost:8000
 ```
 
-The 104-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
+The 133-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
 
 ## Demo and video
 
