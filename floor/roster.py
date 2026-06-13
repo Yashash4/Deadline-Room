@@ -153,6 +153,12 @@ PROD_OVERRIDES: dict[str, tuple[str, str]] = {
 # and the startup availability check; they apply directly when their Band agent
 # is wired (UK ICO key + id already exist in .env as BAND_*_UK).
 MATERIALITY_HERO = (FEATHERLESS, "deepseek-ai/DeepSeek-V3.2")
+# The second independent open model that cross-checks the same SEC materiality
+# judgment when --second-opinion is set. A DIFFERENT family from the primary
+# (MiniMax vs DeepSeek), so their agreement is real corroboration and not one
+# model agreeing with itself. Sequential with the primary, so only one big model
+# runs at a time; the pinned two-model set stays under the switch cap.
+MATERIALITY_SECOND_HERO = (FEATHERLESS, "MiniMaxAI/MiniMax-M2.7")
 UK_HERO = (FEATHERLESS, "MiniMaxAI/MiniMax-M2.7")
 
 
@@ -195,6 +201,7 @@ def prod_featherless_hero_models() -> dict[str, str]:
     summary but do not need a credit-spending validation call."""
     return {
         "Materiality": MATERIALITY_HERO[1],
+        "Materiality (second opinion)": MATERIALITY_SECOND_HERO[1],
         "UK ICO Drafter": UK_HERO[1],
     }
 

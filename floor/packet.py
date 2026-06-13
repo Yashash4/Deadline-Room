@@ -189,9 +189,57 @@ def _render_materiality(m: dict) -> str:
              f"<code>{_esc(m.get('source'))}</code>. The verdict crosses into the "
              f"deterministic Warden gate as data; the Warden's gating of the branch "
              f"({_esc(disposition)}) is pure Python, replay-verifiable.</p>"]
+    so = m.get("second_opinion")
+    if so:
+        parts.append(_render_second_opinion(so))
     if m.get("memo"):
         parts.append("<p class='sub'>Materiality memo:</p>")
         parts.append(f"<pre>{_esc(m.get('memo'))}</pre>")
+    return "".join(parts)
+
+
+def _render_second_opinion(so: dict) -> str:
+    """Additive: render the two independent open-model opinions that cross-checked
+    the SEC materiality judgment, the AGREE/DISAGREE badge, and on disagreement the
+    escalation banner with both memos. Only emitted when --second-opinion ran; the
+    single-source materiality rendering above is untouched for ordinary runs."""
+    agreement = (so.get("agreement") or "").lower()
+    escalated = bool(so.get("escalated"))
+    badge_cls = "bad" if escalated else "ok"
+    badge = "DISAGREE" if agreement == "disagree" else "AGREE"
+
+    def _row(label, model, material, memo):
+        verdict = "MATERIAL" if material else "NOT MATERIAL"
+        return ("<tr><td><strong>" + _esc(label) + "</strong><br>"
+                "<code>" + _esc(model) + "</code></td>"
+                "<td>" + _esc(verdict) + "</td>"
+                "<td>" + _esc(memo) + "</td></tr>")
+
+    parts = [
+        "<h3>5b.i Two-model cross-check (open Featherless families)</h3>",
+        f"<p class='{badge_cls}'><strong>Second opinion: {badge}.</strong> "
+        "Two independent open models assessed the single most load-bearing "
+        "compliance judgment; their verdicts are recorded as evidence.</p>",
+        "<table><thead><tr><th>Model</th><th>Verdict</th><th>Memo</th></tr></thead><tbody>",
+        _row("Primary", so.get("primary_model"), so.get("primary_material"),
+             so.get("primary_memo")),
+        _row("Second opinion", so.get("second_model"), so.get("second_material"),
+             so.get("second_memo")),
+        "</tbody></table>",
+    ]
+    if escalated:
+        parts.append(
+            "<p class='bad'><strong>Models disagreed, escalated to human, branch "
+            "NOT suppressed pending review.</strong> The conservative reconcile "
+            "treats the judgment as material (proceed) rather than silently "
+            "suppressing a branch one qualified model judged reportable. No third "
+            "model adjudicates; a human reviews both memos above.</p>")
+    else:
+        parts.append(
+            "<p class='sub'>Both independent open models concurred. The agreement "
+            "is written into the record as corroboration; the reconciled verdict "
+            "flows to the same deterministic gate as a single structured "
+            "MaterialityVerdict.</p>")
     return "".join(parts)
 
 

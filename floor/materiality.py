@@ -77,3 +77,44 @@ def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.
     memo = _VERDICT.sub("", text).strip()
     return MaterialityVerdict(branch=branch, material=material, memo=memo,
                               source=f"{provider}:{model}")
+
+
+def assess_materiality_two_opinions(fact_record: dict, *,
+                                    primary: tuple[str, str],
+                                    second: tuple[str, str],
+                                    branch: str = "sec",
+                                    api_key: str | None = None,
+                                    primary_max_tokens: int = 500,
+                                    second_max_tokens: int = 2000,
+                                    timeout: int = 90
+                                    ) -> tuple[MaterialityVerdict, MaterialityVerdict, str]:
+    """Run the materiality judgment on TWO different open models SEQUENTIALLY and
+    return both typed verdicts plus an agreement string ("agree" | "disagree").
+
+    `primary` and `second` are (provider, model) pairs from the verified roster
+    (DeepSeek-V3.2 then MiniMax-M2.7). The two calls run one after another, never
+    concurrently: Featherless permits only one big model at a time, so this adds
+    one sequential big-model call before the drafter loop, not a parallel one. The
+    pinned two-model set stays well under the 4-switches-per-minute cap, and each
+    call carries the same small fact-record payload (no 32K context pressure).
+
+    The two roles get DIFFERENT token budgets on purpose. The primary (DeepSeek, an
+    instruct model) emits the memo plus verdict in a lean budget. The second model
+    is the latest MiniMax, a reasoning model that spends a few hundred tokens on an
+    internal preamble before any visible content, so a small budget can return
+    empty; it gets the same larger budget the UK drafter already uses for this
+    model. Featherless is flat-rate, so the extra tokens cost nothing on dev.
+
+    The reconciliation into a single verdict is NOT done here; that is pure-Python
+    Warden-side logic in warden/second_opinion.py. This function only gathers the
+    two data points."""
+    p_provider, p_model = primary
+    s_provider, s_model = second
+    v_primary = assess_materiality(
+        fact_record, model=p_model, provider=p_provider, branch=branch,
+        api_key=api_key, max_tokens=primary_max_tokens, timeout=timeout)
+    v_second = assess_materiality(
+        fact_record, model=s_model, provider=s_provider, branch=branch,
+        api_key=api_key, max_tokens=second_max_tokens, timeout=timeout)
+    agreement = "agree" if v_primary.material == v_second.material else "disagree"
+    return v_primary, v_second, agreement

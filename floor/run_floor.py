@@ -60,6 +60,7 @@ from warden.clocks import ClockEngine  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import Disposition, IdempotencyLedger  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
+from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
 from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
@@ -70,7 +71,8 @@ from floor import roster  # noqa: E402
 from floor.claims import parse_claims  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
-from floor.materiality import assess_materiality  # noqa: E402
+from floor.materiality import (  # noqa: E402
+    assess_materiality, assess_materiality_two_opinions)
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
 from floor.recruit import (  # noqa: E402
@@ -224,7 +226,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               provider_set: str = roster.PROVIDER_DEV,
               uk_recruit: bool = False, materiality: bool = False,
               materiality_fn=None, sec_facts: dict | None = None,
-              uk_peers: list | None = None) -> dict:
+              uk_peers: list | None = None, second_opinion: bool = False,
+              second_opinion_fn=None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -251,7 +254,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
     return _run_full_floor(out_dir, draft_timeout, mode, clients, draft_fns,
                            provider_set, uk_recruit=uk_recruit, materiality=materiality,
                            materiality_fn=materiality_fn, sec_facts=sec_facts,
-                           uk_peers=uk_peers)
+                           uk_peers=uk_peers, second_opinion=second_opinion,
+                           second_opinion_fn=second_opinion_fn)
 
 
 # ----------------------------------------------------------------------------
@@ -264,7 +268,9 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     materiality: bool = False,
                     materiality_fn=None,
                     sec_facts: dict | None = None,
-                    uk_peers: list | None = None) -> dict:
+                    uk_peers: list | None = None,
+                    second_opinion: bool = False,
+                    second_opinion_fn=None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -387,7 +393,9 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             branch_corr=branch_corr, provider_set=provider_set,
             materiality_fn=materiality_fn,
             sec_facts=sec_facts if sec_facts is not None else fact_record,
-            draft_timeout=draft_timeout)
+            draft_timeout=draft_timeout,
+            second_opinion=second_opinion,
+            second_opinion_fn=second_opinion_fn)
         if not materiality_record["material"]:
             suppressed_branches.add("sec")
 
@@ -1025,11 +1033,64 @@ def _two_key_release(sm, trace, log, release_gate, corr: str) -> bool:
 # deterministic and replay-verifiable.
 # ----------------------------------------------------------------------------
 def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
-                       materiality_fn, sec_facts, draft_timeout) -> dict:
+                       materiality_fn, sec_facts, draft_timeout,
+                       second_opinion=False, second_opinion_fn=None) -> dict:
     corr = branch_corr["sec"]
-    # 1. Obtain the verdict. Tests inject materiality_fn(fact_record) -> verdict;
-    #    live runs call the Featherless materiality assessor.
-    if materiality_fn is not None:
+    # 1. Obtain the verdict. Three shapes, all ending in ONE MaterialityVerdict
+    #    that the unchanged deterministic gate then consumes:
+    #
+    #    a) single-model default (unchanged path, the existing 5 tests). Tests
+    #       inject materiality_fn(fact_record) -> verdict; live runs call the
+    #       Featherless materiality assessor.
+    #    b) opt-in second opinion: run the judgment on TWO independent open models
+    #       sequentially, then warden.second_opinion.reconcile collapses the two
+    #       typed verdicts into one by the conservative rule (agree -> that
+    #       boolean; disagree -> proceed + human escalation). The reconcile is
+    #       pure Python; the gate still gates on a single verdict.
+    second_opinion_record = None
+    if second_opinion:
+        if second_opinion_fn is not None:
+            v_primary, v_second = second_opinion_fn(sec_facts)
+            if not (isinstance(v_primary, MaterialityVerdict)
+                    and isinstance(v_second, MaterialityVerdict)):
+                raise RuntimeError("second_opinion_fn must return two MaterialityVerdicts")
+            agreement = ("agree" if v_primary.material == v_second.material
+                         else "disagree")
+        else:
+            v_primary, v_second, agreement = assess_materiality_two_opinions(
+                sec_facts,
+                primary=roster.MATERIALITY_HERO,
+                second=roster.MATERIALITY_SECOND_HERO,
+                branch="sec", timeout=draft_timeout)
+        result = reconcile_second_opinion(v_primary, v_second)
+        verdict = result.verdict
+        second_opinion_record = {
+            "primary_model": result.primary.source,
+            "second_model": result.second.source,
+            "primary_material": result.primary.material,
+            "second_material": result.second.material,
+            "primary_memo": result.primary.memo,
+            "second_memo": result.second.memo,
+            "agreement": result.agreement,
+            "escalated": result.escalated,
+        }
+        log.append("materiality_second_opinion", {
+            "branch": "sec",
+            "primary_model": result.primary.source,
+            "second_model": result.second.source,
+            "primary_material": result.primary.material,
+            "second_material": result.second.material,
+            "agreement": result.agreement,
+            "escalated": result.escalated,
+        })
+        trace.say(f"[4m] Second opinion: {result.primary.source}="
+                  f"{'material' if result.primary.material else 'not material'}, "
+                  f"{result.second.source}="
+                  f"{'material' if result.second.material else 'not material'} -> "
+                  f"{result.agreement.upper()}"
+                  + (" (escalated to human; branch NOT suppressed)"
+                     if result.escalated else ""))
+    elif materiality_fn is not None:
         verdict = materiality_fn(sec_facts)
     else:
         provider, model = roster.resolve(roster.MATERIALITY, provider_set)
@@ -1064,13 +1125,16 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
         trace.say(f"[4m] SEC branch SUPPRESSED (terminal); SEC 4-business-day "
                   f"clock stopped, no filing.")
 
-    return {
+    record = {
         "branch": "sec",
         "material": verdict.material,
         "disposition": verdict.disposition(),
         "memo": verdict.memo,
         "source": verdict.source,
     }
+    if second_opinion_record is not None:
+        record["second_opinion"] = second_opinion_record
+    return record
 
 
 # ----------------------------------------------------------------------------
@@ -1669,12 +1733,21 @@ def main() -> int:
     parser.add_argument("--immaterial", action="store_true",
                         help="with --materiality, feed the assessor the immaterial "
                              "fixture so the SEC branch is suppressed on camera")
+    parser.add_argument("--second-opinion", action="store_true",
+                        help="with --materiality, run the SEC materiality judgment on "
+                             "TWO independent open Featherless models sequentially "
+                             "(DeepSeek-V3.2 + MiniMax-M2.7); a pure-Python reconcile "
+                             "collapses them into one verdict (agree, or conservative "
+                             "proceed plus human escalation on disagreement)")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment]) > 1:
         print("Pick one of --inject-contradiction, --chaos, or --amendment.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
+        return 1
+    if args.second_opinion and not args.materiality:
+        print("--second-opinion requires --materiality.")
         return 1
     mode = "inject_contradiction" if args.inject_contradiction else \
            "chaos" if args.chaos else \
@@ -1700,7 +1773,7 @@ def main() -> int:
           f"provider={args.provider} ===\n")
     packet = run_floor(mode=mode, provider_set=args.provider,
                        uk_recruit=args.uk_recruit, materiality=args.materiality,
-                       sec_facts=sec_facts)
+                       sec_facts=sec_facts, second_opinion=args.second_opinion)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0
