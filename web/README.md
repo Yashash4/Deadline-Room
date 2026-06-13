@@ -81,10 +81,10 @@ same way: publish directory `web`, no build command.
 
 ## Files
 
-- `index.html` — the page shell and panels.
-- `styles.css` — the enterprise dark theme.
-- `app.js` — scenario loading, timeline build, animation, and the client-side hash verify.
-- `data/manifest.json` — the scenario index the app reads first.
-- `data/packet-*.json` — one Examiner Packet per scenario.
-- `data/run-inc-8842-*.jsonl` — the matching run logs the hash verify re-hashes.
-- `capture_scenarios.py` — regenerates everything under `data/`.
+- `index.html`: the page shell and panels.
+- `styles.css`: the enterprise dark theme.
+- `app.js`: scenario loading, timeline build, animation, and the client-side hash verify.
+- `data/manifest.json`: the scenario index the app reads first.
+- `data/packet-*.json`: one Examiner Packet per scenario.
+- `data/run-inc-8842-*.jsonl`: the matching run logs the hash verify re-hashes.
+- `capture_scenarios.py`: regenerates everything under `data/`.

@@ -99,7 +99,7 @@ let playTimer = null;
 
 // ============================================================================
 // Build the ordered timeline of steps from the packet.
-// Each step: { ts, kind, actor, label, apply(viewState) } — but we keep it data
+// Each step: { ts, kind, actor, label, apply(viewState) }: but we keep it data
 // driven: a step records what becomes true, and render(cursor) reduces all steps
 // up to the cursor into the live view.
 // ============================================================================
