@@ -14,12 +14,25 @@ import os
 
 import requests
 
+from floor.claims import emit_claims
+
 FEATHERLESS_BASE = "https://api.featherless.ai/v1"
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3.2"  # fast, clean content, the hero open model
 
 
 class DrafterError(RuntimeError):
     pass
+
+
+def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
+    """Assemble the message a drafter posts back: the LLM prose followed by the
+    deterministic structured-claims block the Warden diffs.
+
+    claim_facts is the fact dict this drafter is asserting (normally the shared
+    fact-record; in the contradiction demo one drafter's copy is perturbed). The
+    LLM never formats the claims; the drafter process attaches them, so the
+    load-bearing facts are deterministic and the Warden's diff is checkable."""
+    return prose.rstrip() + "\n\n" + emit_claims(branch, claim_facts)
 
 
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,

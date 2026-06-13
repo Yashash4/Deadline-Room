@@ -38,6 +38,75 @@ def _rows(headers: list[str], rows: list[list]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
+def _render_diff(diff: dict) -> str:
+    """Render the contradiction-diff section. Supports the legacy single-drafter
+    shape ({"conflicts": [...]}) and the full-floor shape
+    ({"blocked_conflicts": [...], "resolution": {...}, "final_claims": {...}})."""
+    if "blocked_conflicts" in diff or "final_claims" in diff:
+        blocked = diff.get("blocked_conflicts", [])
+        resolution = diff.get("resolution")
+        final_claims = diff.get("final_claims", {})
+        parts = []
+        if blocked:
+            parts.append(
+                "<p class='bad'><strong>Contradiction caught. The Warden BLOCKED "
+                "the awaiting_human_signoff transition.</strong></p>")
+            parts.append("<ul class='bad'>" + "".join(
+                f"<li>{_esc(c)}</li>" for c in blocked) + "</ul>")
+            if resolution:
+                parts.append(
+                    "<p class='ok'>Resolution: corrected "
+                    f"<code>{_esc(resolution.get('corrected_field'))}</code> on "
+                    f"<code>{_esc(resolution.get('fixed_branch'))}</code> from "
+                    f"<code>{_esc(resolution.get('from_value'))}</code> to "
+                    f"<code>{_esc(resolution.get('to_value'))}</code>. The diff "
+                    "re-ran GREEN and signoff was unblocked.</p>")
+        else:
+            parts.append("<p class='ok'>No cross-filing contradictions: diff is GREEN.</p>")
+        if final_claims:
+            rows = [[b, c.get("incident_start_utc"), c.get("records_affected"),
+                     c.get("attacker"), c.get("containment")]
+                    for b, c in final_claims.items()]
+            parts.append("<p class='sub'>Final reconciled claims (UTC-canonical):</p>")
+            parts.append(_rows(
+                ["Branch", "incident_start_utc", "records_affected", "attacker",
+                 "containment"], rows))
+        return "".join(parts)
+    # legacy shape
+    conflicts = diff.get("conflicts", [])
+    if not conflicts:
+        return "<p class='ok'>No cross-filing contradictions: diff is GREEN.</p>"
+    return "<ul class='bad'>" + "".join(
+        f"<li>{_esc(c)}</li>" for c in conflicts) + "</ul>"
+
+
+def _render_chaos(chaos: dict) -> str:
+    """Render the chaos / exactly-once evidence section, if --chaos was run."""
+    events = chaos.get("events", [])
+    ledger = chaos.get("ledger", [])
+    dropped = chaos.get("duplicates_dropped", 0)
+    if not events and not ledger:
+        return ""
+    parts = ["<h2>7b. Chaos kill and exactly-once recovery</h2>"]
+    if events:
+        parts.append("<ul>")
+        for e in events:
+            cls = "bad" if e.get("phase") == "kill" else "ok"
+            parts.append(
+                f"<li class='{cls}'><strong>{_esc(e.get('branch'))} "
+                f"[{_esc(e.get('phase'))}]</strong> {_esc(e.get('note'))}</li>")
+        parts.append("</ul>")
+    parts.append(
+        f"<p class='{'ok' if dropped else 'sub'}'>Duplicates dropped by the "
+        f"idempotency ledger: <strong>{_esc(dropped)}</strong>. Each filing "
+        "landed exactly once; no double draft.</p>")
+    if ledger:
+        parts.append(_rows(
+            ["Dedup key", "Attempt", "Disposition"],
+            [[e.get("key"), e.get("attempt"), e.get("disposition")] for e in ledger]))
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -75,16 +144,13 @@ def _render_html(p: dict) -> str:
         f"<pre>{_esc(f.get('text'))}</pre></div>"
         for f in filings
     )
-    diff_summary = (
-        "<p class='ok'>No cross-filing contradictions: diff is GREEN.</p>"
-        if not diff.get("conflicts")
-        else "<ul class='bad'>" + "".join(
-            f"<li>{_esc(c)}</li>" for c in diff.get("conflicts", [])) + "</ul>"
-    )
+    diff_summary = _render_diff(diff)
+    chaos_block = _render_chaos(p.get("chaos", {}))
     pending = p.get("pending", [])
-    pending_block = (
-        "<ul>" + "".join(f"<li>{_esc(x)}</li>" for x in pending) + "</ul>"
-        if pending else "<p>None.</p>"
+    pending_section = (
+        "<h2>9. Pending (more Band agent keys required)</h2><ul>"
+        + "".join(f"<li>{_esc(x)}</li>" for x in pending) + "</ul>"
+        if pending else ""
     )
 
     return f"""<!doctype html>
@@ -150,6 +216,8 @@ code {{ background: #0a0c10; padding: 1px 5px; border-radius: 4px; }}
 <h2>7. Drafted filings</h2>
 {filing_blocks or '<p>No filings drafted.</p>'}
 
+{chaos_block}
+
 <h2>8. Byte-identical replay</h2>
 <p>Run-log SHA-256: <span class="hash">{_esc(replay.get('original_sha256', ''))}</span></p>
 <p>Replayed SHA-256: <span class="hash">{_esc(replay.get('replayed_sha256', ''))}</span></p>
@@ -157,6 +225,5 @@ code {{ background: #0a0c10; padding: 1px 5px; border-radius: 4px; }}
   {'Replay reproduced the run log byte for byte.' if replay.get('byte_identical')
    else 'Replay did not match.'}</p>
 
-<h2>9. Pending (more Band agent keys required)</h2>
-{pending_block}
+{pending_section}
 </div></body></html>"""
