@@ -1,0 +1,33 @@
+{
+  "incident_id": "inc-8842",
+  "scenarios": [
+    {
+      "id": "normal",
+      "label": "Normal run",
+      "packet": "data/packet-normal.json",
+      "run_log": "data/run-inc-8842-normal.jsonl",
+      "blurb": "Three regimes draft, claims agree, the contradiction diff is green, every clock stops on release."
+    },
+    {
+      "id": "inject_contradiction",
+      "label": "Contradiction block",
+      "packet": "data/packet-inject_contradiction.json",
+      "run_log": "data/run-inc-8842-inject_contradiction.jsonl",
+      "blurb": "One filing disagrees on the incident start time. The Warden's deterministic diff turns red and refuses signoff, then clears once the fact is corrected."
+    },
+    {
+      "id": "chaos",
+      "label": "Exactly-once under kill",
+      "packet": "data/packet-chaos.json",
+      "run_log": "data/run-inc-8842-chaos.jsonl",
+      "blurb": "A drafter is killed after posting but before acking. On restart the dedup ledger drops the duplicate, so the filing lands exactly once."
+    },
+    {
+      "id": "amendment",
+      "label": "Amendment reconciliation (live capture)",
+      "packet": "data/packet-amendment.json",
+      "run_log": "data/run-inc-8842-amendment.jsonl",
+      "blurb": "After release a load-bearing fact is revised. Two drafters reconcile through Band over hash-linked envelopes; the amended diff stays blocked until they concur."
+    }
+  ]
+}

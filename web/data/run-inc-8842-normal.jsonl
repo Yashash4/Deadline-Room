@@ -1,0 +1,27 @@
+{"payload":{"band_room_id":"fake-room-1","drafter_ids":{"dora":"dora-id","nis2":"nis2-id","sec":"sec-id"},"mode":"normal","triage_id":"triage-id","warden_id":"warden-id"},"seq":0,"type":"room"}
+{"payload":{"clock":"NIS2 early warning (24h)","correlation_id":"inc-8842:nis2-early","deadline":"2026-06-17T02:14:00+00:00"},"seq":1,"type":"clock_started"}
+{"payload":{"clock":"NIS2 full notification (72h)","correlation_id":"inc-8842:nis2","deadline":"2026-06-19T02:14:00+00:00"},"seq":2,"type":"clock_started"}
+{"payload":{"clock":"DORA major-incident (72h)","correlation_id":"inc-8842:dora","deadline":"2026-06-19T02:14:00+00:00"},"seq":3,"type":"clock_started"}
+{"payload":{"clock":"SEC 8-K (4 business days)","correlation_id":"inc-8842:sec","deadline":"2026-06-23T23:59:59+00:00"},"seq":4,"type":"clock_started"}
+{"payload":{"actor":"triage","actor_role":"triage","admitted":true,"correlation_id":"inc-8842:nis2","event":"fact_record_posted","reason":null,"to_state":"fact_record_ready","ts":"2026-06-16T02:31:00+00:00"},"seq":5,"type":"protocol_event"}
+{"payload":{"actor":"triage","actor_role":"triage","admitted":true,"correlation_id":"inc-8842:sec","event":"fact_record_posted","reason":null,"to_state":"fact_record_ready","ts":"2026-06-16T02:31:00+00:00"},"seq":6,"type":"protocol_event"}
+{"payload":{"actor":"triage","actor_role":"triage","admitted":true,"correlation_id":"inc-8842:dora","event":"fact_record_posted","reason":null,"to_state":"fact_record_ready","ts":"2026-06-16T02:31:00+00:00"},"seq":7,"type":"protocol_event"}
+{"payload":{"actor":"nis2_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:nis2","event":"draft_started","reason":null,"to_state":"drafting","ts":"2026-06-16T03:11:00+00:00"},"seq":8,"type":"protocol_event"}
+{"payload":{"actor":"nis2_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:nis2","event":"draft_posted","reason":null,"to_state":"draft_submitted","ts":"2026-06-16T03:11:00+00:00"},"seq":9,"type":"protocol_event"}
+{"payload":{"actor":"sec_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:sec","event":"draft_started","reason":null,"to_state":"drafting","ts":"2026-06-16T03:11:00+00:00"},"seq":10,"type":"protocol_event"}
+{"payload":{"actor":"sec_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:sec","event":"draft_posted","reason":null,"to_state":"draft_submitted","ts":"2026-06-16T03:11:00+00:00"},"seq":11,"type":"protocol_event"}
+{"payload":{"actor":"dora_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:dora","event":"draft_started","reason":null,"to_state":"drafting","ts":"2026-06-16T03:11:00+00:00"},"seq":12,"type":"protocol_event"}
+{"payload":{"actor":"dora_drafter","actor_role":"drafter","admitted":true,"correlation_id":"inc-8842:dora","event":"draft_posted","reason":null,"to_state":"draft_submitted","ts":"2026-06-16T03:11:00+00:00"},"seq":13,"type":"protocol_event"}
+{"payload":{"conflicts":[],"round":1},"seq":14,"type":"diff"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:nis2","event":"diff_passed","reason":null,"to_state":"contradiction_checked","ts":"2026-06-16T04:00:00+00:00"},"seq":15,"type":"protocol_event"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:sec","event":"diff_passed","reason":null,"to_state":"contradiction_checked","ts":"2026-06-16T04:00:00+00:00"},"seq":16,"type":"protocol_event"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:dora","event":"diff_passed","reason":null,"to_state":"contradiction_checked","ts":"2026-06-16T04:00:00+00:00"},"seq":17,"type":"protocol_event"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:nis2","event":"signoff_opened","reason":null,"to_state":"awaiting_human_signoff","ts":"2026-06-16T04:00:00+00:00"},"seq":18,"type":"protocol_event"}
+{"payload":{"actor":"lena","actor_role":"human_owner","admitted":true,"correlation_id":"inc-8842:nis2","event":"human_released","reason":null,"to_state":"released","ts":"2026-06-16T05:00:00+00:00"},"seq":19,"type":"protocol_event"}
+{"payload":{"correlation_id":"inc-8842:nis2","ts":"2026-06-16T05:00:00+00:00"},"seq":20,"type":"clock_stopped"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:sec","event":"signoff_opened","reason":null,"to_state":"awaiting_human_signoff","ts":"2026-06-16T04:00:00+00:00"},"seq":21,"type":"protocol_event"}
+{"payload":{"actor":"lena","actor_role":"human_owner","admitted":true,"correlation_id":"inc-8842:sec","event":"human_released","reason":null,"to_state":"released","ts":"2026-06-16T05:00:00+00:00"},"seq":22,"type":"protocol_event"}
+{"payload":{"correlation_id":"inc-8842:sec","ts":"2026-06-16T05:00:00+00:00"},"seq":23,"type":"clock_stopped"}
+{"payload":{"actor":"warden","actor_role":"warden","admitted":true,"correlation_id":"inc-8842:dora","event":"signoff_opened","reason":null,"to_state":"awaiting_human_signoff","ts":"2026-06-16T04:00:00+00:00"},"seq":24,"type":"protocol_event"}
+{"payload":{"actor":"lena","actor_role":"human_owner","admitted":true,"correlation_id":"inc-8842:dora","event":"human_released","reason":null,"to_state":"released","ts":"2026-06-16T05:00:00+00:00"},"seq":25,"type":"protocol_event"}
+{"payload":{"correlation_id":"inc-8842:dora","ts":"2026-06-16T05:00:00+00:00"},"seq":26,"type":"clock_stopped"}

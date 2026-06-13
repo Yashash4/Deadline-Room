@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deadline Room: replay viewer</title>
+<meta name="description" content="Forensic replay viewer for the Deadline Room: a multi-agent regulated breach-reporting war room on Band. Replays captured live runs with byte-identical replay verification." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div class="brand-text">
+      <h1>Deadline Room</h1>
+      <p>multi-agent breach-reporting war room, replayed from a captured Band run</p>
+    </div>
+  </div>
+  <div class="scenario-picker">
+    <label for="scenario">Scenario</label>
+    <select id="scenario" aria-label="Choose a captured scenario"></select>
+  </div>
+</header>
+
+<div id="compression-banner" class="compression-banner" role="status"></div>
+
+<main>
+  <!-- Hero: the four racing clocks -->
+  <section class="panel clocks-panel">
+    <div class="panel-head">
+      <h2>Statutory clocks</h2>
+      <div class="clock-now">
+        <span class="muted">replay time</span>
+        <strong id="clock-now-ts">--</strong>
+      </div>
+    </div>
+    <div id="clocks" class="clocks-grid"></div>
+  </section>
+
+  <!-- Transport: scrubber -->
+  <section class="panel transport-panel">
+    <div class="transport">
+      <button id="play" class="btn primary" aria-label="Play or pause">Play</button>
+      <button id="restart" class="btn" aria-label="Restart">Restart</button>
+      <input id="scrubber" type="range" min="0" max="100" value="0" step="1" aria-label="Timeline scrubber" />
+      <div class="transport-meta">
+        <span id="step-label" class="step-label">step 0 / 0</span>
+        <select id="speed" class="speed" aria-label="Playback speed">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+        </select>
+      </div>
+    </div>
+    <div id="event-caption" class="event-caption">Press play to replay the captured run.</div>
+  </section>
+
+  <div class="grid-2">
+    <!-- The Band room coming alive -->
+    <section class="panel room-panel">
+      <div class="panel-head"><h2>The Band room</h2><span class="muted" id="room-id"></span></div>
+      <div id="roster" class="roster"></div>
+      <div id="feed" class="feed" aria-live="polite"></div>
+    </section>
+
+    <!-- Handoff graph + lifecycle + state -->
+    <section class="panel side-col">
+      <div class="subpanel">
+        <h3>Handoff graph</h3>
+        <p class="muted small">who @mentioned whom, lit as it happens</p>
+        <div id="handoffs" class="handoffs"></div>
+      </div>
+      <div class="subpanel">
+        <h3>Protocol state</h3>
+        <div id="branch-states" class="branch-states"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- The money beats -->
+  <section id="contradiction-section" class="panel beat-panel hidden">
+    <div class="panel-head"><h2>Contradiction veto</h2><span id="contradiction-badge" class="badge"></span></div>
+    <div id="contradiction-body"></div>
+  </section>
+
+  <section id="chaos-section" class="panel beat-panel hidden">
+    <div class="panel-head"><h2>Exactly-once under a live kill</h2></div>
+    <div id="chaos-body"></div>
+  </section>
+
+  <section id="reconciliation-section" class="panel beat-panel hidden">
+    <div class="panel-head"><h2>Amendment reconciliation</h2></div>
+    <div id="reconciliation-body"></div>
+  </section>
+
+  <!-- The Examiner Packet -->
+  <section class="panel packet-panel">
+    <div class="panel-head">
+      <h2>Examiner Packet</h2>
+      <span id="verdict-badge" class="badge"></span>
+    </div>
+    <div class="packet-grid">
+      <div class="packet-meta" id="packet-meta"></div>
+      <div class="replay-verify">
+        <h3>Byte-identical replay</h3>
+        <p class="small muted">Re-hash the bundled run log in your browser and compare it to the hash the Warden recorded. No server.</p>
+        <div class="hash-row"><span class="hash-label">recorded</span><code id="recorded-hash">--</code></div>
+        <div class="hash-row"><span class="hash-label">recomputed</span><code id="recomputed-hash">--</code></div>
+        <button id="verify" class="btn primary">Verify replay hash in browser</button>
+        <div id="verify-result" class="verify-result"></div>
+      </div>
+    </div>
+    <div class="filings">
+      <h3>Filings</h3>
+      <div id="filings" class="filings-grid"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span>Deadline Room on the Band platform. This page replays a captured live run; it is not a simulator.</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,634 @@
+{
+  "incident": {
+    "incident_id": "inc-8842",
+    "band_room_id": "35d8b273-6698-4981-a996-3af9726f4460",
+    "mode": "amendment",
+    "fact_record": {
+      "incident_id": "inc-8842",
+      "incident_start_utc": "2026-06-16T02:14:00+00:00",
+      "records_affected": 48211,
+      "attacker": "LockBit 3.0",
+      "containment": "partially_contained",
+      "systems": [
+        "core banking ledger",
+        "customer KYC store"
+      ],
+      "data_categories": [
+        "name",
+        "address",
+        "account_number"
+      ],
+      "regulated_entity": "Meridian Trust Bank N.V.",
+      "competent_authority": "national CSIRT (NIS2)"
+    }
+  },
+  "trace": [
+    "[1] Warden identity:  2a495c04-bc1e-429d-8a73-a75f827e55b6",
+    "    Triage identity:  2cc197a5-a919-461e-9ca8-eea5b80fe0b1",
+    "    NIS2 Drafter:  3aa52157-9ba6-4a9f-9304-90e5cdab875e (deepseek-ai/DeepSeek-V3.2)",
+    "    SEC Drafter:  e7c1a638-9ffe-4e05-bc1f-8c754f59bf91 (deepseek-ai/DeepSeek-V3-0324)",
+    "    DORA Drafter:  fedbb8d4-974d-42cd-8b22-0bd9f0c6e711 (Qwen/Qwen2.5-72B-Instruct)",
+    "[2] Warden created incident room 35d8b273-6698-4981-a996-3af9726f4460 and recruited Triage + 3 drafters",
+    "[3] Started 4 statutory clocks at T0 2026-06-16T02:14:00+00:00",
+    "[4] Triage posted the fact-record, @mentioned all drafters (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5)",
+    "[5.nis2] NIS2 Drafter draining /next for the mention ...",
+    "    NIS2 Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
+    "    NIS2 Drafter drafted 1161 chars, posted back @mention Warden (msg 4735d878-d359-40bd-9319-a5746c588ede)",
+    "[6.nis2] Warden draining /next for the NIS2 draft ...",
+    "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg 4735d878-d359-40bd-9319-a5746c588ede)",
+    "[5.sec] SEC Drafter draining /next for the mention ...",
+    "    SEC Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
+    "    SEC Drafter drafted 980 chars, posted back @mention Warden (msg bb3bbdba-cd0e-445a-8237-c4c59ca19c0a)",
+    "[6.sec] Warden draining /next for the SEC draft ...",
+    "    Warden parsed sec claims, recorded DRAFT_POSTED (msg bb3bbdba-cd0e-445a-8237-c4c59ca19c0a)",
+    "[5.dora] DORA Drafter draining /next for the mention ...",
+    "    DORA Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
+    "    DORA Drafter drafted 1242 chars, posted back @mention Warden (msg 4078ef5f-9af6-4e61-8bba-c3b181502b59)",
+    "[6.dora] Warden draining /next for the DORA draft ...",
+    "    Warden parsed dora claims, recorded DRAFT_POSTED (msg 4078ef5f-9af6-4e61-8bba-c3b181502b59)",
+    "[7] Contradiction diff: GREEN (no conflicts across 3 filings)",
+    "[8] Warden opened signoff; human released; clocks stopped",
+    "[A1] Triage posted the fact amendment 48,211 -> 2,100,000; SEC and NIS2 branches reopened to amending (msg 77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0)",
+    "[A2] Warden guard BLOCKED the amendment before reconciliation: no concur envelope for amend round 1: inc-8842:sec may not submit its amendment yet",
+    "[A3] SEC Drafter @mentioned NIS2 Drafter proposing how to characterize 2,100,000 (msg dbd6e9f0-9ce6-445e-853d-81a006a491d5)",
+    "[A4] NIS2 Drafter @mentioned SEC Drafter back, CONCUR (hash-linked to the proposal, msg 016ee372-9be4-4607-84c5-44f2679d1455)",
+    "[A5] Both branches submitted their amendments at the reconciled figure 2,100,000",
+    "[A6] Amended diff GREEN only after concurrence; both amendments signed and released",
+    "[9] Replay byte-identical: True (sha 157e8f08cd4c...)"
+  ],
+  "handoff_trace": [
+    {
+      "from": "Triage",
+      "to": "NIS2 Drafter",
+      "kind": "fact_record",
+      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+    },
+    {
+      "from": "Triage",
+      "to": "SEC Drafter",
+      "kind": "fact_record",
+      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+    },
+    {
+      "from": "Triage",
+      "to": "DORA Drafter",
+      "kind": "fact_record",
+      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+    },
+    {
+      "from": "NIS2 Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "4735d878-d359-40bd-9319-a5746c588ede"
+    },
+    {
+      "from": "SEC Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "bb3bbdba-cd0e-445a-8237-c4c59ca19c0a"
+    },
+    {
+      "from": "DORA Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "4078ef5f-9af6-4e61-8bba-c3b181502b59"
+    },
+    {
+      "from": "Triage",
+      "to": "SEC Drafter",
+      "kind": "fact_amendment",
+      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0"
+    },
+    {
+      "from": "Triage",
+      "to": "NIS2 Drafter",
+      "kind": "fact_amendment",
+      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0"
+    },
+    {
+      "from": "SEC Drafter",
+      "to": "NIS2 Drafter",
+      "kind": "reconcile_propose",
+      "message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5"
+    },
+    {
+      "from": "NIS2 Drafter",
+      "to": "SEC Drafter",
+      "kind": "reconcile_concur",
+      "message_id": "016ee372-9be4-4607-84c5-44f2679d1455"
+    }
+  ],
+  "state_transitions": [
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "nis2_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "nis2_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "sec_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "sec_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "dora_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "dora_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "fact_amended",
+      "ts": "2026-06-16T08:14:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "amending",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "fact_amended",
+      "ts": "2026-06-16T08:14:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "amending",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "draft_posted",
+      "ts": "2026-06-16T08:14:00+00:00",
+      "actor": "sec_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "draft_posted",
+      "ts": "2026-06-16T08:14:00+00:00",
+      "actor": "nis2_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "diff_passed",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "human_released",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "diff_passed",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "human_released",
+      "ts": "2026-06-16T09:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    }
+  ],
+  "message_lifecycle": [
+    {
+      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5",
+      "states": [
+        "processing",
+        "processed",
+        "processing",
+        "processed",
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "4735d878-d359-40bd-9319-a5746c588ede",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "bb3bbdba-cd0e-445a-8237-c4c59ca19c0a",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "4078ef5f-9af6-4e61-8bba-c3b181502b59",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0",
+      "states": [
+        "processing",
+        "processed",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    }
+  ],
+  "clocks": [
+    {
+      "name": "NIS2 early warning (24h)",
+      "correlation_id": "inc-8842:nis2-early",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-17T02:14:00+00:00",
+      "stopped": "",
+      "breached": false
+    },
+    {
+      "name": "NIS2 full notification (72h)",
+      "correlation_id": "inc-8842:nis2",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-19T02:14:00+00:00",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    },
+    {
+      "name": "DORA major-incident (72h)",
+      "correlation_id": "inc-8842:dora",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-19T02:14:00+00:00",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    },
+    {
+      "name": "SEC 8-K (4 business days)",
+      "correlation_id": "inc-8842:sec",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-23T23:59:59+00:00",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    }
+  ],
+  "diff": {
+    "blocked_conflicts": [],
+    "resolution": null,
+    "final_claims": {
+      "nis2": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 2100000,
+        "attacker": "lockbit",
+        "containment": "contained"
+      },
+      "sec": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 2100000,
+        "attacker": "lockbit",
+        "containment": "contained"
+      },
+      "dora": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained"
+      }
+    },
+    "green": true
+  },
+  "filings": [
+    {
+      "regime": "NIS2",
+      "by": "NIS2 Drafter",
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank\u2019s incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "SEC",
+      "by": "SEC Drafter",
+      "model": "deepseek-ai/DeepSeek-V3-0324",
+      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "DORA",
+      "by": "DORA Drafter",
+      "model": "Qwen/Qwen2.5-72B-Instruct",
+      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "SEC",
+      "by": "SEC Drafter",
+      "model": "deepseek-ai/DeepSeek-V3-0324",
+      "text": "Amended 8-K (Item 1.05): records affected revised to 2,100,000. The revised affected-record count is two million one hundred thousand.\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "NIS2",
+      "by": "NIS2 Drafter",
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "text": "NIS2 intermediate report: records affected revised to 2,100,000. The revised affected-record count is two million one hundred thousand.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
+    }
+  ],
+  "chaos": {
+    "events": [],
+    "duplicates_dropped": 0,
+    "ledger": [
+      {
+        "key": "draft:nis2:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:sec:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:dora:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:sec:inc-8842:amend-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:nis2:inc-8842:amend-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      }
+    ]
+  },
+  "breached_clocks": [],
+  "replay": {
+    "original_sha256": "157e8f08cd4c0d408fb811710067d6a5fa1175f28985d049a68edd67df307256",
+    "replayed_sha256": "157e8f08cd4c0d408fb811710067d6a5fa1175f28985d049a68edd67df307256",
+    "byte_identical": true
+  },
+  "pending": [],
+  "reconciliation": {
+    "fact_key": "records_affected",
+    "old_value": 48211,
+    "new_value": 2100000,
+    "reopened_branches": [
+      "sec",
+      "nis2"
+    ],
+    "amend_message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0",
+    "blocked_before_reconciliation": true,
+    "block_reason": "no concur envelope for amend round 1: inc-8842:sec may not submit its amendment yet",
+    "exchange": [
+      {
+        "from": "SEC Drafter",
+        "to": "NIS2 Drafter",
+        "verdict": "propose",
+        "proposed_value": 2100000,
+        "characterization": "The revised affected-record count is two million one hundred thousand.",
+        "band_message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5",
+        "envelope_sha256": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e",
+        "prior_envelope_hash": null
+      },
+      {
+        "from": "NIS2 Drafter",
+        "to": "SEC Drafter",
+        "verdict": "concur",
+        "proposed_value": 2100000,
+        "characterization": "The revised affected-record count is two million one hundred thousand.",
+        "band_message_id": "016ee372-9be4-4607-84c5-44f2679d1455",
+        "envelope_sha256": "4db07f713e46147ff1e5834ce0eaa2d2e968f4f3da8088448ae1bb18e814ec63",
+        "prior_envelope_hash": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e"
+      }
+    ],
+    "concurred_value": 2100000,
+    "concurred_characterization": "The revised affected-record count is two million one hundred thousand.",
+    "diff_passed_only_after_concur": true,
+    "envelope_chain": [
+      {
+        "verdict": "propose",
+        "from": "sec_drafter",
+        "to": "nis2_drafter",
+        "sha256": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e",
+        "prior_envelope_hash": null
+      },
+      {
+        "verdict": "concur",
+        "from": "nis2_drafter",
+        "to": "sec_drafter",
+        "sha256": "4db07f713e46147ff1e5834ce0eaa2d2e968f4f3da8088448ae1bb18e814ec63",
+        "prior_envelope_hash": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e"
+      }
+    ]
+  }
+}
