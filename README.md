@@ -228,9 +228,9 @@ The provider split wins both partner stories while respecting each platform's re
 
 Every row above is the single source `floor/roster.py`; the same strings render in the run and the packet, so the table and the demo cannot drift. Both partners are load-bearing: cut either and a real agent role goes dark. The dev provider set (`--provider dev`, the default) runs every role on Featherless flat-rate for zero-cost reproduction; the hero recorded run uses the split above (`--provider prod`). The Warden uses no LLM in any configuration.
 
-## Contributing back: the Codeband PR
+## Contributing back: the Codeband PRs
 
-The deterministic core is not just ours to keep. We extracted the two primitives that matter most for an open agent network and prepared them as an upstream pull request to [Codeband](https://github.com/thenvoi/codeband), Band's own coding-agent reference: a typed **ProtocolStateMachine** and an **IdempotencyLedger** with acknowledgment states, scoped first to its Code Review protocol, additive, with 32 new tests. The live pull request link is added here when it is opened upstream.
+The deterministic core is not just ours to keep. We extracted the primitives that matter most for an open agent network and prepared them as two upstream pull requests to [Codeband](https://github.com/thenvoi/codeband), Band's own coding-agent reference. The first adds a typed **ProtocolStateMachine** and an **IdempotencyLedger** with acknowledgment states, scoped to its Code Review protocol (additive, 32 new tests). The second wires deterministic protocol-stall detection into Codeband's **Watchdog**, so a stalled handoff is caught by a Python check instead of inferred from model context. Both are additive and close gaps Codeband's own roadmap names. The live pull request links are added here when they are opened upstream.
 
 This is the **Internet of Agents** thesis in concrete code: an open network of autonomous agents needs trust primitives that do not depend on any one agent behaving. A coding agent cannot reliably enforce its own protocol state, the same context truncation and self-preference that make same-model review weak also make a model an unreliable bookkeeper of its own progress. Moving protocol state and exactly-once into deterministic Python is the same move Codeband already makes with cross-model review, applied to coordination.
 
