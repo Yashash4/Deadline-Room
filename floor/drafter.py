@@ -116,6 +116,29 @@ def sanitize_llm_text(text: str) -> str:
     return text.replace(",  ", ", ")
 
 
+# Each factual sentence in the filing cites the fact-record FIELD it relies on,
+# as a trailing tag using the EXACT field name from the record, so the filing is
+# self-evidencing and a deterministic validator can confirm every cited field
+# exists. The model emits only the tags; the load-bearing [CLAIMS] block the
+# Warden diffs is attached separately by the drafter process and is never
+# affected by this instruction. The tag form is "[field: <name>]".
+_CITATION_INSTRUCTION = (
+    "After each sentence that states a fact drawn from the record, add a trailing "
+    "citation tag naming the exact fact-record field it relies on, in the form "
+    "[field: <field_name>] (for example [field: records_affected]). Use only "
+    "field names that appear verbatim in the supplied fact-record. Do not cite a "
+    "field that is not in the record. Keep the tags inline in the prose."
+)
+
+
+def _citation_fields_hint(fact_record: dict) -> str:
+    """A one-line reminder listing the exact citeable field names, so the model
+    cites real keys. Deterministic from the record; affects only the prose tags,
+    never the [CLAIMS] block."""
+    fields = ", ".join(fact_record.keys())
+    return f"Citeable fact-record fields (cite by these exact names): {fields}."
+
+
 def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
     """Assemble the message a drafter posts back: the LLM prose followed by the
     deterministic structured-claims block the Warden diffs.
@@ -149,14 +172,16 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             "incident response team. You write tight, examiner-ready filings. You "
             "state only what the supplied fact-record supports, never invent "
             "facts, and you fill the exact mandated fields the form requires. No "
-            "markdown headers; plain prose under each field label."
+            "markdown headers; plain prose under each field label. "
+            + _CITATION_INSTRUCTION
         )
         user = (
             f"Draft the {regime} mandatory incident notification from this "
             f"canonical fact-record. Use ONLY these facts. Keep it under 300 "
             f"words total.\n\n{structure}\n\n"
             f"FACT RECORD (canonical, authoritative):\n"
-            f"{json.dumps(fact_record, indent=2)}"
+            f"{json.dumps(fact_record, indent=2)}\n\n"
+            f"{_citation_fields_hint(fact_record)}"
         )
         return llm_complete(
             provider, model,
@@ -168,13 +193,15 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         "response team. You write tight, examiner-ready filings. You state only "
         "what the supplied fact-record supports, never invent facts, and you keep "
         "the structure a regulator expects. No markdown headers, plain prose with "
-        "short labelled sections."
+        "short labelled sections. "
+        + _CITATION_INSTRUCTION
     )
     user = (
         f"Draft the {regime} mandatory incident notification (the 72-hour "
         f"notification where applicable) from this canonical fact-record. "
         f"Use ONLY these facts. Keep it under 300 words.\n\n"
-        f"FACT RECORD (canonical, authoritative):\n{json.dumps(fact_record, indent=2)}"
+        f"FACT RECORD (canonical, authoritative):\n{json.dumps(fact_record, indent=2)}\n\n"
+        f"{_citation_fields_hint(fact_record)}"
     )
     return llm_complete(
         provider, model,

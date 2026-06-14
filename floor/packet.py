@@ -13,6 +13,8 @@ import html
 import json
 from pathlib import Path
 
+from floor.grounding import strip_citations
+
 
 def write_packet(packet: dict, out_dir: str | Path, stem: str = "examiner-packet") -> tuple[str, str]:
     """Write <stem>.json and <stem>.html into out_dir. Returns both paths."""
@@ -306,6 +308,64 @@ def _render_nydfs_recruit(rec: dict) -> str:
         f"CALENDAR hours: no business-day or holiday arithmetic, so it runs straight "
         f"through weekends and holidays, the deliberate contrast with the SEC "
         f"4-business-day clock.</p>")
+    return "".join(parts)
+
+
+def _render_grounding(g: dict) -> str:
+    """Render the grounding / fact-record fidelity receipt: per filing, the
+    grounding score (the fraction of load-bearing spans traced to the
+    fact-record), any UNGROUNDED spans flagged verbatim, the inline-citation
+    validation, and a PASS / REVIEW badge against the stated threshold.
+
+    This is a printed receipt only. The score is a deterministic, replayable
+    function of the already-produced filing prose and the fact-record; it never
+    gates a filing, moves a transition, or conditions a release. A REVIEW badge
+    surfaces an unsupported span loudly for a human, it does not block anything."""
+    if not g or not g.get("filings"):
+        return ""
+    threshold = g.get("threshold", 1.0)
+    all_pass = g.get("all_pass", False)
+    top_cls = "ok" if all_pass else "bad"
+    parts = ["<h2>7c. Grounding / fact-record fidelity (hallucination receipt)</h2>",
+             f"<p class='sub'>Each drafted filing is scored deterministically "
+             f"against the canonical fact-record: every load-bearing span in the "
+             f"prose (record counts, dates, the named breach actor) must trace to "
+             f"a fact. The score is a printed receipt, never a gate. A filing "
+             f"clears at score &ge; {_esc(threshold)}.</p>",
+             f"<p class='{top_cls}'><strong>"
+             + ("All filings cleared the grounding threshold: every load-bearing "
+                "span traces to the fact-record."
+                if all_pass else
+                "One or more filings carry an ungrounded span. Flagged below for "
+                "human review (no filing was blocked).")
+             + "</strong></p>"]
+    rows = []
+    for f in g["filings"]:
+        score = f.get("score", 0.0)
+        badge = "PASS" if score >= threshold else "REVIEW"
+        spans = f.get("ungrounded", [])
+        if spans:
+            span_html = "; ".join(
+                f"{_esc(s.get('kind'))}: <code>{_esc(s.get('span'))}</code> "
+                f"({_esc(s.get('reason'))})" for s in spans)
+        else:
+            span_html = "(none)"
+        cites = f.get("citations", {})
+        invalid = cites.get("invalid", [])
+        cite_html = (f"{len(cites.get('valid', []))} valid"
+                     + (f", <span class='bad'>{len(invalid)} invalid: "
+                        + _esc(", ".join(invalid)) + "</span>" if invalid else ""))
+        rows.append(
+            "<tr><td>" + _esc(f.get("regime") or f.get("branch")) + "</td>"
+            "<td>" + _esc(f"{score:.2f}") + "</td>"
+            "<td>" + _esc(f"{f.get('grounded', 0)}/{f.get('total', 0)}") + "</td>"
+            f"<td class='{'ok' if badge == 'PASS' else 'bad'}'>" + badge + "</td>"
+            "<td>" + span_html + "</td>"
+            "<td>" + cite_html + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Filing</th><th>Score</th><th>Grounded</th>"
+        "<th>Badge</th><th>Ungrounded spans</th><th>Citations</th></tr></thead>"
+        "<tbody>" + "".join(rows) + "</tbody></table>")
     return "".join(parts)
 
 
@@ -620,7 +680,7 @@ def _render_html(p: dict) -> str:
     filing_blocks = "".join(
         f"<div class='filing'><h3>{_esc(f.get('regime'))} filing "
         f"<span class='by'>by {_esc(f.get('by'))} via {_esc(f.get('model'))}</span></h3>"
-        f"<pre>{_esc(f.get('text'))}</pre></div>"
+        f"<pre>{_esc(strip_citations(f.get('text', '')))}</pre></div>"
         for f in filings
     )
     cover = _render_cover(p)
@@ -628,6 +688,7 @@ def _render_html(p: dict) -> str:
     diff_summary = _render_diff(diff)
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
+    grounding_block = _render_grounding(p.get("grounding", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
@@ -793,6 +854,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {filing_blocks or '<p>No filings drafted.</p>'}
 
 {chaos_block}
+
+{grounding_block}
 
 {release_block}
 

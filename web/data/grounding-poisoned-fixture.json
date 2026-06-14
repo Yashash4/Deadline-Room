@@ -1,0 +1,33 @@
+{
+  "incident": {
+    "incident_id": "inc-8842",
+    "fact_record": {
+      "incident_id": "inc-8842",
+      "incident_start_utc": "2026-06-16T02:14:00+00:00",
+      "records_affected": 48211,
+      "attacker": "LockBit 3.0",
+      "containment": "partially_contained",
+      "systems": [
+        "core banking ledger",
+        "customer KYC store"
+      ],
+      "data_categories": [
+        "name",
+        "address",
+        "account_number"
+      ],
+      "regulated_entity": "Meridian Trust Bank N.V.",
+      "competent_authority": "national CSIRT (NIS2)"
+    }
+  },
+  "filings": [
+    {
+      "regime": "NIS2-POISONED",
+      "by": "Poisoned Drafter",
+      "model": "fixture",
+      "provider": "fixture",
+      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the BlackMatter 4.2 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 9,500,000 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank\u2019s incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=BlackMatter 4.2\ncontainment=partially_contained\n[/CLAIMS]\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=BlackMatter 4.2\ncontainment=partially_contained\n[/CLAIMS]"
+    }
+  ],
+  "note": "Deliberately poisoned fixture for scripts/grounding_report.py: the NIS2 filing states an invented record count (9,500,000 vs the fact-record 48,211) and an invented breach actor (BlackMatter 4.2 vs LockBit 3.0). The grounding scorer MUST flag both. Used to prove the receipt fails on a hallucination."
+}

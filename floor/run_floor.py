@@ -69,6 +69,7 @@ from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
 from floor.claims import parse_claims  # noqa: E402
+from floor.grounding import score_filings  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
 from floor.materiality import (  # noqa: E402
@@ -212,6 +213,13 @@ SEC_IMMATERIAL_FACTS = {
 # forensics complete; the SEC and NIS2 branches reopen and reconcile.
 AMENDED_RECORDS = 2_100_000
 AMENDMENT_BRANCHES = ("sec", "nis2")
+
+# The grounding receipt's pass bar: a filing clears when its grounding score (the
+# fraction of load-bearing spans traced to the fact-record) is at least this. It
+# is a REPORTING threshold only, read by the packet render and the judge-runnable
+# scripts/grounding_report.py, NEVER by the Warden and never as a release
+# condition. 1.0 means every load-bearing span in the prose must trace to a fact.
+GROUNDING_THRESHOLD = 1.0
 TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
 TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
 # The containment framing the amended filings settle on (deterministic, attached
@@ -1674,8 +1682,25 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                  for mid, states in trace.lifecycle.items()]
     final_claims = {b: c.canonical() for b, c in claims_by_branch.items()}
     all_filings = list(filings)
+    amended_count = len(amendment["amended_filings"]) if amendment is not None else 0
     if amendment is not None:
         all_filings = all_filings + amendment["amended_filings"]
+
+    # ---- Grounding / fact-record fidelity (a printed receipt, NEVER a gate) ----
+    # Score every filing's prose against the fact-record it was drafted from: the
+    # base filings against CANONICAL_FACTS, the amended filings against the
+    # amended record (records_affected revised). This is a pure deterministic
+    # function of the already-produced filing text and the facts, so it is
+    # replayable; it attaches a SCORE to the packet and changes no gate, no
+    # transition, no clock, no release. The Warden never reads it.
+    base_filings = all_filings[:len(all_filings) - amended_count] if amended_count \
+        else all_filings
+    grounding = score_filings(base_filings, CANONICAL_FACTS)
+    if amended_count:
+        amended_record = dict(CANONICAL_FACTS)
+        amended_record["records_affected"] = AMENDED_RECORDS
+        grounding += score_filings(all_filings[len(all_filings) - amended_count:],
+                                   amended_record)
     packet = {
         "incident": {
             "incident_id": INCIDENT_ID,
@@ -1704,6 +1729,11 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "green": not blocked or resolved is not None,
         },
         "filings": all_filings,
+        "grounding": {
+            "threshold": GROUNDING_THRESHOLD,
+            "filings": grounding,
+            "all_pass": all(g["score"] >= GROUNDING_THRESHOLD for g in grounding),
+        },
         "chaos": {
             "events": trace.chaos_events,
             "duplicates_dropped": ledger.duplicates_dropped(),
