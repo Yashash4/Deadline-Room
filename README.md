@@ -215,7 +215,7 @@ The provider split wins both partner stories while respecting each platform's re
 | Triage | `gemini-3.5-flash` |
 | NIS2 Drafter | `claude-sonnet-4-20250514` |
 | DORA Drafter | `gpt-5-chat-latest` |
-| SEC Drafter | `gpt-5-chat-latest` |
+| SEC Drafter | `claude-opus-4-1-20250805` |
 
 **Featherless** (40k+ open models, flat-rate serverless) runs **two real authority roles on big open models**, the roles that do not need to fire simultaneously, the data-sovereignty story (a bank can self-host the model that makes the highest-stakes calls):
 

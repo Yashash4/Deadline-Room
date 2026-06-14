@@ -100,7 +100,7 @@ TRIAGE = Role(
 UK_DRAFTER = Role(
     role="drafter", name="UK ICO Drafter", branch="uk", regime="UK ICO",
     key_env="BAND_API_KEY_UK", id_env="BAND_AGENT_ID_UK",
-    model="MiniMaxAI/MiniMax-M2",
+    model="MiniMaxAI/MiniMax-M2.7",
 )
 
 # The NYDFS Drafter is recruited at RUNTIME (floor/recruit.py), only when a New

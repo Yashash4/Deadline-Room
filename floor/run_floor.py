@@ -223,6 +223,16 @@ AMENDMENT_BRANCHES = ("sec", "nis2")
 GROUNDING_THRESHOLD = 1.0
 TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
 TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
+# The amendment re-release runs the SAME two-key gate as the initial release:
+# both distinct human keys (GC and Lena) must sign before the Warden admits
+# HUMAN_RELEASED on the amended branch. The largest material change (records
+# revised from 48,211 to 2,100,000) cannot release on a single key. The GC signs
+# just before Lena, mirroring the initial-release ordering.
+TS_AMEND_SIGN_GC = "2026-06-16T08:55:00+00:00"
+AMEND_RELEASE_SIGNERS = (
+    ("general_counsel", "gc", TS_AMEND_SIGN_GC),
+    ("head_of_ir", "lena", TS_AMEND_RELEASE),
+)
 # The containment framing the amended filings settle on (deterministic, attached
 # by the drafter process, not the model).
 AMEND_CONTAINMENT_FRAMING = "contained as of 2026-06-16T07:00:00+00:00"
@@ -643,6 +653,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             triage=triage, warden=warden, drafters=drafters,
             warden_id=warden_id, triage_id=triage_id, drafter_ids=drafter_ids,
             branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
+            release_gate=release_gate,
             provider_set=provider_set,
         )
         # The amended figure becomes the reconciled record of those branches.
@@ -927,7 +938,7 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
 # ----------------------------------------------------------------------------
 def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters,
                      warden_id, triage_id, drafter_ids, branch_corr,
-                     draft_fns, draft_timeout,
+                     draft_fns, draft_timeout, release_gate,
                      provider_set=roster.PROVIDER_DEV) -> dict:
     guard = NegotiationGuard()
     sec, nis2 = "sec", "nis2"
@@ -1117,9 +1128,20 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
         corr = branch_corr[b]
         _proto(sm, trace, corr, Event.DIFF_PASSED, TS_AMEND_RELEASE, "warden", "warden")
         _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_AMEND_RELEASE, "warden", "warden")
-        _proto(sm, trace, corr, Event.HUMAN_RELEASED, TS_AMEND_RELEASE, "lena", "human_owner")
+        # The amendment re-release runs the SAME two-key gate as the initial
+        # release: both distinct keys (GC + Lena) must sign before the Warden
+        # admits HUMAN_RELEASED. The largest material change gets two approvals,
+        # not the fewest. Reset the branch lock first so the keys recorded on the
+        # initial release do not carry over: the amendment must collect BOTH
+        # distinct keys again from scratch. One key alone never turns the lock.
+        release_gate.reset(corr)
+        released = _two_key_release(sm, trace, log, release_gate, corr,
+                                    signers=AMEND_RELEASE_SIGNERS)
+        if not released:
+            raise RuntimeError(
+                f"amendment re-release for {corr} did not obtain two keys")
     trace.say("[A6] Amended diff GREEN only after concurrence; both amendments "
-              "signed and released")
+              "signed and released under the same two-key gate (GC + Lena)")
 
     return {
         "fact_key": "records_affected",
@@ -1159,11 +1181,16 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
 # once two distinct keys are present. One key alone is recorded as withheld and
 # the branch stays in awaiting_human_signoff.
 # ----------------------------------------------------------------------------
-def _two_key_release(sm, trace, log, release_gate, corr: str) -> bool:
+def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None) -> bool:
     """Drive the two-key release for one branch. Returns True iff the branch
     reached RELEASED. Records each sign-off and the withheld/released decisions in
-    the run log, so the segregation of duties is replay-verifiable."""
-    for role, actor, ts in RELEASE_SIGNERS:
+    the run log, so the segregation of duties is replay-verifiable.
+
+    `signers` defaults to RELEASE_SIGNERS (the initial release). The amendment
+    re-release passes AMEND_RELEASE_SIGNERS so the SAME two-key gate enforces both
+    distinct keys at the amendment timestamps. Every release path goes through
+    here; none releases on a single key."""
+    for role, actor, ts in (signers if signers is not None else RELEASE_SIGNERS):
         decision = release_gate.sign(corr, role, actor, ts)
         log.append("release_signoff", {
             "correlation_id": corr, "role": role, "actor": actor, "ts": ts,

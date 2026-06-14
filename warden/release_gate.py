@@ -83,3 +83,11 @@ class TwoKeyReleaseGate:
 
     def signoffs(self, correlation_id: str) -> list[Signoff]:
         return list(self._signoffs.get(correlation_id, {}).values())
+
+    def reset(self, correlation_id: str) -> None:
+        """Clear a branch's lock so a subsequent release (e.g. an amendment
+        re-release after the facts changed) must collect BOTH distinct keys
+        again from scratch. Without this, keys recorded on the initial release
+        would carry over and let an amendment re-release on a single fresh key.
+        Every release, initial and amendment, demands two distinct keys."""
+        self._signoffs.pop(correlation_id, None)

@@ -1,7 +1,7 @@
 # Deadline Room: one-command bring-up.
 #
 # Targets:
-#   make test     run the property suite (188 tests, no keys, no network)
+#   make test     run the property suite (247 tests, no keys, no network)
 #   make lint     run ruff over the repository
 #   make demo     run a live incident (needs BAND_API_KEY + FEATHERLESS_API_KEY)
 #   make verify   run the tamper receipt (break the evidence, watch the seal fail)
