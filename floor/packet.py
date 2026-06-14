@@ -698,7 +698,10 @@ def _render_html(p: dict) -> str:
     filing_blocks = "".join(
         f"<div class='filing'><h3>{_esc(f.get('regime'))} filing "
         f"<span class='by'>by {_esc(f.get('by'))} via {_esc(f.get('model'))}</span></h3>"
-        f"<pre>{_esc(strip_citations(f.get('text', '')))}</pre></div>"
+        + (f"<p class='model-why'><strong>Why {_esc(f.get('model'))} holds this "
+           f"role:</strong> {_esc(f.get('rationale'))}</p>"
+           if f.get('rationale') else "")
+        + f"<pre>{_esc(strip_citations(f.get('text', '')))}</pre></div>"
         for f in filings
     )
     cover = _render_cover(p)
@@ -747,6 +750,8 @@ pre {{ background: #f6f8fa; border: 1px solid #d7dce4; border-radius: 6px;
        break-inside: avoid; }}
 .filing {{ break-inside: avoid; }}
 .filing .by {{ color: #5b6473; font-weight: 400; font-size: 12px; }}
+.model-why {{ color: #44506a; font-size: 13px; margin: 2px 0 8px;
+              border-left: 3px solid #c9d0db; padding-left: 10px; }}
 .ok {{ color: #1d7a43; }}
 .bad {{ color: #b3261e; }}
 code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}

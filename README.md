@@ -208,23 +208,24 @@ Plenty of teams will ship a state machine. The separator is what happens under s
 
 The provider split wins both partner stories while respecting each platform's real constraints. Model ids are the ones verified live on the keys.
 
-**AI/ML API** (multi-model gateway, OpenAI-compatible, `https://api.aimlapi.com/v1`) runs the **parallel racing drafters**, a different named model per role with on-camera rationale:
+**AI/ML API** (multi-model gateway, OpenAI-compatible, `https://api.aimlapi.com/v1`) runs the **parallel racing drafters**, a different named model per role, and the rationale for each choice is not just prose here: it renders live in the `[0] Provider set` print and beside each filing in the Examiner Packet, so the on-camera claim is backed by what the run actually shows.
 
-| Role | Model |
-|---|---|
-| Triage | `gemini-3.5-flash` |
-| NIS2 Drafter | `claude-sonnet-4-20250514` |
-| DORA Drafter | `gpt-5-chat-latest` |
-| SEC Drafter | `claude-opus-4-1-20250805` |
+| Role | Model | Why this model holds this role |
+|---|---|---|
+| Triage | `gemini-3.5-flash` | The first-pass incident classifier is the fastest call in the room; flash is the quickest named model on the gateway. |
+| NIS2 Drafter | `claude-sonnet-4-20250514` | Structured statutory prose (the Article 23 notification) is exactly its strength: precise legal drafting without top-tier reasoning cost. |
+| DORA Drafter | `gpt-5-chat-latest` | A DIFFERENT named vendor on the third racing branch, proving the gateway routes real multi-vendor traffic, not one model behind a proxy. |
+| SEC Drafter | `claude-opus-4-1-20250805` | Item 1.05 materiality is the highest-reasoning call in the room, so the highest-reasoning model drafts the highest-stakes filing. |
 
-**Featherless** (40k+ open models, flat-rate serverless) runs **two real authority roles on big open models**, the roles that do not need to fire simultaneously, the data-sovereignty story (a bank can self-host the model that makes the highest-stakes calls):
+**Featherless** (40k+ open models, flat-rate serverless) runs **the open-model authority roles**, the roles that do not need to fire simultaneously, the data-sovereignty story (a bank can self-host the model that makes the highest-stakes calls):
 
-| Role | Model |
-|---|---|
-| Materiality | `deepseek-ai/DeepSeek-V3.2` |
-| UK ICO Drafter | `MiniMaxAI/MiniMax-M2.7` |
+| Role | Model | Why this model holds this role |
+|---|---|---|
+| Materiality | `deepseek-ai/DeepSeek-V3.2` | The SEC materiality call stays on an open model a bank can self-host: the highest-stakes judgment inside the bank's own infrastructure. |
+| Materiality (second opinion) | `MiniMaxAI/MiniMax-M2.7` | A DIFFERENT open family from the primary, so a second-opinion AGREE is real corroboration, not one model agreeing with itself. |
+| UK ICO Drafter | `MiniMaxAI/MiniMax-M2.7` | Drafts the UK 72-hour GDPR notice on a self-hostable open model: the data-sovereignty story for the highest-privacy filing. |
 
-Both partners are load-bearing: cut either and a real agent role goes dark. The dev provider set (`--provider dev`, the default) runs every role on Featherless flat-rate for zero-cost reproduction; the hero recorded run uses the split above (`--provider prod`). The Warden uses no LLM in any configuration.
+Every row above is the single source `floor/roster.py`; the same strings render in the run and the packet, so the table and the demo cannot drift. Both partners are load-bearing: cut either and a real agent role goes dark. The dev provider set (`--provider dev`, the default) runs every role on Featherless flat-rate for zero-cost reproduction; the hero recorded run uses the split above (`--provider prod`). The Warden uses no LLM in any configuration.
 
 ## Contributing back: the Codeband PR
 
@@ -239,6 +240,8 @@ Built for the question "would my org actually run this":
 - **SIEM hook.** The incident room is opened by the Warden from a structured fact-record; in production that record is the payload of a detection alert, so a SIEM or SOAR event triggers the war room directly.
 - **RBAC.** Authority is enforced in code, not convention: drafters cannot release, only the Warden opens signoff, only a human closes it. The stretch path adds a two-key release gate (compliance officer and general counsel).
 - **Exportable audit log.** Every run is an append-only JSONL log plus a self-contained Examiner Packet that carries the full handoff trace, state transitions, message lifecycle, and the replay hash. It is the record an examiner of record would ask for, and it replays byte for byte.
+
+For how this maps onto a real org (the system boundary, the RACI, change-control, and what is stubbed today versus what production adds), see the [Reference Deployment](docs/reference-deployment.md).
 
 ## Agent Safety
 

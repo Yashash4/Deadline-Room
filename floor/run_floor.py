@@ -574,6 +574,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                              landed.get("message_id", ""))
         filings.append({"regime": r.regime, "by": f"{r.regime} Drafter",
                         "model": _model, "provider": _provider,
+                        "rationale": roster.prod_role_rationale(r)
+                        if provider_set == roster.PROVIDER_PROD else r.rationale,
                         "text": landed["text"]})
 
         # ---- Warden drains this draft, parses claims, advances the SM ----
@@ -1105,6 +1107,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
             "regime": "SEC" if b == "sec" else "NIS2",
             "by": ("SEC" if b == "sec" else "NIS2") + " Drafter",
             "model": amend_model, "provider": amend_provider,
+            "rationale": roster.prod_role_rationale(amend_role)
+            if provider_set == roster.PROVIDER_PROD else amend_role.rationale,
             "text": body})
     trace.say(f"[A5] Both branches submitted their amendments at the reconciled "
               f"figure {AMENDED_RECORDS:,}")
@@ -1449,8 +1453,10 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
         "clock_started_at": ts_recruit,
         "claims": claims,
         "filing": {"regime": target.regime, "by": f"{target.regime} Drafter",
-                   "model": model, "provider": provider, "text": body,
-                   "recruited_at_runtime": True},
+                   "model": model, "provider": provider,
+                   "rationale": roster.prod_role_rationale(role)
+                   if provider_set == roster.PROVIDER_PROD else role.rationale,
+                   "text": body, "recruited_at_runtime": True},
     }
 
 
@@ -1568,12 +1574,29 @@ def _announce_provider_set(trace, log, provider_set: str, live: bool) -> dict:
     # prod: name the split, then validate the AI/ML models if this is a live run.
     aiml_models = roster.prod_aiml_validation_models()
     hero_models = roster.prod_featherless_hero_models()
+    hero_rationales = roster.prod_featherless_hero_rationales()
+    # role label -> rationale for the AI/ML drafters, resolved from PROD_RATIONALE.
+    aiml_rationales = {
+        roster._ROLE_LABEL[roster._role_id(r)]: roster.prod_role_rationale(r)
+        for r in (roster.TRIAGE, roster.NIS2_DRAFTER, roster.SEC_DRAFTER,
+                  roster.DORA_DRAFTER)
+        if roster._ROLE_LABEL[roster._role_id(r)] in aiml_models
+    }
     trace.say("[0] Provider set: PROD (AI/ML API parallel racing drafters + "
-              "Featherless hero open models).")
-    trace.say("    AI/ML drafters: "
-              + ", ".join(f"{role}={m}" for role, m in aiml_models.items()))
-    trace.say("    Featherless heroes: "
-              + ", ".join(f"{role}={m}" for role, m in hero_models.items()))
+              "Featherless hero open models). Each role names a model AND why it "
+              "holds that role:")
+    trace.say("    AI/ML drafters (different named model per role):")
+    for role_label, m in aiml_models.items():
+        trace.say(f"      {role_label} = {m}")
+        why = aiml_rationales.get(role_label)
+        if why:
+            trace.say(f"        why: {why}")
+    trace.say("    Featherless heroes (open-model, self-hostable roles):")
+    for role_label, m in hero_models.items():
+        trace.say(f"      {role_label} = {m}")
+        why = hero_rationales.get(role_label)
+        if why:
+            trace.say(f"        why: {why}")
 
     validation: dict = {}
     if live:
@@ -1961,7 +1984,7 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     packet = _assemble_legacy_packet(
         room_id, trace, clocks, conflicts, breached,
         filings=[{"regime": "NIS2", "by": "NIS2 Drafter", "model": nis2_role.model,
-                  "text": drafted["text"]}],
+                  "rationale": nis2_role.rationale, "text": drafted["text"]}],
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
                      "byte_identical": byte_identical, "signature": signature},
     )
