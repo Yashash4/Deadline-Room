@@ -229,7 +229,7 @@ Every row above is the single source `floor/roster.py`; the same strings render 
 
 ## Contributing back: the Codeband PR
 
-The deterministic core is not just ours to keep. We extracted the two primitives that matter most for an open agent network and prepared them as an upstream pull request to [Codeband](https://github.com/thenvoi/codeband), Band's own coding-agent reference: a typed **ProtocolStateMachine** and an **IdempotencyLedger** with acknowledgment states, scoped first to its Code Review protocol, additive, with 32 new tests. See [`contrib/codeband-pr.md`](contrib/codeband-pr.md).
+The deterministic core is not just ours to keep. We extracted the two primitives that matter most for an open agent network and prepared them as an upstream pull request to [Codeband](https://github.com/thenvoi/codeband), Band's own coding-agent reference: a typed **ProtocolStateMachine** and an **IdempotencyLedger** with acknowledgment states, scoped first to its Code Review protocol, additive, with 32 new tests. The live pull request link is added here when it is opened upstream.
 
 This is the **Internet of Agents** thesis in concrete code: an open network of autonomous agents needs trust primitives that do not depend on any one agent behaving. A coding agent cannot reliably enforce its own protocol state, the same context truncation and self-preference that make same-model review weak also make a model an unreliable bookkeeper of its own progress. Moving protocol state and exactly-once into deterministic Python is the same move Codeband already makes with cross-model review, applied to coordination.
 

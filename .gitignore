@@ -11,3 +11,5 @@ spike_results.json
 .venv/
 floor/out/
 runlogs/
+contrib/
+slides/
