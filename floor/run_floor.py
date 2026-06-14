@@ -58,7 +58,7 @@ sys.path.insert(0, str(_CODE / "spikes"))
 
 from warden.clocks import ClockEngine  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
-from warden.ledger import Disposition, IdempotencyLedger  # noqa: E402
+from warden.ledger import IdempotencyLedger  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
@@ -590,8 +590,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         _two_key_release(sm, trace, log, release_gate, corr)
         clocks.stop(corr, TS_RELEASE)
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_RELEASE})
-    trace.say(f"[8] Warden opened signoff; two-key release (GC + Lena); "
-              f"clocks stopped")
+    trace.say("[8] Warden opened signoff; two-key release (GC + Lena); "
+              "clocks stopped")
 
     # ---- A1: the amendment beat (agent-to-agent reconciliation) --------
     amendment = None
@@ -634,7 +634,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
     log.save(run_log_path)
-    trace.say(f"[10] Examiner Packet written:")
+    trace.say("[10] Examiner Packet written:")
     trace.say(f"     {html_path}")
     trace.say(f"     {json_path}")
     trace.say(f"     run log: {run_log_path}")
@@ -824,7 +824,7 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
     blocked_human = [c.human() for c in conflicts]
     for b in drafted:
         _proto(sm, trace, branch_corr[b], Event.DIFF_BLOCKED, TS_DIFF, "warden", "warden")
-    trace.say(f"[7] Contradiction diff: BLOCKED. The Warden refused signoff.")
+    trace.say("[7] Contradiction diff: BLOCKED. The Warden refused signoff.")
     for line in blocked_human:
         trace.say(f"        RED: {line}")
 
@@ -1065,8 +1065,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
         _proto(sm, trace, corr, Event.DIFF_PASSED, TS_AMEND_RELEASE, "warden", "warden")
         _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_AMEND_RELEASE, "warden", "warden")
         _proto(sm, trace, corr, Event.HUMAN_RELEASED, TS_AMEND_RELEASE, "lena", "human_owner")
-    trace.say(f"[A6] Amended diff GREEN only after concurrence; both amendments "
-              f"signed and released")
+    trace.say("[A6] Amended diff GREEN only after concurrence; both amendments "
+              "signed and released")
 
     return {
         "fact_key": "records_affected",
@@ -1234,8 +1234,8 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
         clocks.stop(corr, TS_FACTS)
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_FACTS,
                                      "reason": "sec_suppressed_not_material"})
-        trace.say(f"[4m] SEC branch SUPPRESSED (terminal); SEC 4-business-day "
-                  f"clock stopped, no filing.")
+        trace.say("[4m] SEC branch SUPPRESSED (terminal); SEC 4-business-day "
+                  "clock stopped, no filing.")
 
     record = {
         "branch": "sec",
@@ -1728,7 +1728,7 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     drafter.join(room_id)
     trace.say(f"[2] Warden created incident room {room_id}")
     warden.add_participant(drafter_id)
-    trace.say(f"[3] Warden recruited NIS2 Drafter into the room")
+    trace.say("[3] Warden recruited NIS2 Drafter into the room")
     log.append("room", {"band_room_id": room_id, "warden_id": warden_id,
                         "drafter_id": drafter_id})
 
@@ -1817,7 +1817,7 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     _proto(sm, trace, corr_nis2, Event.HUMAN_RELEASED, TS_RELEASE, "lena", "human_owner")
     clocks.stop(corr_nis2, TS_RELEASE)
     log.append("clock_stopped", {"correlation_id": corr_nis2, "ts": TS_RELEASE})
-    trace.say(f"[9] Warden opened signoff; human released; NIS2 clock stopped")
+    trace.say("[9] Warden opened signoff; human released; NIS2 clock stopped")
 
     breached = [c.name for c in clocks.breaches(TS_RELEASE)]
 
@@ -1838,7 +1838,7 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}.jsonl"
     log.save(run_log_path)
-    trace.say(f"[11] Examiner Packet written:")
+    trace.say("[11] Examiner Packet written:")
     trace.say(f"     {html_path}")
     trace.say(f"     {json_path}")
     trace.say(f"     run log: {run_log_path}")

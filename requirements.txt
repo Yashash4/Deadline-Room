@@ -1,11 +1,13 @@
-# Deadline Room runtime and test dependencies.
+# Deadline Room runtime and test dependencies, pinned to the exact versions this
+# repo is tested against so a clean clone resolves the same set every time.
 # The deterministic Warden core (warden/) and the offline web-viewer capture
-# need nothing but the standard library. These two are for the live floor run
-# and the test suite.
+# need nothing but the standard library. These are for the live floor run, the
+# test suite, the lint gate, and the optional cover-image script.
 
-requests>=2.31      # live Band REST + Featherless / AI-ML API calls (floor/)
-pytest>=7.4         # the 104-test property suite (tests/)
+requests==2.32.5    # live Band REST + Featherless / AI-ML API calls (floor/)
+pytest==9.0.3       # the 188-test property suite (tests/)
+ruff==0.15.15       # lint gate (scripts/hygiene_gate.py + make lint)
 
 # The cover-image script (scripts/make_cover.py) additionally needs Pillow.
 # It is optional and not imported by the product, so it is listed separately.
-Pillow>=10.0
+Pillow==12.1.1

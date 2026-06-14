@@ -2,7 +2,10 @@
 
 **The second a bank gets breached, four government clocks start. Deadline Room runs the filing teams as agents racing those clocks through Band, while a deterministic referee refuses any handoff that breaks the rules.**
 
-![tests](https://img.shields.io/badge/tests-179%20passing-3fd07f)
+<!-- At submission, when the repo is public, swap the static CI badge below for the
+     live workflow badge: ![ci](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg) -->
+![ci](https://img.shields.io/badge/ci-pytest%20%2B%20ruff%20%2B%20hygiene-3fd07f)
+![tests](https://img.shields.io/badge/tests-188%20passing-3fd07f)
 ![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)
 ![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)
 ![license](https://img.shields.io/badge/license-MIT-8b9bb4)
@@ -40,7 +43,7 @@ Every command below was run on this repo against live Band and live Featherless.
 
 | What | Command | What you see |
 |---|---|---|
-| The property suite | `py -m pytest tests/ -q` | `179 passed` |
+| The property suite | `py -m pytest tests/ -q` | `188 passed` |
 | Break the evidence yourself | `py scripts/tamper_test.py` | flip one field, the sealed hash diverges, tamper detected |
 | A clean incident, end to end | `py floor/run_floor.py` | Examiner Packet, diff GREEN, replay True |
 | The contradiction veto | `py floor/run_floor.py --inject-contradiction` | the red BLOCKED block, then re-run GREEN |
@@ -52,10 +55,10 @@ Every command below was run on this repo against live Band and live Featherless.
 
 ```
 $ py -m pytest tests/ -q
-........................................................................ [ 40%]
-........................................................................ [ 80%]
-...................................                                       [100%]
-179 passed in 1.40s
+........................................................................ [ 38%]
+........................................................................ [ 76%]
+............................................                             [100%]
+188 passed in 1.43s
 ```
 
 ### 2. A clean incident: four clocks, the Examiner Packet, byte-identical replay
@@ -272,7 +275,38 @@ py floor/run_floor.py
 cd web && py -m http.server 8000   # then open http://localhost:8000
 ```
 
-The 179-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
+The 188-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
+
+### One command
+
+On Linux, macOS, or any machine with `make`:
+
+```
+make test      # the 188-test suite (no keys, no network)
+make lint      # ruff over the repository
+make verify    # the tamper receipt: break the evidence, watch the seal fail
+make demo      # a live incident (needs BAND_API_KEY + FEATHERLESS_API_KEY)
+make check     # test + lint + the dash/attribution hygiene gate (the CI gate)
+```
+
+On Windows, where `make` is often absent, run the same steps directly (the launcher is `py`):
+
+```
+py -m pytest tests/ -q        # = make test
+py -m ruff check .            # = make lint
+py scripts/tamper_test.py     # = make verify
+py floor/run_floor.py         # = make demo
+py scripts/hygiene_gate.py    # the dash/attribution hygiene gate
+```
+
+Or with Docker, no local Python at all (the default command runs the suite):
+
+```
+docker build -t deadline-room .
+docker run --rm deadline-room
+```
+
+Every push and pull request runs the same three gates in GitHub Actions (`.github/workflows/ci.yml`): the suite, ruff, and the hygiene gate that fails the build on any stray em/en dash or AI-attribution trailer.
 
 ## Demo and video
 

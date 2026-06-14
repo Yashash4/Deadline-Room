@@ -1,0 +1,6 @@
+# Pinned ruff configuration so `ruff check .` is reproducible across machines
+# and CI. We keep ruff's default rule set (pyflakes F + a curated pycodestyle E
+# subset), which catches unused imports, dead names, and obvious style slips
+# without imposing line-length churn on the frozen Warden core. Only the target
+# version is pinned so the result does not drift with the interpreter in CI.
+target-version = "py311"

@@ -17,7 +17,6 @@ What this proves about the live --amendment mode:
 import json
 from pathlib import Path
 
-import pytest
 
 from floor.negotiation_envelope import emit_envelope, parse_envelope
 from floor.run_floor import (AMENDED_RECORDS, AMENDMENT_BRANCHES, DRAFTER_ROLES,
@@ -118,8 +117,6 @@ def test_diff_blocked_until_concur(tmp_path):
 
 def test_guard_block_recorded_in_run_log(tmp_path):
     room, packet = _run(tmp_path)
-    log = json.loads(Path(packet["_paths"]["run_log"]).read_text(encoding="utf-8")
-                     .strip().splitlines()[0]) if False else None
     # read the saved jsonl run log and find the pre-reconciliation guard block
     lines = Path(packet["_paths"]["run_log"]).read_text(encoding="utf-8").splitlines()
     entries = [json.loads(x) for x in lines if x.strip()]

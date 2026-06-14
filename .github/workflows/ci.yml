@@ -1,0 +1,39 @@
+name: ci
+
+# Green checks on every push and pull request. Three gates run:
+#   1. the 188-test property suite (the deterministic core, no keys, no network)
+#   2. ruff lint over the whole repository
+#   3. the hygiene gate: fails the build if any tracked file carries an em-dash
+#      (U+2014), an en-dash (U+2013), or an AI-attribution trailer. The forbidden
+#      codepoints live only inside scripts/hygiene_gate.py as escapes, so neither
+#      this workflow nor the gate itself ever trips the check.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the property suite
+        run: python -m pytest tests/ -q
+
+      - name: Lint with ruff
+        run: python -m ruff check .
+
+      - name: Hygiene gate (no stray dashes, no AI attribution)
+        run: python scripts/hygiene_gate.py

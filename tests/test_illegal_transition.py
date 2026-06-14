@@ -1,7 +1,6 @@
 """test_illegal_transition.py, every out-of-order handoff and every
 authority violation is rejected BEFORE any downstream message is sent."""
 
-import pytest
 
 from warden.state_machine import Event, ProtocolStateMachine, Rejection, State
 from warden.simulate import run_incident

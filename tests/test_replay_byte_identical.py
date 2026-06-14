@@ -2,7 +2,6 @@
 a byte-for-byte identical trace. Plus the contradiction-diff and SEC
 business-day clock guarantees."""
 
-from warden.clocks import parse_ts
 from warden.diff import Containment, FactClaims, diff_claims
 from warden.replay import RunLog, replay
 from warden.simulate import KillSchedule, run_incident

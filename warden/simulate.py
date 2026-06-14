@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 
 from .clocks import ClockEngine
 from .diff import Containment, FactClaims, diff_claims
-from .fake_band import FakeBand, Lifecycle
+from .fake_band import FakeBand
 from .ledger import Disposition, IdempotencyLedger
-from .negotiation import (MAX_ROUNDS, NegotiationEnvelope, NegotiationGuard, Verdict)
+from .negotiation import (NegotiationEnvelope, NegotiationGuard, Verdict)
 from .replay import RunLog
 from .state_machine import Event, ProtocolStateMachine
 

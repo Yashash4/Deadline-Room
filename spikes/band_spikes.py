@@ -74,7 +74,8 @@ def main() -> int:
     c, d = call(KEY1, "POST", "/agent/chats", {"chat": {"title": "deadline-room-spike"}})
     if c != 201:
         rec("2 create room", "FAIL", f"HTTP {c}", d)
-        _save(); return 1
+        _save()
+        return 1
     cid = d["data"]["id"]
     rec("2 create room", "PASS", f"chat_id={cid}")
 

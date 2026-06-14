@@ -4,9 +4,8 @@ amendment cannot advance until a concur envelope exists, the bounded loop
 terminates, and post-reconciliation amendments pass the UTC-canonicalized
 contradiction diff."""
 
-import pytest
 
-from warden.negotiation import (MAX_ROUNDS, GuardDecision, NegotiationEnvelope,
+from warden.negotiation import (MAX_ROUNDS, NegotiationEnvelope,
                                 NegotiationGuard, Verdict)
 from warden.replay import replay
 from warden.simulate import AMENDED_RECORDS, run_incident
