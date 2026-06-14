@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Deadline Room: replay viewer</title>
-<meta name="description" content="Forensic replay viewer for the Deadline Room: a multi-agent regulated breach-reporting war room on Band. Replays captured live runs with byte-identical replay, hash-chain, and Ed25519 signature verification you can re-run in your own browser." />
+<title>Deadline Room: the Incident Commander console</title>
+<meta name="description" content="Deadline Room is the Incident Commander console for the first 72 hours after a breach. Four AI teams draft four regulatory filings, a no-AI referee blocks any two that disagree, and you can re-derive the proof in your own browser. Built on the Band multi-agent platform." />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,11 +13,12 @@
 <div id="intro-overlay" class="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
   <div class="intro-card">
     <span class="intro-logo" aria-hidden="true"></span>
+    <p class="intro-eyebrow">Deadline Room: the Incident Commander console</p>
     <h2 id="intro-title">A bank was breached. Four government deadlines started at once.</h2>
-    <p>Four AI teams race to file four regulatory reports. A no-AI referee, the Deadline Warden, blocks any two reports that contradict each other, and the books survive a live agent being killed mid-run.</p>
-    <p class="intro-proof">This is a forensic replay of a real recorded run. At the end you can re-derive the proof in your own browser: the hash, the tamper-evident chain, and the Warden's signature. No server, no trust in us.</p>
+    <p>This is the screen the incident commander and the general counsel sit in front of for the first 72 hours. Four AI teams draft the four regulatory filings, a no-AI referee blocks any two that disagree, and the filing set survives a live team member being knocked offline mid-incident.</p>
+    <p class="intro-proof">Everything here is a forensic replay of a real recorded run. At the end you can re-derive the proof in your own browser: the filing set is tamper-evident, and you can confirm it was not altered. No server, no trust in us.</p>
     <div class="intro-actions">
-      <button id="intro-start" class="btn primary big">Watch the replay</button>
+      <button id="intro-start" class="btn primary big">Open the console</button>
       <button id="intro-skip" class="btn ghost">Skip intro</button>
     </div>
   </div>
@@ -27,20 +28,24 @@
   <div class="brand">
     <span class="logo" aria-hidden="true"></span>
     <div class="brand-text">
-      <h1>Deadline Room</h1>
-      <p>multi-agent breach-reporting war room, replayed from a captured Band run</p>
+      <h1>Deadline Room <span class="product-tag">Incident Commander console</span></h1>
+      <p>For the CISO office, the incident commander, and the general counsel running the first 72 hours after a breach.</p>
     </div>
   </div>
   <div class="scenario-picker">
-    <label for="scenario">Scenario</label>
-    <select id="scenario" aria-label="Choose a captured scenario"></select>
+    <label for="scenario">Incident path</label>
+    <select id="scenario" aria-label="Choose which captured incident path to walk"></select>
   </div>
 </header>
 
 <div id="compression-banner" class="compression-banner" role="status"></div>
 
-<!-- Scenario cards: surface the manifest blurbs so the four runs are self-explaining. -->
-<section class="scenario-cards" id="scenario-cards" aria-label="Captured scenarios"></section>
+<!-- Scenario cards: one incident path is the default running story; the other three are reachable in one click. -->
+<div class="scenario-cards-head">
+  <span class="scenario-cards-title">Walk a real incident</span>
+  <span class="scenario-cards-sub">One console, four ways the first 72 hours can go. The default is already running.</span>
+</div>
+<section class="scenario-cards" id="scenario-cards" aria-label="Incident paths"></section>
 
 <!-- Beats rail: shows the judge there are three signature moments and that they are arriving. -->
 <div class="beats-rail" id="beats-rail" aria-label="Signature beats">
@@ -66,6 +71,21 @@
     <div id="clocks" class="clocks-grid"></div>
   </section>
 
+  <!-- The operator's headline: what is blocked, and why, in plain English. -->
+  <section class="panel gate-panel" id="gate-panel" aria-live="polite">
+    <div class="gate-main">
+      <span class="gate-status-pill" id="gate-status-pill">running</span>
+      <div class="gate-text">
+        <h2 id="gate-headline">Reading the room...</h2>
+        <p id="gate-detail" class="gate-detail">The incident commander watches this line. It says whether the filing set can go out, and if not, exactly what is holding it.</p>
+      </div>
+    </div>
+    <div class="gate-release" id="gate-release">
+      <span class="gate-release-label">Filing set</span>
+      <span class="gate-release-state" id="gate-release-state">not yet released</span>
+    </div>
+  </section>
+
   <!-- Transport: scrubber -->
   <section class="panel transport-panel">
     <div class="transport">
@@ -88,53 +108,59 @@
   <div class="grid-2">
     <!-- The Band room coming alive -->
     <section class="panel room-panel">
-      <div class="panel-head"><h2>The Band room</h2><span class="muted" id="room-id"></span></div>
+      <div class="panel-head"><h2>The war room</h2><span class="muted" id="room-id"></span></div>
+      <p class="panel-sub muted small">The four AI teams and the no-AI referee, talking it out live in a Band room.</p>
       <div id="roster" class="roster"></div>
       <div id="feed" class="feed" aria-live="polite"></div>
     </section>
 
-    <!-- Handoff graph + lifecycle + state -->
+    <!-- Filing status + the underlying handoff trail (engineer detail). -->
     <section class="panel side-col">
       <div class="subpanel">
-        <h3>Handoff graph</h3>
-        <p class="muted small">who @mentioned whom, lit as it happens</p>
-        <div id="handoffs" class="handoffs"></div>
+        <h3>Filing status by regulator</h3>
+        <p class="muted small">Where each of the four filings stands right now.</p>
+        <div id="branch-states" class="branch-states"></div>
       </div>
       <div class="subpanel">
-        <h3>Protocol state</h3>
-        <div id="branch-states" class="branch-states"></div>
+        <h3>Who handed off to whom <span class="eng-tag">for engineers</span></h3>
+        <p class="muted small">Every @mention handoff, lit as it happens.</p>
+        <div id="handoffs" class="handoffs"></div>
       </div>
     </section>
   </div>
 
-  <!-- The money beats -->
+  <!-- The money beats, each opened with a plain-English headline. -->
   <section id="contradiction-section" class="panel beat-panel hidden">
-    <div class="panel-head"><h2>Contradiction veto</h2><span id="contradiction-badge" class="badge"></span></div>
+    <div class="panel-head"><h2>Two filings disagreed: the referee refused to let them out</h2><span id="contradiction-badge" class="badge"></span></div>
+    <p class="panel-sub muted small">A regulator finding starts the moment two of your reports tell two different stories. The referee catches it before it leaves the building.</p>
     <div id="contradiction-body"></div>
   </section>
 
   <section id="chaos-section" class="panel beat-panel hidden">
-    <div class="panel-head"><h2>Exactly-once under a live kill</h2></div>
+    <div class="panel-head"><h2>A team member dropped offline mid-incident: nothing got filed twice</h2></div>
+    <p class="panel-sub muted small">An AI drafter was knocked out right after posting. On restart its filing was already in the room, so the duplicate was dropped. Filed exactly once.</p>
     <div id="chaos-body"></div>
   </section>
 
   <section id="reconciliation-section" class="panel beat-panel hidden">
-    <div class="panel-head"><h2>Amendment reconciliation</h2></div>
+    <div class="panel-head"><h2>The facts changed after filing: the teams had to agree before re-filing</h2></div>
+    <p class="panel-sub muted small">A load-bearing number was revised after release. The two affected filings reopened and stayed blocked until both teams concurred on one shared characterization.</p>
     <div id="reconciliation-body"></div>
   </section>
 
   <!-- The Examiner Packet: the climactic "verify it yourself" beat -->
   <section class="panel packet-panel" id="packet-panel">
     <div class="panel-head">
-      <h2>Examiner Packet</h2>
+      <h2>The Examiner Packet: the one filing set you hand the regulator</h2>
       <span id="verdict-badge" class="badge"></span>
     </div>
+    <p class="panel-sub muted small">One consistent, signed, examiner-ready filing set. Without this: four teams, four versions of the truth. With it: one set of filings that agree, on time, that anyone can prove was not altered.</p>
     <div class="packet-grid">
       <div class="packet-meta" id="packet-meta"></div>
       <div class="verify-block" id="verify-block">
         <div class="verify-intro">
-          <h3>Verify it yourself</h3>
-          <p class="small muted">Re-run all three proofs in your own browser. No server, no trust in us. Each check reads the bundled run log and recomputes the same value the Warden recorded.</p>
+          <h3>Prove it was not altered <span class="eng-tag">for engineers</span></h3>
+          <p class="small muted">An examiner can confirm the filing set is genuine without trusting us. Re-run all three proofs in your own browser: it reads the bundled run log and recomputes the same values the referee recorded. The raw cryptographic detail is below for the engineers on the panel.</p>
         </div>
 
         <!-- Check 1: byte-identical replay hash -->
@@ -175,7 +201,7 @@
 </main>
 
 <footer class="footer">
-  <span>Deadline Room on the Band platform. This page replays a captured live run; it is not a simulator.</span>
+  <span>Deadline Room, the Incident Commander console, built on the Band multi-agent platform. This page replays a captured live run; it is not a simulator.</span>
 </footer>
 
 <script src="app.js"></script>

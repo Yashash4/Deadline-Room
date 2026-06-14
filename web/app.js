@@ -161,6 +161,103 @@ const BEAT_BANNERS = {
   reconciliation: { tone: "amber", text: "AMENDMENT. A load-bearing fact was revised. Two drafters reconcile through Band before the Warden lets it re-file." },
 };
 
+// ---- gate state: the plain-English "what is blocked and why" panel ----------
+// Derives the operator headline from the steps reduced so far. This reads the
+// same step stream the rest of the view reduces (blocked / cleared / amending /
+// released markers), so it can never disagree with the feed or the clocks.
+const REGULATOR_OF = { sec: "SEC", nis2: "NIS2", dora: "DORA" };
+function regulatorList(branches) {
+  return branches.map((b) => REGULATOR_OF[b] || b.toUpperCase()).join(" and ");
+}
+
+// Reduce active steps into a gate verdict the incident commander reads.
+function deriveGate(active) {
+  const states = { nis2: "idle", sec: "idle", dora: "idle" };
+  let lastBanner = null;
+  let blockReason = null;       // a concrete reason sentence, when one is known
+  let released = false;
+  for (const s of active) {
+    if (s.branchState) states[s.branchState.branch] = s.branchState.state;
+    if (s.allBranchState) for (const b of Object.keys(states)) states[b] = s.allBranchState;
+    if (s.branchSet) for (const b of Object.keys(s.branchSet)) states[b] = s.branchSet[b];
+    if (s.banner) lastBanner = s.banner;
+    if (s.gateReason) blockReason = s.gateReason;
+    if (s.gateReleased) released = true;
+  }
+  const branches = ["nis2", "sec", "dora"];
+  const blocked = branches.filter((b) => states[b] === "blocked");
+  const amending = branches.filter((b) => states[b] === "amending");
+  const releasedBranches = branches.filter((b) => states[b] === "released");
+  const allReleased = releasedBranches.length === branches.length;
+
+  // Priority: an active block beats everything; then amendment; then released;
+  // then drafting; then the opening idle state.
+  if (blocked.length) {
+    return {
+      status: "blocked", pill: "blocked",
+      headline: "Submission blocked: two filings disagree on a load-bearing fact",
+      detail: blockReason
+        || `${regulatorList(blocked.length ? blocked : branches)} cannot go out until the conflicting fact is corrected and the referee's diff re-runs clean.`,
+      release: "held: contradiction unresolved", releaseCls: "held",
+    };
+  }
+  if (amending.length) {
+    return {
+      status: "blocked", pill: "amending",
+      headline: `Re-filing blocked: ${regulatorList(amending)} must agree on the revised figure first`,
+      detail: blockReason
+        || `A load-bearing fact was revised after release. ${regulatorList(amending)} reopened and stay blocked until both teams concur on one shared characterization.`,
+      release: "held: awaiting concurrence", releaseCls: "held",
+    };
+  }
+  if (lastBanner === "chaos") {
+    return {
+      status: "running", pill: "recovered",
+      headline: "A team member dropped offline, and the filing set held",
+      detail: "An AI drafter was knocked out right after posting. On restart its filing was already in the room, so the duplicate was dropped. Nothing was filed twice.",
+      release: released || allReleased ? "released, clean" : "drafting in progress",
+      releaseCls: released || allReleased ? "released" : "running",
+    };
+  }
+  if (allReleased || released) {
+    return {
+      status: "clear", pill: "released",
+      headline: "Cleared for release: all four filings agree",
+      detail: "The referee's cross-filing check is green, the human owner signed off, and every released clock has stopped.",
+      release: "released, clean", releaseCls: "released",
+    };
+  }
+  if (branches.some((b) => states[b] === "draft_submitted" || states[b] === "drafting")) {
+    return {
+      status: "running", pill: "running",
+      headline: "Drafting in progress: the teams are writing their filings",
+      detail: "Each AI team drafts its regulator's notification from the shared fact-record. Nothing is released until the referee confirms they all agree.",
+      release: "not yet released", releaseCls: "running",
+    };
+  }
+  return {
+    status: "running", pill: "running",
+    headline: "Incident open: four statutory clocks are running",
+    detail: "The referee opened the war room and started the regulatory deadlines. The teams are picking up the shared fact-record now.",
+    release: "not yet released", releaseCls: "running",
+  };
+}
+
+function renderGate(active) {
+  const g = deriveGate(active);
+  const panel = $("#gate-panel");
+  if (panel) panel.className = "panel gate-panel gate-" + g.status;
+  setText("#gate-headline", g.headline);
+  setText("#gate-detail", g.detail);
+  const pill = $("#gate-status-pill");
+  if (pill) { pill.textContent = g.pill; pill.className = "gate-status-pill gp-" + g.status; }
+  const rel = $("#gate-release-state");
+  if (rel) { rel.textContent = g.release; rel.className = "gate-release-state rel-" + g.releaseCls; }
+}
+
+// Defensive text setter: never throws if a node is missing (unsupervised judge).
+function setText(sel, text) { const n = $(sel); if (n) n.textContent = text; }
+
 // ---- state ------------------------------------------------------------------
 let manifest = null;
 let packet = null;
@@ -242,6 +339,7 @@ function buildSteps(p) {
       reveal: "contradiction",
       banner: "contradiction",
       allBranchState: "blocked",
+      gateReason: "The referee's cross-filing check found two filings telling two different stories about a load-bearing fact. They cannot leave the building until the conflict is corrected.",
     });
     if (p.diff.resolution) {
       const r = p.diff.resolution;
@@ -290,6 +388,7 @@ function buildSteps(p) {
     speakers: ["warden", "lena"],
     message: { from: "lena", to: "room", kind: "concur", body: "Human owner released the filings. Clocks stopped." },
     allBranchState: "released",
+    gateReleased: true,
   });
 
   // The amendment reconciliation beat.
@@ -315,6 +414,7 @@ function buildSteps(p) {
         speakers: ["warden"],
         message: { from: "warden", to: "room", kind: "block", body: "Amendment blocked: " + rec.block_reason },
         reveal: "reconciliation",
+        gateReason: `${rec.fact_key.replace(/_/g, " ")} was revised to ${fmtNum(rec.new_value)} after release. SEC and NIS2 reopened and stay blocked until both teams concur on one shared characterization of the new figure.`,
       });
     }
     (rec.exchange || []).forEach((e, i) => {
@@ -339,6 +439,7 @@ function buildSteps(p) {
       speakers: ["warden", "lena"],
       message: { from: "lena", to: "room", kind: "concur", body: `Amended filings released at ${fmtNum(rec.concurred_value)}.` },
       branchSet: { sec: "released", nis2: "released" },
+      gateReleased: true,
     });
   }
 
@@ -413,6 +514,7 @@ function render() {
   renderClocks(nowTs ? ms(nowTs) : null);
   renderHandoffs(active);
   renderBranchStates(active);
+  renderGate(active);
   renderReveals(active);
   syncBeats(active, latest);
 }
@@ -626,10 +728,10 @@ function renderStaticPanels() {
   // Compression banner
   $("#compression-banner").innerHTML = "";
   const b = $("#compression-banner");
-  b.appendChild(el("b", null, "REPLAY OF A CAPTURED LIVE BAND RUN"));
-  b.appendChild(el("span", null, TIME_COMPRESSION_LABEL));
-  b.appendChild(el("span", null, "log sha " + packet.replay.original_sha256.slice(0, 16) + "..."));
-  b.appendChild(el("span", null, "this is forensic playback, not a simulator"));
+  b.appendChild(el("b", null, "REPLAY OF A REAL RECORDED INCIDENT"));
+  b.appendChild(el("span", null, "the clocks run at " + TIME_COMPRESSION_LABEL));
+  b.appendChild(el("span", null, "captured on the Band platform, not simulated"));
+  b.appendChild(el("span", "eng-inline", "log sha " + packet.replay.original_sha256.slice(0, 16) + "..."));
 
   // Contradiction body
   const cBody = $("#contradiction-body");
@@ -1098,8 +1200,11 @@ async function init() {
   }
   sel.addEventListener("change", () => selectScenario(sel.value, { fromUser: true }));
 
-  // default to the contradiction scenario: it shows the veto beat on camera
-  const def = manifest.scenarios.find((s) => s.id === "inject_contradiction") || manifest.scenarios[0];
+  // Default to the amendment scenario: it is the fullest continuous story, from
+  // drafting through release, then a load-bearing fact changes, the re-filing is
+  // blocked until the teams concur, and it re-releases. It exercises the gate
+  // panel most richly. The other three paths stay one click away on the cards.
+  const def = manifest.scenarios.find((s) => s.id === "amendment") || manifest.scenarios[0];
   sel.value = def.id;
   renderScenarioCards(def.id);
   await loadScenario(def);

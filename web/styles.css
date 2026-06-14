@@ -443,6 +443,87 @@ input[type=range]::-moz-range-thumb {
   .hash-row code { font-size: 0.66rem; }
 }
 
+/* ====================================================================== */
+/* Incident Commander console reframe: product header, persona, the        */
+/* "what is blocked and why" gate panel, and the for-engineers tags.       */
+/* ====================================================================== */
+
+/* product name tag in the header */
+.product-tag {
+  display: inline-block; margin-left: 0.5rem; vertical-align: middle;
+  font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #cfe2fb; background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 999px; padding: 0.16rem 0.55rem;
+}
+.brand-text p { max-width: 52ch; }
+
+/* small intro eyebrow on the overlay */
+.intro-eyebrow {
+  color: var(--accent) !important; font-size: 0.74rem !important; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.09em; margin: 0 0 0.5rem !important;
+}
+
+/* sub-line under a panel heading, operator-readable */
+.panel-sub { margin: 0 0 0.8rem; line-height: 1.45; }
+
+/* "for engineers" tag: marks the raw, secondary technical surfaces */
+.eng-tag {
+  font-size: 0.6rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 0.08rem 0.42rem; margin-left: 0.45rem; vertical-align: middle;
+}
+.eng-inline { color: var(--muted-2); opacity: 0.85; }
+
+/* scenario cards heading */
+.scenario-cards-head {
+  max-width: 1180px; margin: 1.1rem auto 0; padding: 0 1.5rem;
+  display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap;
+}
+.scenario-cards-title { font-weight: 650; font-size: 0.92rem; }
+.scenario-cards-sub { color: var(--muted); font-size: 0.8rem; }
+
+/* ---- the gate panel: what is blocked and why ---- */
+.gate-panel {
+  display: flex; align-items: center; justify-content: space-between; gap: 1.2rem;
+  border-left: 4px solid var(--accent); flex-wrap: wrap;
+  transition: border-color 0.25s, background 0.25s;
+}
+.gate-panel.gate-blocked { border-left-color: var(--red); background: linear-gradient(90deg, rgba(58,24,32,0.55), var(--panel) 55%); }
+.gate-panel.gate-clear { border-left-color: var(--green); background: linear-gradient(90deg, rgba(22,58,42,0.5), var(--panel) 55%); }
+.gate-panel.gate-running { border-left-color: var(--accent); }
+.gate-main { display: flex; align-items: flex-start; gap: 0.9rem; flex: 1 1 320px; min-width: 0; }
+.gate-text { min-width: 0; }
+.gate-text h2 { font-size: 1.08rem; line-height: 1.25; margin-bottom: 0.35rem; }
+.gate-detail { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; max-width: 62ch; }
+
+.gate-status-pill {
+  flex-shrink: 0; margin-top: 0.15rem;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 0.32rem 0.6rem; border-radius: 8px; border: 1px solid var(--line);
+  color: var(--muted); background: var(--panel-2); white-space: nowrap;
+}
+.gate-status-pill.gp-blocked { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+.gate-status-pill.gp-clear { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+.gate-status-pill.gp-running { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+.gate-release {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end;
+  text-align: right; border-left: 1px solid var(--line-soft); padding-left: 1.1rem;
+}
+.gate-release-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-2); }
+.gate-release-state {
+  font-family: var(--mono); font-size: 0.82rem; font-weight: 600;
+  padding: 0.3rem 0.6rem; border-radius: 8px; border: 1px solid var(--line); color: var(--muted);
+}
+.gate-release-state.rel-released { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
+.gate-release-state.rel-held { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }
+.gate-release-state.rel-running { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
+
+@media (max-width: 700px) {
+  .gate-panel { gap: 0.8rem; }
+  .gate-release { border-left: none; padding-left: 0; align-items: flex-start; text-align: left; width: 100%; }
+}
+
 /* respect reduced-motion: drop the animated flourishes, keep the content */
 @media (prefers-reduced-motion: reduce) {
   .msg { animation: none; }
