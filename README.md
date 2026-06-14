@@ -5,7 +5,7 @@
 <!-- At submission, when the repo is public, swap the static CI badge below for the
      live workflow badge: ![ci](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg) -->
 ![ci](https://img.shields.io/badge/ci-pytest%20%2B%20ruff%20%2B%20hygiene-3fd07f)
-![tests](https://img.shields.io/badge/tests-282%20passing-3fd07f)
+![tests](https://img.shields.io/badge/tests-320%20passing-3fd07f)
 ![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)
 ![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)
 ![license](https://img.shields.io/badge/license-MIT-8b9bb4)
@@ -43,9 +43,10 @@ Every command below was run on this repo against live Band and live Featherless.
 
 | What | Command | What you see |
 |---|---|---|
-| The property suite | `py -m pytest tests/ -q` | `282 passed` |
+| The property suite | `py -m pytest tests/ -q` | `320 passed` |
 | Break the evidence yourself | `py scripts/tamper_test.py` | flip one field, the sealed hash, the chain head, AND the signature all break |
 | Verify the Warden's signature | `py scripts/verify_signature.py` | VALID, signed by the Warden's key (public key ships in the repo) |
+| Exactly-once at scale | `py scripts/exactly_once_benchmark.py` | held across 10,000 randomized kill + duplicate schedules: 0 double-files, 0 lost filings (deterministic, seeded) |
 | A clean incident, end to end | `py floor/run_floor.py` | Examiner Packet, diff GREEN, replay True |
 | The contradiction veto | `py floor/run_floor.py --inject-contradiction` | the red BLOCKED block, then re-run GREEN |
 | Exactly-once under a live kill | `py floor/run_floor.py --chaos` | the duplicate dropped, filing lands once |
@@ -60,7 +61,7 @@ $ py -m pytest tests/ -q
 ........................................................................ [ 58%]
 ........................................................................ [ 88%]
 .............................                                            [100%]
-282 passed in 4.59s
+320 passed in 6.01s
 ```
 
 ### 2. A clean incident: four clocks, the Examiner Packet, byte-identical replay
@@ -281,14 +282,14 @@ py floor/run_floor.py
 cd web && py -m http.server 8000   # then open http://localhost:8000
 ```
 
-The 282-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
+The 320-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
 
 ### One command
 
 On Linux, macOS, or any machine with `make`:
 
 ```
-make test      # the 282-test suite (no keys, no network)
+make test      # the 320-test suite (no keys, no network)
 make lint      # ruff over the repository
 make verify    # the tamper receipt: break the evidence, watch the seal fail
 make demo      # a live incident (needs BAND_API_KEY + FEATHERLESS_API_KEY)
