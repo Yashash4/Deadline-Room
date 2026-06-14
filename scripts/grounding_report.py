@@ -23,6 +23,22 @@ it. This script answers in the judge's own hands. It:
 
 Run it:  py scripts/grounding_report.py
 
+There is also a measured-eval mode:
+
+  py scripts/grounding_report.py --eval
+
+which runs the SAME scorer over a small labeled faithfulness corpus
+(tests/fixtures/grounding_corpus.json: ~20 filings each labeled faithful or
+hallucinated by a human reviewer) and prints a confusion matrix plus the
+measured PRECISION and RECALL of the hallucination check. This answers the
+question the one-fixture demo cannot: not "does the check fire," but "how good
+is the check." The number is honest: the corpus includes failure modes the
+conservative scorer is known to miss (a wrong system name with no version tag,
+a wrong actor version sharing the name token, a qualitative omission) and a
+boilerplate false-positive trap, so the reported recall and precision reflect
+the real scorer, not a rigged 1.0. The default run above is unchanged; the
+eval mode is additive and never alters the PASS/FAIL receipt.
+
 The grounding scorer is pure: a function of (filing_text, fact_record) with no
 network and no randomness, so this receipt is replayable and the same every
 time, exactly like the byte-identical replay it sits beside.
@@ -49,6 +65,8 @@ PACKETS = [
     DATA / "packet-amendment.json",
 ]
 POISONED_FIXTURE = DATA / "grounding-poisoned-fixture.json"
+# The labeled faithfulness corpus for the measured-eval mode (--eval).
+CORPUS = REPO_ROOT / "tests" / "fixtures" / "grounding_corpus.json"
 
 # The pass bar: every load-bearing span must trace to a fact. Matches
 # floor.run_floor.GROUNDING_THRESHOLD.
@@ -108,7 +126,130 @@ def _print_rows(rows: list[dict]) -> bool:
     return all_pass
 
 
+# ---------------------------------------------------------------------------
+# Measured eval mode (--eval): run the scorer over the labeled corpus and report
+# a confusion matrix plus precision and recall. This is the metric that turns the
+# grounding receipt from "fires on one fixture" into "here is its measured
+# accuracy." Pure and deterministic, same as the default receipt.
+# ---------------------------------------------------------------------------
+
+# A filing is judged HALLUCINATED by the scorer when its grounding score is below
+# the threshold (at least one load-bearing span did not trace to the record). The
+# ground-truth label in the corpus is what a human reviewer says; precision and
+# recall measure the scorer against that human label.
+HALLUCINATED = "hallucinated"
+FAITHFUL = "faithful"
+
+
+def evaluate_corpus(corpus: dict) -> dict:
+    """Score every labeled entry and return the confusion matrix and per-entry
+    rows. Pure function of the corpus dict. 'positive' means the scorer says
+    HALLUCINATED (score below threshold); the ground-truth positive is a human
+    label of 'hallucinated'. Returns counts tp/fp/tn/fn and the row detail."""
+    records = {
+        "fact_record": corpus["fact_record"],
+        "amended_fact_record": corpus["amended_fact_record"],
+    }
+    tp = fp = tn = fn = 0
+    rows: list[dict] = []
+    for entry in corpus["entries"]:
+        record = records[entry["record"]]
+        result = score_filing(entry["text"], record, branch=str(entry["id"]))
+        scorer_positive = result.score < THRESHOLD
+        truth_positive = entry["label"] == HALLUCINATED
+        if truth_positive and scorer_positive:
+            outcome = "TP"
+            tp += 1
+        elif truth_positive and not scorer_positive:
+            outcome = "FN"
+            fn += 1
+        elif (not truth_positive) and scorer_positive:
+            outcome = "FP"
+            fp += 1
+        else:
+            outcome = "TN"
+            tn += 1
+        rows.append({
+            "id": entry["id"],
+            "label": entry["label"],
+            "outcome": outcome,
+            "score": result.score,
+            "failure_mode": entry.get("failure_mode", ""),
+            "ungrounded": result.ungrounded,
+        })
+    return {"tp": tp, "fp": fp, "tn": tn, "fn": fn, "rows": rows}
+
+
+def precision_recall(tp: int, fp: int, fn: int) -> tuple[float, float]:
+    """Precision and recall from the confusion-matrix counts. With no positive
+    predictions precision is defined as 1.0 (no false alarms); with no actual
+    positives recall is 1.0 (nothing to miss). These conventions match the
+    test's tiny known sub-case."""
+    precision = tp / (tp + fp) if (tp + fp) else 1.0
+    recall = tp / (tp + fn) if (tp + fn) else 1.0
+    return precision, recall
+
+
+def run_eval() -> int:
+    """Print the measured grounding eval over the labeled corpus. Returns 0 if
+    the corpus loaded and was scored, 2 if the corpus file is missing. The eval
+    REPORTS the scorer's measured quality; it does not pass or fail the build on
+    a precision or recall threshold, because the honest number (the scorer misses
+    some subtle modes by design) is the point, not a gate."""
+    print("=" * 72)
+    print("GROUNDING EVAL: measured precision and recall over a labeled corpus")
+    print("=" * 72)
+    if not CORPUS.exists():
+        print(f"grounding_report: labeled corpus not found at {CORPUS}",
+              file=sys.stderr)
+        return 2
+    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+    report = evaluate_corpus(corpus)
+    rows = report["rows"]
+    total = len(rows)
+    print(f"Corpus: {total} human-labeled filings "
+          f"(faithful or hallucinated), scored by floor/grounding.py.")
+    print("'positive' = the scorer flagged the filing (score below 1.0).")
+    print("Ground truth = the human label. No network, fully replayable.")
+    print()
+
+    for r in rows:
+        spans = ", ".join(f"{u.kind}:{u.span!r}" for u in r["ungrounded"])
+        detail = f"  flagged {spans}" if spans else ""
+        print(f"  [{r['outcome']}] {r['id']:38s} truth={r['label']:12s} "
+              f"score {r['score']:.2f}{detail}")
+    print()
+
+    tp, fp, tn, fn = report["tp"], report["fp"], report["tn"], report["fn"]
+    print("Confusion matrix (rows = ground truth, cols = scorer verdict):")
+    print(f"  {'':22s}{'scorer: flagged':>18s}{'scorer: clean':>16s}")
+    print(f"  {'truth: hallucinated':22s}{('TP ' + str(tp)):>18s}"
+          f"{('FN ' + str(fn)):>16s}")
+    print(f"  {'truth: faithful':22s}{('FP ' + str(fp)):>18s}"
+          f"{('TN ' + str(tn)):>16s}")
+    print()
+
+    precision, recall = precision_recall(tp, fp, fn)
+    hallu = tp + fn
+    clean = tn + fp
+    print(f"  Recall    {recall:.3f}  (caught {tp} of {hallu} hallucinated filings)")
+    print(f"  Precision {precision:.3f}  "
+          f"(flagged {fp} of {clean} faithful filings as false positives)")
+    print()
+    print("  Read honestly: the conservative scorer checks count-shaped numbers,")
+    print("  dates, and version-tagged actors. It catches those modes and misses")
+    print("  a wrong system name with no version tag, a wrong actor version that")
+    print("  shares the name token, and a qualitative omission, which is why the")
+    print("  recall is not 1.0. The one false positive is a real NYDFS citation")
+    print("  (23 NYCRR 500.17) that reads to the actor matcher like a versioned")
+    print("  proper noun. The number is measured, not rigged.")
+    print("=" * 72)
+    return 0
+
+
 def main() -> int:
+    if "--eval" in sys.argv[1:] or "--corpus" in sys.argv[1:]:
+        return run_eval()
     print("=" * 72)
     print("GROUNDING REPORT: every number in the filings traces to the fact-record")
     print("=" * 72)

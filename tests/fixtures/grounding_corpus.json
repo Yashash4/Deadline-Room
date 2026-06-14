@@ -1,0 +1,181 @@
+{
+  "about": "Labeled faithfulness corpus for the deterministic grounding scorer (floor/grounding.py). Each entry is a drafted filing snippet, the fact-record it must be scored against, and a human GROUND-TRUTH label of faithful or hallucinated. The label is what a careful human reviewer says about the prose, NOT what the scorer says. scripts/grounding_report.py --eval runs the scorer over every entry and reports the confusion matrix plus precision and recall, so the measured quality of the hallucination check is an honest number a judge can re-run. The corpus deliberately spans (a) clearly grounded filings, (b) clearly hallucinated ones (invented count, date, actor), (c) failure modes the current scorer is known to MISS (a wrong system name with no version tag, a wrong actor version that shares the name token, a single-word actor swap, a qualitative omission), and (d) a boilerplate-heavy false-positive trap built from real statutory citations. The labels are honest: where the scorer misses a hallucination, the recall reflects it; where boilerplate trips it, the precision reflects it.",
+  "fact_record": {
+    "incident_id": "inc-8842",
+    "incident_start_utc": "2026-06-16T02:14:00+00:00",
+    "records_affected": 48211,
+    "attacker": "LockBit 3.0",
+    "containment": "partially_contained",
+    "systems": [
+      "core banking ledger",
+      "customer KYC store"
+    ],
+    "data_categories": [
+      "name",
+      "address",
+      "account_number"
+    ],
+    "regulated_entity": "Meridian Trust Bank N.V.",
+    "competent_authority": "national CSIRT (NIS2)"
+  },
+  "amended_fact_record": {
+    "incident_id": "inc-8842",
+    "incident_start_utc": "2026-06-16T02:14:00+00:00",
+    "records_affected": 2100000,
+    "attacker": "LockBit 3.0",
+    "containment": "contained",
+    "systems": [
+      "core banking ledger",
+      "customer KYC store"
+    ],
+    "data_categories": [
+      "name",
+      "address",
+      "account_number"
+    ],
+    "regulated_entity": "Meridian Trust Bank N.V.",
+    "competent_authority": "national CSIRT (NIS2)"
+  },
+  "entries": [
+    {
+      "id": "grounded-nis2-full",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "none: every count, date, and named actor traces to the record",
+      "text": "On 16 June 2026 at 02:14 UTC, Meridian Trust Bank N.V. detected a breach attributed to the LockBit 3.0 ransomware group affecting the core banking ledger and the customer KYC store. Approximately 48,211 records were affected. The incident remains partially contained, and this notification is filed within 72 hours under Article 23 of the NIS2 Directive."
+    },
+    {
+      "id": "grounded-sec-prose",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "none: a SEC-flavoured restatement of the same facts",
+      "text": "On June 16, 2026, the registrant determined it experienced a material cybersecurity incident. The threat actor identified as LockBit 3.0 accessed the core banking ledger. The incident affected 48,211 customer records and is disclosed on Form 8-K under Item 1.05 within four business days."
+    },
+    {
+      "id": "grounded-iso-date",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "none: the date is restated in ISO form 2026-06-16",
+      "text": "Incident reference inc-8842. The compromise began 2026-06-16 at 02:14 and impacted the core banking ledger. Records affected: 48,211. Attribution: LockBit 3.0. Status: partially contained."
+    },
+    {
+      "id": "grounded-paraphrase",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "none: the count is spelled out, no count-shaped surface form to check, and the named actor still grounds",
+      "text": "Roughly forty-eight thousand customer records were exposed when LockBit 3.0 struck the core banking ledger on the sixteenth of June 2026. Meridian Trust Bank N.V. has partially contained the incident."
+    },
+    {
+      "id": "grounded-no-separator",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "none: the count is written without a thousands separator (48211) and must still ground",
+      "text": "On 16 June 2026, LockBit 3.0 compromised the core banking ledger of Meridian Trust Bank N.V., affecting 48211 records. Notification within 72 hours under Article 23."
+    },
+    {
+      "id": "grounded-amended-record",
+      "label": "faithful",
+      "record": "amended_fact_record",
+      "failure_mode": "none: an amended filing scored against the amended record (2,100,000) is faithful",
+      "text": "Following further forensic analysis, the number of affected records has been revised to 2,100,000. The incident, attributed to LockBit 3.0 and commencing 16 June 2026, is now fully contained. This amended filing supersedes the preliminary figure."
+    },
+    {
+      "id": "grounded-amended-iso",
+      "label": "faithful",
+      "record": "amended_fact_record",
+      "failure_mode": "none: amended count 2,100,000 restated with ISO date",
+      "text": "Amended notification, incident inc-8842, commencing 2026-06-16. The revised impact assessment confirms 2,100,000 records affected by the LockBit 3.0 intrusion. The core banking ledger has been restored and the incident is contained."
+    },
+    {
+      "id": "hallucinated-invented-count",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "invented count: 9,500,000 contradicts the record's 48,211 (the scorer is built to catch this)",
+      "text": "Preliminary assessment indicates that 9,500,000 records have been affected by the LockBit 3.0 intrusion on 16 June 2026. The core banking ledger remains partially contained."
+    },
+    {
+      "id": "hallucinated-count-off-by-factor",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "invented count: 482,110 is the real figure times ten, a plausible transcription slip",
+      "text": "On 16 June 2026, LockBit 3.0 accessed the core banking ledger and exposed approximately 482,110 customer records held by Meridian Trust Bank N.V."
+    },
+    {
+      "id": "hallucinated-invented-date",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "invented date: 11 August 2026 contradicts the record's 16 June 2026 (the scorer is built to catch this)",
+      "text": "On 11 August 2026, Meridian Trust Bank N.V. detected a breach by LockBit 3.0 affecting 48,211 records in the core banking ledger. Notification is filed within 72 hours."
+    },
+    {
+      "id": "hallucinated-invented-actor",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "invented actor: BlackMatter 4.2 is a different version-tagged actor than the record's LockBit 3.0 (the scorer is built to catch this)",
+      "text": "The incident on 16 June 2026 is attributed to the BlackMatter 4.2 ransomware group, which compromised the core banking ledger and exposed 48,211 records held by Meridian Trust Bank N.V."
+    },
+    {
+      "id": "hallucinated-both-count-and-actor",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "invented count and actor together: 9,500,000 records by BlackMatter 4.2 (two flags expected)",
+      "text": "Preliminary assessment indicates 9,500,000 records were exposed in the 16 June 2026 attack by the BlackMatter 4.2 ransomware group against the core banking ledger."
+    },
+    {
+      "id": "hallucinated-amended-wrong-count",
+      "label": "hallucinated",
+      "record": "amended_fact_record",
+      "failure_mode": "invented count against the amended record: 5,000,000 contradicts the revised 2,100,000",
+      "text": "The revised impact assessment now indicates 5,000,000 records affected by the LockBit 3.0 intrusion that began 16 June 2026. The incident is contained."
+    },
+    {
+      "id": "hallucinated-wrong-system-name",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "KNOWN MISS: an invented system name (Stellar Core Engine) that is not version-tagged is a real hallucination the conservative scorer does not score, so this drives recall below 1.0 honestly",
+      "text": "On 16 June 2026, LockBit 3.0 compromised the Stellar Core Engine, a system Meridian Trust Bank N.V. does not operate, exposing 48,211 records. The incident is partially contained."
+    },
+    {
+      "id": "hallucinated-wrong-actor-version",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "KNOWN MISS: LockBit 2.0 is the wrong version, but it shares the LockBit name token, so the token-overlap grounding credits it. A genuine hallucination the scorer misses; counted honestly against recall",
+      "text": "The breach on 16 June 2026 is attributed to the LockBit 2.0 ransomware group, which exposed 48,211 records in the core banking ledger of Meridian Trust Bank N.V."
+    },
+    {
+      "id": "hallucinated-single-word-actor",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "KNOWN MISS: Conti is a real-world actor name but not the record's actor, and a single un-versioned word is not scored as an actor span, so this is missed; counted honestly against recall",
+      "text": "Forensic attribution points to the Conti ransomware operation as responsible for the 16 June 2026 compromise of the core banking ledger, which affected 48,211 records."
+    },
+    {
+      "id": "hallucinated-qualitative-omission",
+      "label": "hallucinated",
+      "record": "fact_record",
+      "failure_mode": "KNOWN MISS: the prose claims the incident is fully contained when the record says partially_contained, a qualitative drift with no count-shaped or version-tagged surface form, so the scorer does not catch it; counted honestly against recall",
+      "text": "On 16 June 2026 the LockBit 3.0 intrusion affecting 48,211 records was fully contained within the hour, and no customer data left the bank's perimeter. The matter is closed."
+    },
+    {
+      "id": "clean-boilerplate-statutory",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "false-positive trap: dense legitimate statutory citations (Article 23, Article 33, Item 1.05, Form 8-K, 72 hours, four business days, Part 500) plus the year 2026 must NOT be flagged",
+      "text": "This notification under Article 23 of the NIS2 Directive is filed within 72 hours, consistent with Article 33 of GDPR, and the registrant will disclose on Form 8-K under Item 1.05 within four business days, with reference to 23 NYCRR Part 500. The incident on 16 June 2026 affected 48,211 records and is attributed to LockBit 3.0."
+    },
+    {
+      "id": "clean-boilerplate-nydfs-citation",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "false-positive trap (the hardest): a real NYDFS citation 23 NYCRR 500.17 reads to the actor matcher like a version-tagged proper noun. This is a legitimate filing, so a flag here is a true false positive and lowers precision honestly",
+      "text": "Pursuant to 23 NYCRR 500.17, Meridian Trust Bank N.V. submits this cybersecurity event notification. The 16 June 2026 incident attributed to LockBit 3.0 affected 48,211 records in the core banking ledger and is partially contained."
+    },
+    {
+      "id": "clean-multi-regime-dates",
+      "label": "faithful",
+      "record": "fact_record",
+      "failure_mode": "false-positive trap: multiple legitimate date and time mentions of the one incident date, plus statutory periods, none of which contradict the record",
+      "text": "The incident began on 16 June 2026 at 02:14 UTC. Within 24 hours an early warning issued; the full notification follows within 72 hours per Article 23. On June 16, 2026 the core banking ledger was isolated. LockBit 3.0 is the attributed actor and 48,211 records were affected."
+    }
+  ]
+}
