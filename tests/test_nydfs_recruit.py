@@ -106,6 +106,8 @@ def test_nydfs_clock_starts_at_recruit_moment_not_t0(tmp_path):
                    if c["correlation_id"] == "inc-8842:nydfs"]
     assert len(nydfs_clock) == 1
     assert nydfs_clock[0]["started"] == TS_NYDFS_RECRUIT
+    # The clock is honestly labelled as anchored on the determination moment.
+    assert nydfs_clock[0]["trigger_event"] == "determination (recruit moment)"
     # 72 flat calendar hours from the recruit moment.
     started = parse_ts(nydfs_clock[0]["started"])
     deadline = parse_ts(nydfs_clock[0]["deadline"])

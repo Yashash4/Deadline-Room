@@ -108,6 +108,18 @@ DRAFTER_ROLES = [roster.NIS2_DRAFTER, roster.SEC_DRAFTER, roster.DORA_DRAFTER]
 
 # Demo-mode timestamps for the protocol clock. Fixed so replay is byte-stable.
 TS_FACTS = "2026-06-16T02:31:00+00:00"
+# SEC Item 1.05 starts its four-business-day clock at the moment the registrant
+# DETERMINES the incident is material, not at occurrence (T0) and not at
+# discovery. The SEC spent a year of public guidance (CorpFin, May 21 2024)
+# correcting exactly the occurrence-anchored mistake. The materiality phase
+# produces this determination; the clock anchors here, mirroring how the NYDFS
+# clock anchors at its determination/recruit moment. The constant is fixed on
+# 2026-06-16 (the day the fact-record is in hand and materiality is determined,
+# 02:31 UTC, after T0 at 02:14) so the business-day count, the Juneteenth +
+# weekend skip, and the resulting June 23 deadline are byte-for-byte unchanged
+# from the prior occurrence-anchored run: only the SEMANTICS and the anchor
+# source change, never the demo date.
+TS_SEC_DETERMINATION = "2026-06-16T02:31:00+00:00"
 TS_DRAFT = "2026-06-16T03:11:00+00:00"
 TS_DIFF = "2026-06-16T04:00:00+00:00"
 TS_RESOLVE = "2026-06-16T04:20:00+00:00"
@@ -416,14 +428,28 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     branch_corr["uk"] = f"{INCIDENT_ID}:uk"
     branch_corr["nydfs"] = f"{INCIDENT_ID}:nydfs"
     DRAFTER_BRANCHES_THIS_RUN = [r.branch for r in DRAFTER_ROLES]
-    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early", INCIDENT_T0, 24)
-    clocks.start_hours("NIS2 full notification (72h)", branch_corr["nis2"], INCIDENT_T0, 72)
-    clocks.start_hours("DORA major-incident (72h)", branch_corr["dora"], INCIDENT_T0, 72)
-    clocks.start_sec_business_days(branch_corr["sec"], INCIDENT_T0)
+    # NIS2 Article 23: the 24h early warning and the 72h notification both run
+    # from the SAME "becoming aware" moment (not 24h then a further 72h). In this
+    # incident the bank becomes aware essentially at occurrence, so the awareness
+    # anchor coincides with T0; the trigger_event labels it honestly as awareness.
+    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early",
+                       INCIDENT_T0, 24, trigger_event="becoming aware")
+    clocks.start_hours("NIS2 full notification (72h)", branch_corr["nis2"],
+                       INCIDENT_T0, 72, trigger_event="becoming aware")
+    # DORA Article 19 major-incident reporting; anchored here at occurrence and
+    # labelled as such (the classification-as-major refinement is deferred).
+    clocks.start_hours("DORA major-incident (72h)", branch_corr["dora"],
+                       INCIDENT_T0, 72, trigger_event="incident occurrence")
+    # SEC Item 1.05: four BUSINESS days from the materiality DETERMINATION, not
+    # from T0. The determination constant is fixed on 2026-06-16, so the deadline
+    # still lands on June 23 (Juneteenth + weekend skip), byte-identical.
+    clocks.start_sec_business_days(branch_corr["sec"], TS_SEC_DETERMINATION)
     for c in clocks.all():
         log.append("clock_started", {"clock": c.name, "correlation_id": c.correlation_id,
                                      "deadline": c.deadline.isoformat()})
-    trace.say(f"[3] Started {len(clocks.all())} statutory clocks at T0 {INCIDENT_T0}")
+    trace.say(f"[3] Started {len(clocks.all())} statutory clocks: NIS2/DORA from "
+              f"T0 {INCIDENT_T0}, SEC from the materiality determination "
+              f"{TS_SEC_DETERMINATION}")
 
     # ---- Triage posts the canonical fact-record, @mentioning drafters --
     # Each branch's protocol opens with FACT_RECORD_POSTED, emitted by Triage.
@@ -1294,7 +1320,8 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
     #    late-started clock the Examiner Packet shows. start_hours is reused
     #    unchanged: target.clock_hours flat hours from the recruit timestamp.
     corr = branch_corr[target.branch]
-    clocks.start_hours(target.clock_name, corr, ts_recruit, target.clock_hours)
+    clocks.start_hours(target.clock_name, corr, ts_recruit, target.clock_hours,
+                       trigger_event=target.trigger_event)
     log.append("clock_started", {"clock": target.clock_name, "correlation_id": corr,
                                  "started_at": ts_recruit,
                                  "deadline": clocks.get(corr).deadline.isoformat(),
@@ -1579,6 +1606,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     for c in clocks.all():
         clock_rows.append({
             "name": c.name, "correlation_id": c.correlation_id,
+            "trigger_event": c.trigger_event,
             "started": c.started_at.isoformat(), "deadline": c.deadline.isoformat(),
             "stopped": c.stopped_at.isoformat() if c.stopped_at else "",
             "breached": c.breached(c.stopped_at or c.deadline) if c.stopped_at else False,
@@ -1705,13 +1733,18 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
                         "drafter_id": drafter_id})
 
     corr_nis2 = f"{INCIDENT_ID}:nis2"
-    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early", INCIDENT_T0, 24)
-    clocks.start_hours("NIS2 full notification (72h)", corr_nis2, INCIDENT_T0, 72)
-    clocks.start_sec_business_days(f"{INCIDENT_ID}:sec", INCIDENT_T0)
+    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early",
+                       INCIDENT_T0, 24, trigger_event="becoming aware")
+    clocks.start_hours("NIS2 full notification (72h)", corr_nis2,
+                       INCIDENT_T0, 72, trigger_event="becoming aware")
+    # SEC Item 1.05: four business days from the materiality determination, not T0.
+    clocks.start_sec_business_days(f"{INCIDENT_ID}:sec", TS_SEC_DETERMINATION)
     for c in clocks.all():
         log.append("clock_started", {"clock": c.name, "correlation_id": c.correlation_id,
                                      "deadline": c.deadline.isoformat()})
-    trace.say(f"[4] Started {len(clocks.all())} statutory clocks at T0 {INCIDENT_T0}")
+    trace.say(f"[4] Started {len(clocks.all())} statutory clocks: NIS2 from T0 "
+              f"{INCIDENT_T0}, SEC from the materiality determination "
+              f"{TS_SEC_DETERMINATION}")
 
     _proto(sm, trace, corr_nis2, Event.FACT_RECORD_POSTED, TS_FACTS, "triage", "triage")
     fact_text = (
@@ -1820,6 +1853,7 @@ def _assemble_legacy_packet(room_id, trace, clocks, conflicts, breached, filings
     for c in clocks.all():
         clock_rows.append({
             "name": c.name, "correlation_id": c.correlation_id,
+            "trigger_event": c.trigger_event,
             "started": c.started_at.isoformat(), "deadline": c.deadline.isoformat(),
             "stopped": c.stopped_at.isoformat() if c.stopped_at else "",
             "breached": c.breached(c.stopped_at or c.deadline) if c.stopped_at else False,

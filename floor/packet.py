@@ -512,9 +512,13 @@ def _render_cover(p: dict) -> str:
     chips = []
     for c in clocks:
         label, cls = _clock_status(c)
+        trigger = c.get("trigger_event", "")
+        trigger_html = (f'<div class="jtrigger">trigger: {_esc(trigger)}</div>'
+                        if trigger else "")
         chips.append(
             f'<div class="jchip {cls}">'
             f'<div class="jname">{_esc(c.get("name", ""))}</div>'
+            f'{trigger_html}'
             f'<div class="jdeadline">deadline {_esc(c.get("deadline", ""))}</div>'
             f'<div class="jstatus">{_esc(label)}</div></div>')
     chips_html = "".join(chips) or '<div class="jchip st-warn">no clocks</div>'
@@ -606,9 +610,11 @@ def _render_html(p: dict) -> str:
         [[m.get("message_id"), " -> ".join(m.get("states", []))] for m in lifecycle],
     )
     clock_rows = _rows(
-        ["Clock", "Branch", "Started", "Deadline", "Stopped", "Breached"],
-        [[c.get("name"), c.get("correlation_id"), c.get("started"),
-          c.get("deadline"), c.get("stopped") or "(running)", c.get("breached")]
+        ["Clock", "Branch", "Trigger event", "Started", "Deadline", "Stopped",
+         "Breached"],
+        [[c.get("name"), c.get("correlation_id"), c.get("trigger_event"),
+          c.get("started"), c.get("deadline"), c.get("stopped") or "(running)",
+          c.get("breached")]
          for c in clocks],
     )
     filing_blocks = "".join(
@@ -686,6 +692,7 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
           min-width: 150px; border-left-width: 5px; }}
 .jname {{ font-weight: 600; font-size: 13px; }}
 .jdeadline {{ font-size: 11px; color: #5b6473; font-family: ui-monospace, monospace; }}
+.jtrigger {{ font-size: 11px; color: #5b6473; font-style: italic; margin-top: 1px; }}
 .jstatus {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
             font-weight: 700; margin-top: 2px; }}
 .jchip.st-ok {{ border-left-color: #1d7a43; }} .jchip.st-ok .jstatus {{ color: #1d7a43; }}

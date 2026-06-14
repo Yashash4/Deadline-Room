@@ -1,7 +1,14 @@
 """Statutory clock engine. Driven by real timestamps, never by wall-clock cosmetics.
 
-Clocks: NIS2 early warning 24h, NIS2 full 72h, DORA 72h, CISA 24h,
-UK ICO/GDPR 72h (started at recruit time), SEC 4 *business days*.
+Clocks: NIS2 early warning 24h and full 72h (both from "becoming aware"), DORA
+72h (major-incident reporting), UK ICO/GDPR 72h (started at recruit time), NYDFS
+72h calendar (from determination), SEC 4 *business days* (from the materiality
+determination, not from occurrence or discovery).
+
+Each clock carries a trigger_event label naming the statutory event it is
+anchored on, so the Examiner Packet reads as examiner-written: the SEC clock
+starts the moment the registrant DETERMINES materiality, the NIS2 clocks the
+moment the entity becomes aware, NYDFS the moment of determination.
 
 The SEC clock skips weekends and US federal holidays. Every naive team
 ships `now + 96h`; an examiner (or a probing judge) knows the difference.
@@ -59,6 +66,12 @@ class Clock:
     started_at: datetime
     deadline: datetime
     stopped_at: datetime | None = None  # set when the branch is released/suppressed
+    # The statutory event the clock is anchored on. Defaulted so every existing
+    # construction keeps working; the Examiner Packet renders it next to each
+    # clock so a reader sees WHAT starts the count, not just when. Examples:
+    # "incident occurrence" (T0), "materiality determination", "becoming aware",
+    # "classification as major", "determination (recruit moment)".
+    trigger_event: str = "incident occurrence"
 
     def remaining(self, now: datetime) -> timedelta:
         ref = self.stopped_at or now
@@ -73,15 +86,23 @@ class ClockEngine:
     def __init__(self) -> None:
         self._clocks: dict[str, Clock] = {}
 
-    def start_hours(self, name: str, correlation_id: str, started_at_ts: str, hours: int) -> Clock:
+    def start_hours(self, name: str, correlation_id: str, started_at_ts: str, hours: int,
+                    trigger_event: str = "incident occurrence") -> Clock:
         start = parse_ts(started_at_ts)
-        c = Clock(name, correlation_id, start, start + timedelta(hours=hours))
+        c = Clock(name, correlation_id, start, start + timedelta(hours=hours),
+                  trigger_event=trigger_event)
         self._clocks[correlation_id] = c
         return c
 
-    def start_sec_business_days(self, correlation_id: str, started_at_ts: str, days: int = 4) -> Clock:
+    def start_sec_business_days(self, correlation_id: str, started_at_ts: str, days: int = 4,
+                                trigger_event: str = "materiality determination") -> Clock:
+        # SEC Item 1.05 counts four BUSINESS days from the moment the registrant
+        # DETERMINES the incident is material, not from occurrence or discovery.
+        # The caller passes the determination timestamp; the trigger is labelled
+        # accordingly so the packet reads the rule honestly.
         start = parse_ts(started_at_ts)
-        c = Clock("SEC 8-K (4 business days)", correlation_id, start, add_business_days(start, days))
+        c = Clock("SEC 8-K (4 business days)", correlation_id, start,
+                  add_business_days(start, days), trigger_event=trigger_event)
         self._clocks[correlation_id] = c
         return c
 

@@ -34,6 +34,12 @@ class RecruitTarget:
     name_tokens: tuple[str, ...]  # tokens to match a peer's name/handle on
     clock_name: str          # statutory clock label
     clock_hours: int         # statutory window in hours from the recruit moment
+    # The statutory event the clock is anchored on, rendered next to the clock in
+    # the Examiner Packet. The recruit moment is the faithful proxy: for the UK
+    # ICO it stands in for "became aware a UK personal-data breach is in scope",
+    # for NYDFS it is the moment of determination. Defaulted so any future target
+    # that omits it still constructs.
+    trigger_event: str = "determination (recruit moment)"
 
 
 # The UK ICO Drafter. Recruited only when a UK subsidiary is in the blast radius.
@@ -45,6 +51,9 @@ UK_ICO_TARGET = RecruitTarget(
     name_tokens=("uk", "ico"),
     clock_name="UK ICO / GDPR personal-data breach (72h)",
     clock_hours=72,
+    # UK GDPR Art. 33 runs from AWARENESS of the breach. The recruit moment (a UK
+    # personal-data breach is found in scope) is that awareness.
+    trigger_event="becoming aware",
 )
 
 
@@ -64,6 +73,9 @@ NYDFS_TARGET = RecruitTarget(
     name_tokens=("nydfs",),
     clock_name="NYDFS 23 NYCRR 500.17(a)(1) (72h from determination)",
     clock_hours=72,
+    # 23 NYCRR 500.17(a)(1) runs from DETERMINING a reportable cybersecurity
+    # event occurred. The recruit moment is that determination.
+    trigger_event="determination (recruit moment)",
 )
 
 
