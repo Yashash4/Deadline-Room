@@ -29,6 +29,16 @@ Two independent seals catch it:
                     the tampered log no longer equals the tampered log. A log
                     is authentic only when replay(log) == log AND its hash
                     matches the seal. Both break here, provably, offline.
+
+The flat hash above catches a flipped FIELD. It is blunt about REORDERING and
+OMISSION: it tells you the whole-file digest moved, but not which entry broke,
+and a forger who re-seals after editing defeats a bare digest entirely. So this
+script also runs a hash CHAIN beat. The chain folds each entry's hash into the
+next (entry_hash[i] = sha256(entry_hash[i-1] || canon(entry[i]))), computed as a
+DERIVED sidecar from the same canonical bytes replay uses. Swap two entries or
+drop one and the chain head diverges, AND the script names the FIRST entry whose
+chain hash breaks. The chain is read-only over the log: the run-log sha and the
+byte-identical replay are untouched by it.
 """
 
 from __future__ import annotations
@@ -41,6 +51,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from warden.chain import chain_head, chain_over, first_broken_index  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
 
 LOG_PATH = REPO_ROOT / "web" / "data" / "run-inc-8842-chaos.jsonl"
@@ -81,6 +92,45 @@ def _flip_one_field(entries: list[dict]) -> tuple[str, str, str]:
     raise SystemExit(
         "tamper_test: no admitted protocol_event found in the captured log; "
         "the fixture is malformed."
+    )
+
+
+def _swap_two_protocol_events(log: RunLog) -> tuple[int, int]:
+    """Swap the position of the first two protocol events in the log.
+
+    No field is altered: only the ORDER changes, which a flat field-edit test
+    would not flag as cleanly. The seqs ride along with their entries, so
+    after the swap the seq column is out of order, exactly the footprint a
+    reorder leaves. Operates on the log's backing list so the reorder
+    actually persists. Returns the two logged seq values that traded places."""
+    entries = log._entries  # noqa: SLF001
+    idxs = [k for k, e in enumerate(entries) if e["type"] == "protocol_event"]
+    if len(idxs) < 2:
+        raise SystemExit(
+            "tamper_test: fewer than two protocol_events to reorder; "
+            "the fixture is malformed."
+        )
+    a, b = idxs[0], idxs[1]
+    seq_a = entries[a]["seq"]
+    seq_b = entries[b]["seq"]
+    entries[a], entries[b] = entries[b], entries[a]
+    return seq_a, seq_b
+
+
+def _drop_one_protocol_event(log: RunLog) -> int:
+    """Delete the first protocol event from the log and return its seq.
+
+    A silent omission: the line simply vanishes. Every chain hash from that
+    point on shifts, so the head diverges and the first broken link names the
+    gap. Operates on the log's backing list so the deletion persists."""
+    entries = log._entries  # noqa: SLF001
+    for k, e in enumerate(entries):
+        if e["type"] == "protocol_event":
+            dropped_seq = e["seq"]
+            del entries[k]
+            return dropped_seq
+    raise SystemExit(
+        "tamper_test: no protocol_event to omit; the fixture is malformed."
     )
 
 
@@ -159,26 +209,79 @@ def main() -> int:
         print(f"    tampered : {tamp_line}")
     print()
 
+    # The chain over the SEALED log: our trusted reference for the next two
+    # beats. Computed read-only from the same canonical bytes the run-log sha
+    # covers, so it does not touch the seal or replay.
+    sealed_chain = chain_over(sealed.entries())
+    sealed_head = chain_head(sealed.entries())
+    print("Hash chain over the sealed log")
+    print(f"  entries chained     : {len(sealed_chain)}")
+    print(f"  sealed chain head   : {sealed_head}")
+    print("  -> each entry's hash folds in the prior entry's hash, so the head")
+    print("     binds the exact ORDER and COUNT of every event, not just fields.")
+    print()
+
+    # --- Step 4: reorder two entries --------------------------------------
+    reordered = _clone(sealed)
+    i, j = _swap_two_protocol_events(reordered)
+    reordered_head = chain_head(reordered.entries())
+    reorder_first_break = first_broken_index(reordered.entries(), sealed_chain)
+    reorder_head_moved = reordered_head != sealed_head
+    print("Step 4  swap the ORDER of two events (no field changed)")
+    print(f"  swapped seqs        : {i} <-> {j}")
+    print(f"  reordered head      : {reordered_head}")
+    print(f"  vs sealed head      : {sealed_head}")
+    print(f"  chain head moved    : {reorder_head_moved}")
+    print(f"  first broken link   : index {reorder_first_break}")
+    print("  -> a bare whole-file hash would only say 'something moved'; the")
+    print("     chain points at the exact first entry whose hash no longer fits.")
+    reorder_detected = reorder_head_moved and reorder_first_break is not None
+    print()
+
+    # --- Step 5: omit one entry -------------------------------------------
+    omitted = _clone(sealed)
+    dropped_seq = _drop_one_protocol_event(omitted)
+    omitted_head = chain_head(omitted.entries())
+    omission_first_break = first_broken_index(omitted.entries(), sealed_chain)
+    omission_head_moved = omitted_head != sealed_head
+    print("Step 5  OMIT one event (silently delete a line)")
+    print(f"  dropped seq         : {dropped_seq}")
+    print(f"  omitted head        : {omitted_head}")
+    print(f"  vs sealed head      : {sealed_head}")
+    print(f"  chain head moved    : {omission_head_moved}")
+    print(f"  first broken link   : index {omission_first_break}")
+    print("  -> dropping an entry shifts the chain from that point on; the head")
+    print("     diverges and the first broken link names where the gap begins.")
+    omission_detected = omission_head_moved and omission_first_break is not None
+    print()
+
     # --- Verdict ----------------------------------------------------------
-    # The evidence is authentic only when it both matches its seal AND
-    # self-certifies under replay. A single flipped field breaks at least one,
-    # and here it breaks both. Detected means the tamper could not hide.
-    tamper_detected = seal_broken or not self_certifies
+    # The evidence is authentic only when it matches its seal, self-certifies
+    # under replay, AND its chain head matches. A flipped field breaks the seal
+    # and self-certification; a reorder or an omission breaks the chain head and
+    # is point-at-able to the first broken link. All three must be detected.
+    field_detected = seal_broken or not self_certifies
+    all_detected = field_detected and reorder_detected and omission_detected
     print("=" * 72)
-    if tamper_detected:
-        print("VERDICT: PASS. Tamper detected. One byte changed, and the seal "
-              "breaks.")
-        print("The sealed hash is bound to the actual content, and replay "
-              "re-executes")
-        print("the state machine rather than echoing the log. Verified, not "
-              "asserted.")
+    if all_detected:
+        print("VERDICT: PASS. Tamper detected three ways.")
+        print("  field flip : sealed hash moves AND replay re-derives the truth.")
+        print("  reorder    : chain head diverges; first broken link named.")
+        print("  omission   : chain head diverges; first broken link named.")
+        print("The seal binds content, the chain binds order and count, and "
+              "replay")
+        print("re-executes the state machine rather than echoing the log. "
+              "Verified,")
+        print("not asserted.")
         print("=" * 72)
         return 0
 
-    print("VERDICT: FAIL. The hash did NOT move after a field was flipped.")
-    print("That would mean replay is echoing the log rather than genuinely "
-          "re-executing")
-    print("the state machine. This is a real regression; do not ship.")
+    print("VERDICT: FAIL. A tamper went undetected.")
+    print(f"  field flip detected : {field_detected}")
+    print(f"  reorder detected    : {reorder_detected}")
+    print(f"  omission detected   : {omission_detected}")
+    print("Any False above is a real regression in the integrity machinery; "
+          "do not ship.")
     print("=" * 72)
     return 1
 
