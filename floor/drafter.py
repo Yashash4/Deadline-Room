@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import requests
 
 from floor import roster
 from floor.claims import emit_claims
+from floor.retry import call_with_retry, is_transient_status, log as net_log
 
 FEATHERLESS_BASE = "https://api.featherless.ai/v1"
 AIMLAPI_BASE = "https://api.aimlapi.com/v1"
@@ -51,15 +53,38 @@ def provider_config(provider: str) -> tuple[str, str]:
         raise DrafterError(f"unknown LLM provider: {provider!r}") from e
 
 
+class _TransientDrafterError(DrafterError):
+    """A DrafterError whose cause is transient (transport error or 429/5xx), so
+    the retry wrapper may try again. It is still a DrafterError, so if attempts
+    run out it surfaces to the caller exactly like the non-retry path did: a
+    transient that never clears is reported as the same typed error, never
+    swallowed."""
+
+
+def _is_transient_drafter_error(e: BaseException) -> bool:
+    return isinstance(e, _TransientDrafterError)
+
+
 def llm_complete(provider: str, model: str, messages: list[dict], *,
                  api_key: str | None = None, max_tokens: int = 700,
-                 temperature: float = 0.2, timeout: int = 90) -> str:
+                 temperature: float = 0.2, timeout: int = 90,
+                 max_attempts: int = 1) -> str:
     """Route one chat completion to the named provider and return the content.
 
     Both providers are OpenAI-compatible (Authorization: Bearer, /chat/completions),
     so the only per-provider difference is the base URL and which env var holds the
     key. Raises DrafterError on a missing key, transport error, non-200, malformed
-    body, or empty content (the caller decides any fallback)."""
+    body, or empty content (the caller decides any fallback).
+
+    max_attempts is the total number of network attempts (including the first).
+    The DEFAULT is 1, so the offline FakeBand-backed tests and byte-identical
+    replay are unchanged: with one attempt there is no retry path and no backoff.
+    The live runner passes a small value (e.g. 3); then a transient transport
+    error or an HTTP 429/5xx is retried with bounded jittered exponential backoff,
+    while a 4xx (bad request, bad key, forbidden) fails fast on the first try.
+    Each attempt emits one structured log line (provider, model, status,
+    latency_ms, attempt, token usage when the body returns it) on the quiet
+    deadline_room.net logger."""
     base, key_env = provider_config(provider)
     key = api_key or os.environ.get(key_env, "")
     if not key:
@@ -70,25 +95,56 @@ def llm_complete(provider: str, model: str, messages: list[dict], *,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    try:
-        r = requests.post(
-            base + "/chat/completions",
-            headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
-            json=payload, timeout=timeout,
-        )
-    except requests.RequestException as e:
-        raise DrafterError(f"{provider} transport error: {e}") from e
-    if r.status_code != 200:
-        raise DrafterError(f"{provider} HTTP {r.status_code}: {r.text[:300]}")
-    body = r.json()
-    try:
-        content = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, AttributeError, TypeError) as e:
-        raise DrafterError(f"{provider} malformed response: {body}") from e
-    if not content:
-        raise DrafterError(f"{provider} returned empty content")
-    return sanitize_llm_text(content)
+    endpoint = base + "/chat/completions"
+    attempt_box = {"n": 0}
+
+    def attempt() -> str:
+        attempt_box["n"] += 1
+        n = attempt_box["n"]
+        started = time.monotonic()
+        try:
+            r = requests.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json=payload, timeout=timeout,
+            )
+        except requests.RequestException as e:
+            # Transport errors (connection reset, read timeout) are transient.
+            latency_ms = int((time.monotonic() - started) * 1000)
+            net_log.info(
+                "llm call provider=%s model=%s status=transport_error "
+                "latency_ms=%d attempt=%d error=%s",
+                provider, model, latency_ms, n, e)
+            raise _TransientDrafterError(f"{provider} transport error: {e}") from e
+        latency_ms = int((time.monotonic() - started) * 1000)
+        usage = ""
+        if r.status_code == 200:
+            try:
+                usage = str((r.json() or {}).get("usage", ""))
+            except ValueError:
+                usage = ""
+        net_log.info(
+            "llm call provider=%s model=%s status=%d latency_ms=%d attempt=%d "
+            "usage=%s", provider, model, r.status_code, latency_ms, n, usage)
+        if r.status_code != 200:
+            msg = f"{provider} HTTP {r.status_code}: {r.text[:300]}"
+            # 429 and 5xx are transient and may be retried; every other status
+            # (400/401/403/404 ...) is terminal and fails fast.
+            if is_transient_status(r.status_code):
+                raise _TransientDrafterError(msg)
+            raise DrafterError(msg)
+        body = r.json()
+        try:
+            content = body["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            raise DrafterError(f"{provider} malformed response: {body}") from e
+        if not content:
+            raise DrafterError(f"{provider} returned empty content")
+        return sanitize_llm_text(content)
+
+    return call_with_retry(
+        attempt, classify=_is_transient_drafter_error, max_attempts=max_attempts)
 
 
 # Models sometimes emit em/en dashes, unicode hyphens, smart quotes, and ellipses.
@@ -153,7 +209,7 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
                  regime: str = "NIS2", format_profile=None, max_tokens: int = 700,
-                 timeout: int = 90) -> str:
+                 timeout: int = 90, max_attempts: int = 1) -> str:
     """Draft the regulatory notification body for one regime from the canonical
     fact-record on the named provider. Returns the model's text. Raises
     DrafterError on transport or empty-content failure (the caller decides
@@ -187,7 +243,8 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             provider, model,
             [{"role": "system", "content": system},
              {"role": "user", "content": user}],
-            api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
+            api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout,
+            max_attempts=max_attempts)
     system = (
         "You are a regulatory breach-notification drafter for a bank's incident "
         "response team. You write tight, examiner-ready filings. You state only "
@@ -207,7 +264,8 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         provider, model,
         [{"role": "system", "content": system},
          {"role": "user", "content": user}],
-        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
+        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout,
+        max_attempts=max_attempts)
 
 
 def draft_characterization(*, regime: str, old_records: int, new_records: int,
@@ -215,7 +273,8 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
                            model: str = DEFAULT_MODEL,
                            provider: str = DEFAULT_PROVIDER,
                            api_key: str | None = None,
-                           max_tokens: int = 160, timeout: int = 90) -> str:
+                           max_tokens: int = 160, timeout: int = 90,
+                           max_attempts: int = 1) -> str:
     """Draft ONE short reconciliation sentence: how this drafter proposes to
     characterize the revised record count for its regulator, so the two filings
     share one phrasing of the same number.
@@ -250,7 +309,8 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
         provider, model,
         [{"role": "system", "content": system},
          {"role": "user", "content": user}],
-        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
+        api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout,
+        max_attempts=max_attempts)
     # One clean sentence: collapse whitespace, drop wrapping quotes.
     content = " ".join(content.split())
     if len(content) >= 2 and content[0] in "\"'" and content[-1] in "\"'":

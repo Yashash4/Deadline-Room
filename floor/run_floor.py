@@ -79,10 +79,20 @@ from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E4
 from floor.packet import write_packet  # noqa: E402
 from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
+from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
 INCIDENT_T0 = "2026-06-16T02:14:00+00:00"
+
+# Bounded-retry attempts for the LIVE network paths (Band HTTP and the LLM
+# providers). Three total attempts (the first plus two retries) with jittered
+# exponential backoff turns a single transient Band 429/5xx or a transient
+# provider 503 during the recorded run into a non-event. This is LIVE-ONLY: it is
+# threaded into LiveBand and the live draft/characterize/materiality calls, never
+# into the FakeBand-backed test path, so the offline suite and byte-identical
+# replay stay on a single attempt and are unchanged.
+LIVE_NET_ATTEMPTS = 3
 
 # Triage's canonical fact-record. In normal/chaos runs every drafter draws from
 # this. In inject_contradiction the SEC drafter is handed a perturbed copy.
@@ -434,6 +444,13 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     "step the NYDFS sixth-clock beat needs; tests run via FakeBand "
                     "with no key.)")
 
+    # Reset the network-retry tally for this run. The counter only ever moves on
+    # a LIVE transient failure that a later attempt recovered; the offline
+    # FakeBand path makes a single attempt and never touches it. It is read at
+    # packet time into an additive receipt and is NEVER written into the hashed
+    # run-log JSONL, so replay stays byte-identical.
+    RETRY_COUNTER.reset()
+
     log = RunLog()
     trace = StepTrace(log)
     sm = ProtocolStateMachine()
@@ -696,6 +713,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         release_gate=release_gate,
         released_branches=[b for b in DRAFTER_BRANCHES_THIS_RUN
                            if sm.state(branch_corr[b]).value == "released"],
+        recovered_retries=RETRY_COUNTER.recovered,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -1257,7 +1275,8 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
                 sec_facts,
                 primary=roster.MATERIALITY_HERO,
                 second=roster.MATERIALITY_SECOND_HERO,
-                branch="sec", timeout=draft_timeout)
+                branch="sec", timeout=draft_timeout,
+                max_attempts=LIVE_NET_ATTEMPTS)
         result = reconcile_second_opinion(v_primary, v_second)
         verdict = result.verdict
         second_opinion_record = {
@@ -1292,7 +1311,7 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
         provider, model = roster.resolve(roster.MATERIALITY, provider_set)
         verdict = assess_materiality(
             sec_facts, model=model, provider=provider, branch="sec",
-            timeout=draft_timeout)
+            timeout=draft_timeout, max_attempts=LIVE_NET_ATTEMPTS)
     if not isinstance(verdict, MaterialityVerdict):
         raise RuntimeError("materiality assessor did not return a MaterialityVerdict")
     log.append("materiality", {
@@ -1546,7 +1565,8 @@ def _characterize_fn_for(branch, regime, role, draft_fns, timeout,
             regime=regime, old_records=CANONICAL_FACTS["records_affected"],
             new_records=AMENDED_RECORDS, role=role,
             counterpart_text=counterpart_text,
-            model=model, provider=provider, timeout=timeout)
+            model=model, provider=provider, timeout=timeout,
+            max_attempts=LIVE_NET_ATTEMPTS)
     return fn
 
 
@@ -1648,7 +1668,8 @@ def _validate_aiml_models(trace, aiml_models: dict) -> dict:
 def _client(clients, key, role, name, ns):
     if clients is not None:
         return clients[key]
-    return LiveBand(api_key=role.agent_key, agent_name=name, dedup_namespace=ns)
+    return LiveBand(api_key=role.agent_key, agent_name=name, dedup_namespace=ns,
+                    max_attempts=LIVE_NET_ATTEMPTS)
 
 
 def _claim_facts_for(branch: str, mode: str, *, corrupted: bool) -> dict:
@@ -1697,7 +1718,7 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
         return draft_filing(body_facts, model=model, provider=provider,
                             regime=role.regime, format_profile=profile,
-                            timeout=timeout)
+                            timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
     return fn
 
 
@@ -1730,7 +1751,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      amendment=None, provider_set=roster.PROVIDER_DEV,
                      provider_validation=None, materiality=None, recruit=None,
                      nydfs_recruit=None,
-                     release_gate=None, released_branches=None) -> dict:
+                     release_gate=None, released_branches=None,
+                     recovered_retries: int = 0) -> dict:
     clock_rows = []
     for c in clocks.all():
         clock_rows.append({
@@ -1841,6 +1863,13 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             ],
             "released_branches": released_branches or [],
         }
+    # Reliability receipt: how many transient network failures a later attempt
+    # recovered this run. Additive, rendered only when nonzero (a clean run, and
+    # every offline test, has zero and omits the field). It is read from the live
+    # retry tally at packet time, NOT from any logged event, so it is outside the
+    # hashed run-log JSONL and replay stays byte-identical.
+    if recovered_retries:
+        packet["reliability"] = {"recovered_retries": recovered_retries}
     return packet
 
 

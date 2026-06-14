@@ -58,10 +58,15 @@ def _parse_verdict_bool(text: str) -> bool:
 
 def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.FEATHERLESS,
                        api_key: str | None = None, branch: str = "sec",
-                       max_tokens: int = 500, timeout: int = 90) -> MaterialityVerdict:
+                       max_tokens: int = 500, timeout: int = 90,
+                       max_attempts: int = 1) -> MaterialityVerdict:
     """Run the LLM materiality assessment on the named provider and return a typed
     verdict. The boolean is parsed off the fenced block; the memo is the prose
-    above it. Raises DrafterError on transport or unparsable verdict."""
+    above it. Raises DrafterError on transport or unparsable verdict.
+
+    max_attempts threads straight through to llm_complete: default 1 (no retry,
+    unchanged offline behavior); the live runner raises it so a transient 429/5xx
+    on the materiality call is retried with backoff."""
     user = (
         "Assess the materiality of this cybersecurity incident for an SEC Item "
         "1.05 8-K determination. Use ONLY these facts. Write a short memo (under "
@@ -72,7 +77,8 @@ def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.
         provider, model,
         [{"role": "system", "content": _SYSTEM},
          {"role": "user", "content": user}],
-        api_key=api_key, max_tokens=max_tokens, temperature=0.1, timeout=timeout)
+        api_key=api_key, max_tokens=max_tokens, temperature=0.1, timeout=timeout,
+        max_attempts=max_attempts)
     material = _parse_verdict_bool(text)
     memo = _VERDICT.sub("", text).strip()
     return MaterialityVerdict(branch=branch, material=material, memo=memo,
@@ -86,7 +92,8 @@ def assess_materiality_two_opinions(fact_record: dict, *,
                                     api_key: str | None = None,
                                     primary_max_tokens: int = 500,
                                     second_max_tokens: int = 2000,
-                                    timeout: int = 90
+                                    timeout: int = 90,
+                                    max_attempts: int = 1
                                     ) -> tuple[MaterialityVerdict, MaterialityVerdict, str]:
     """Run the materiality judgment on TWO different open models SEQUENTIALLY and
     return both typed verdicts plus an agreement string ("agree" | "disagree").
@@ -112,9 +119,11 @@ def assess_materiality_two_opinions(fact_record: dict, *,
     s_provider, s_model = second
     v_primary = assess_materiality(
         fact_record, model=p_model, provider=p_provider, branch=branch,
-        api_key=api_key, max_tokens=primary_max_tokens, timeout=timeout)
+        api_key=api_key, max_tokens=primary_max_tokens, timeout=timeout,
+        max_attempts=max_attempts)
     v_second = assess_materiality(
         fact_record, model=s_model, provider=s_provider, branch=branch,
-        api_key=api_key, max_tokens=second_max_tokens, timeout=timeout)
+        api_key=api_key, max_tokens=second_max_tokens, timeout=timeout,
+        max_attempts=max_attempts)
     agreement = "agree" if v_primary.material == v_second.material else "disagree"
     return v_primary, v_second, agreement

@@ -369,6 +369,30 @@ def _render_grounding(g: dict) -> str:
     return "".join(parts)
 
 
+def _render_reliability(rel: dict) -> str:
+    """Render the network-reliability receipt: how many transient provider/Band
+    failures (a 429/5xx or a transport hiccup) a later attempt auto-recovered this
+    run, via the bounded exponential-backoff retry on the two network chokepoints.
+    Rendered ONLY when the count is nonzero: a clean run shows nothing, so the
+    happy path is visually unchanged. This counter is read from a live tally at
+    packet time, never from the hashed run log, so it does not affect replay."""
+    if not rel:
+        return ""
+    n = rel.get("recovered_retries", 0)
+    if not n:
+        return ""
+    plural = "s" if n != 1 else ""
+    return (
+        "<h2>8c. Network reliability (auto-recovered transient failures)</h2>"
+        f"<p class='ok'><strong>{_esc(n)} transient provider/Band error{plural} "
+        "auto-recovered</strong> by bounded exponential-backoff retry on the two "
+        "network chokepoints (the LLM router and the Band HTTP client). Each "
+        "retried call is idempotent: an LLM completion is read-only and a Band "
+        "post is guarded by the read-then-act dedup key, so a retried write lands "
+        "exactly once. A transient hiccup during the run was a non-event rather "
+        "than an aborted filing.</p>")
+
+
 def _render_release(rel: dict) -> str:
     """Render the two-key release gate: both human sign-offs (Lena and the GC) per
     released branch, proving segregation of duties (one key alone never releases)."""
@@ -714,6 +738,7 @@ def _render_html(p: dict) -> str:
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
+    reliability_block = _render_reliability(p.get("reliability", {}))
     pending = p.get("pending", [])
     pending_section = (
         "<h2>9. Pending (more Band agent keys required)</h2><ul>"
@@ -881,6 +906,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {grounding_block}
 
 {release_block}
+
+{reliability_block}
 
 <h2>8. Byte-identical replay</h2>
 <p>Run-log SHA-256: <span class="hash">{_esc(replay.get('original_sha256', ''))}</span></p>

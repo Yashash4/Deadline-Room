@@ -57,6 +57,8 @@ from typing import Callable, Optional
 
 import requests
 
+from floor.retry import call_with_retry, is_transient_status, log as net_log
+
 BASE = os.environ.get("BAND_BASE_URL", "https://app.band.ai/api/v1")
 
 EP = {
@@ -91,14 +93,35 @@ class BandError(RuntimeError):
         self.body = body
 
 
+class _TransientBandError(Exception):
+    """Internal retry signal for a transient Band failure (transport error or an
+    HTTP 429/5xx). It never escapes _call: the retry wrapper either tries again,
+    or on the final attempt _call re-runs the request and returns the (status,
+    body) tuple so every existing caller sees the exact same surface it did
+    before. A genuinely terminal failure (a 4xx) is returned, not raised here, so
+    the caller's own typed BandError still fires."""
+
+    def __init__(self, status, body) -> None:
+        super().__init__(f"transient Band failure: {status}")
+        self.status = status
+        self.body = body
+
+
 class BandAgentShell:
     def __init__(self, api_key: str, agent_name: str,
-                 dedup_namespace: str = "", log_dir: str = "runlogs") -> None:
+                 dedup_namespace: str = "", log_dir: str = "runlogs",
+                 max_attempts: int = 1) -> None:
         self.key = api_key
         self.name = agent_name
         self.ns = dedup_namespace or agent_name
         self.chat_id: Optional[str] = None
         self.agent_id: Optional[str] = None
+        # Bounded-retry attempts per Band HTTP call (including the first). The
+        # DEFAULT is 1 (no retry), so the FakeBand-backed test suite and the
+        # byte-identical replay are unchanged; the live runner raises it so a
+        # transient Band 429/5xx or transport hiccup during the recorded run is
+        # retried with backoff instead of killing the run.
+        self.max_attempts = max(1, int(max_attempts))
         # Client-side record of messages we have already carried through their
         # lifecycle, so a /next that re-serves the same id is a no-op for us.
         self._handled: set[str] = set()
@@ -106,20 +129,63 @@ class BandAgentShell:
         self.log_path = Path(log_dir) / f"{agent_name}.jsonl"
 
     # ---- HTTP -------------------------------------------------------------
-    def _call(self, method: str, path: str, body=None, params=None):
-        r = requests.request(
-            method, BASE + path, json=body, params=params, timeout=60,
-            headers={"X-API-Key": self.key, "Content-Type": "application/json"},
-        )
+    def _parse_response(self, r) -> dict:
         if r.status_code == 204 or not r.text:
-            data = {}
-        else:
+            return {}
+        try:
+            return r.json()
+        except ValueError:
+            return {"raw": r.text}
+
+    def _call(self, method: str, path: str, body=None, params=None):
+        """One Band HTTP call with bounded exponential-backoff retry on transient
+        failures only. A transport error or an HTTP 429/5xx is retried (up to
+        self.max_attempts) with jittered backoff; every other status (200/201/204
+        and all the terminal 4xx) returns on the first attempt, so each existing
+        caller's own typed BandError on a non-2xx fires exactly as before. The
+        read-then-act dedup guard makes a retried POST idempotent, so retrying a
+        write is safe."""
+        attempt_box = {"n": 0}
+
+        def attempt():
+            attempt_box["n"] += 1
+            n = attempt_box["n"]
+            started = time.monotonic()
             try:
-                data = r.json()
-            except ValueError:
-                data = {"raw": r.text}
-        self._log("http", {"method": method, "path": path, "status": r.status_code})
-        return r.status_code, data
+                r = requests.request(
+                    method, BASE + path, json=body, params=params, timeout=60,
+                    headers={"X-API-Key": self.key,
+                             "Content-Type": "application/json"},
+                )
+            except requests.RequestException as e:
+                latency_ms = int((time.monotonic() - started) * 1000)
+                net_log.info(
+                    "band call method=%s path=%s status=transport_error "
+                    "latency_ms=%d attempt=%d error=%s",
+                    method, path, latency_ms, n, e)
+                raise _TransientBandError("transport_error", str(e)) from e
+            latency_ms = int((time.monotonic() - started) * 1000)
+            net_log.info(
+                "band call method=%s path=%s status=%d latency_ms=%d attempt=%d",
+                method, path, r.status_code, latency_ms, n)
+            if is_transient_status(r.status_code):
+                raise _TransientBandError(r.status_code, self._parse_response(r))
+            return r.status_code, self._parse_response(r)
+
+        try:
+            status, data = call_with_retry(
+                attempt, classify=lambda e: isinstance(e, _TransientBandError),
+                max_attempts=self.max_attempts)
+        except _TransientBandError as e:
+            # Attempts exhausted on a transient failure. Surface it as a normal
+            # (status, body) return so the caller's own typed BandError fires,
+            # exactly as it did before retries existed. A transport error has no
+            # HTTP status, so report it as a 503 (service unavailable) carrying
+            # the transport detail; an HTTP transient carries its real status.
+            status = e.status if isinstance(e.status, int) else 503
+            data = e.body if isinstance(e.body, dict) else {"transport_error": e.body}
+        self._log("http", {"method": method, "path": path, "status": status})
+        return status, data
 
     # ---- local mirror (the replay substrate; per-agent file, no locks) ----
     def _log(self, kind: str, payload: dict) -> None:
