@@ -44,7 +44,8 @@ Every command below was run on this repo against live Band and live Featherless.
 | What | Command | What you see |
 |---|---|---|
 | The property suite | `py -m pytest tests/ -q` | `188 passed` |
-| Break the evidence yourself | `py scripts/tamper_test.py` | flip one field, the sealed hash diverges, tamper detected |
+| Break the evidence yourself | `py scripts/tamper_test.py` | flip one field, the sealed hash, the chain head, AND the signature all break |
+| Verify the Warden's signature | `py scripts/verify_signature.py` | VALID, signed by the Warden's key (public key ships in the repo) |
 | A clean incident, end to end | `py floor/run_floor.py` | Examiner Packet, diff GREEN, replay True |
 | The contradiction veto | `py floor/run_floor.py --inject-contradiction` | the red BLOCKED block, then re-run GREEN |
 | Exactly-once under a live kill | `py floor/run_floor.py --chaos` | the duplicate dropped, filing lands once |
@@ -199,6 +200,7 @@ Plenty of teams will ship a state machine. The separator is what happens under s
 
 - **Exactly-once under a live kill.** Kill an agent after it posts and before it acks; the filing still lands exactly once.
 - **Byte-identical replay.** The whole run reproduces from its append-only log, hash for hash, and the demo page re-verifies that hash in the browser.
+- **Signed provenance.** The Warden signs the run-log bytes with a detached Ed25519 signature, so integrity (the hash) becomes authenticity (signed by this key). `py scripts/verify_signature.py` checks it against the committed public key; one flipped byte makes it INVALID, as `py scripts/tamper_test.py` shows alongside the hash and chain breaks. Honest caveat: the private key shipped here is a demonstration key, committed for reproducibility, so it proves "signed by whoever holds this demo key", not HSM/KMS-grade secrecy. The signature mechanism is fully real; the key's secrecy is not production-grade (HSM/KMS, rotation, and RFC-3161 timestamping are Phase 2). See `warden/keys/README.md`.
 - **A binding contradiction veto.** No two filings may disagree on a load-bearing fact; the human release physically cannot proceed past a red diff.
 
 ## Partner usage

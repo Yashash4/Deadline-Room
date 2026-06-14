@@ -619,6 +619,24 @@ def _render_cover(p: dict) -> str:
     seal_cls = "seal-ok" if seal_ok else "seal-bad"
     seal_text = ("replay byte-identical" if seal_ok else "replay MISMATCH")
 
+    # Signature row: the detached Ed25519 attestation over the run-log bytes. The
+    # signature is metadata beside the log, not in the hashed JSONL, so the seal
+    # hash above is unchanged by it. The demo-key caveat travels with it.
+    sig = replay.get("signature") or {}
+    sig_hex = sig.get("signature", "")
+    sig_block = ""
+    if sig_hex:
+        short_sig = str(sig_hex)[:24] + "..."
+        signer = sig.get("signer", "Deadline Warden")
+        fp = sig.get("pubkey_fingerprint", "")
+        sig_block = f"""
+  <div class="cover-seal seal-ok">
+    <span class="seal-tag">SIGNATURE</span>
+    <span class="seal-hash">{_esc(short_sig)}</span>
+    <span class="seal-state">signed by {_esc(signer)} (ed25519, key fp {_esc(fp)})</span>
+  </div>
+  <p class="chain-caption">{_esc(sig.get("caveat", ""))}</p>"""
+
     return f"""<section class="cover">
   <div class="cover-band">
     <div class="cover-title">EXAMINER PACKET</div>
@@ -640,7 +658,7 @@ def _render_cover(p: dict) -> str:
     <span class="seal-tag">RUN-LOG SEAL</span>
     <span class="seal-hash">{_esc(short_sha)}</span>
     <span class="seal-state">{_esc(seal_text)}</span>
-  </div>
+  </div>{sig_block}
 </section>"""
 
 

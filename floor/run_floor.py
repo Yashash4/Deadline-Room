@@ -65,6 +65,7 @@ from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
 from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
+from warden.signing import sign_run_log_jsonl  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
@@ -658,12 +659,23 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     byte_identical = replayed.to_jsonl() == log.to_jsonl()
     trace.say(f"[9] Replay byte-identical: {byte_identical} (sha {original_sha[:12]}...)")
 
+    # ---- Detached Ed25519 signature (additive: integrity -> authenticity) ----
+    # Signs the canonical run-log bytes (the SAME bytes the sha hashes and replay
+    # reproduces). The signature lives in replay_info / the packet sidecar, never
+    # in the hashed JSONL, so original_sha and the byte-identical replay are
+    # untouched. One flipped byte makes this signature INVALID, which the tamper
+    # test and scripts/verify_signature.py both demonstrate.
+    signature = sign_run_log_jsonl(log.to_jsonl())
+    trace.say(f"    Signed by {signature['signer']} (ed25519, key fp "
+              f"{signature['pubkey_fingerprint']}); signature is detached, the "
+              f"run-log sha is unchanged.")
+
     # ---- Assemble + write the Examiner Packet -------------------------
     packet = _assemble_packet(
         room_id, trace, clocks, claims_by_branch, blocked, resolved,
         breached, filings, mode, ledger,
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
-                     "byte_identical": byte_identical},
+                     "byte_identical": byte_identical, "signature": signature},
         amendment=amendment,
         provider_set=provider_set, provider_validation=provider_validation,
         materiality=materiality_record, recruit=recruit_record,
@@ -1915,12 +1927,16 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     trace.say(f"[10] Replay byte-identical: {byte_identical} "
               f"(sha {original_sha[:12]}...)")
 
+    # Detached Ed25519 signature over the canonical run-log bytes (additive; the
+    # signature is metadata beside the log, never inside the hashed JSONL).
+    signature = sign_run_log_jsonl(log.to_jsonl())
+
     packet = _assemble_legacy_packet(
         room_id, trace, clocks, conflicts, breached,
         filings=[{"regime": "NIS2", "by": "NIS2 Drafter", "model": nis2_role.model,
                   "text": drafted["text"]}],
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
-                     "byte_identical": byte_identical},
+                     "byte_identical": byte_identical, "signature": signature},
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}.jsonl"

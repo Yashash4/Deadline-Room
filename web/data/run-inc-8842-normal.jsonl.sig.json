@@ -1,0 +1,11 @@
+{
+  "algorithm": "ed25519",
+  "detached": true,
+  "signed_payload": "run_log_jsonl_utf8",
+  "signature": "b99918538f7d1f28906b8c029ad62fc6ae28afdac7bd8967a297af29d36b6905a0d6cf57b9588e392d8bffb7cfb8840ce3ddc9c1b2eded5add8d28feadc77901",
+  "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+  "pubkey_fingerprint": "46e30f5bff8c221d",
+  "signer": "Deadline Warden",
+  "demo_key": true,
+  "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+}
