@@ -15,6 +15,16 @@ BESIDE the log, in the packet sidecar / replay_info, NEVER inside the hashed
 JSONL. So the run-log sha and the byte-identical replay are completely
 unaffected: this module reads the bytes, it never writes them.
 
+BINDS THE ORDER, not just the byte stream. The signature is taken over a small
+canonical object that names BOTH the run-log sha256 AND the per-entry hash
+chain head (warden/chain.py). A bare sha attests "these bytes"; the chain head
+is the single value that summarizes the ORDERED, COMPLETE run (reorder or omit
+an entry and the head moves). Signing them together means "signature VALID"
+reads as "this exact ordered, complete run, attested by this key", which is the
+sentence a regulator writes down. The chain head is a DERIVED value computed
+read-only from the same canonical bytes, so it is still never written into the
+hashed JSONL: the run-log sha and byte-identical replay remain untouched.
+
 Honest key-handling caveat (stated plainly, no security theater): the private
 key shipped with this repo is a DEMONSTRATION key, generated once and committed
 so signatures are reproducible. The signature MECHANISM is fully real: it
@@ -31,6 +41,7 @@ and independently checkable today.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
@@ -58,10 +69,33 @@ DEMO_KEY_CAVEAT = (
 
 
 def canonical_signing_bytes(run_log_jsonl: str) -> bytes:
-    """The exact bytes a signature is taken over: the canonical run-log JSONL,
-    UTF-8 encoded. These are the SAME bytes `RunLog.sha256()` hashes and replay
-    reproduces, so signing reads them without touching them."""
+    """The exact bytes the run-log INTEGRITY hash is taken over: the canonical
+    run-log JSONL, UTF-8 encoded. These are the SAME bytes `RunLog.sha256()`
+    hashes and replay reproduces. This is the raw byte stream; the SIGNATURE is
+    taken over the bound payload below, which folds in this stream's sha256 plus
+    the chain head so the signature attests ORDER and COMPLETENESS, not just
+    bytes. Kept public because `sign_bytes`/`verify_bytes` still operate at this
+    byte level and the tests exercise it directly."""
     return run_log_jsonl.encode("utf-8")
+
+
+def bound_payload_bytes(sha256_hex: str, chain_head_hex: str) -> bytes:
+    """The exact bytes the SIGNATURE is taken over: a small canonical JSON object
+    that BINDS the run-log sha256 to the per-entry hash chain head.
+
+    The encoding mirrors the run log's own canonicalization
+    (`json.dumps(..., sort_keys=True, separators=(",",":"))`), so sorted keys
+    render as `{"chain_head":"...","sha256":"..."}` with no whitespace. Pinning
+    the recipe lets the browser (web/app.js) rebuild the identical bytes and
+    verify the same signature client-side.
+
+    Signing this object instead of the bare sha means a valid signature attests
+    BOTH that the bytes are intact (sha256) AND that the run is in the proven
+    order with nothing dropped (chain_head): reorder or omit an entry and the
+    chain head moves, so the bound payload changes and the signature no longer
+    verifies."""
+    obj = {"sha256": sha256_hex, "chain_head": chain_head_hex}
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def fingerprint(public_key_hex: str) -> str:
@@ -136,24 +170,51 @@ def verify_bytes(payload: bytes, signature_hex: str,
         return False
 
 
+def _sha256_of_jsonl(run_log_jsonl: str) -> str:
+    """The run-log integrity sha: sha256 of the canonical JSONL bytes. Equal to
+    `RunLog.sha256()` for the same bytes, recomputed here so signing depends only
+    on the JSONL string it is handed."""
+    return hashlib.sha256(run_log_jsonl.encode("utf-8")).hexdigest()
+
+
+def _chain_head_of_jsonl(run_log_jsonl: str) -> str:
+    """The per-entry hash chain head over the run log's entries (warden/chain.py).
+
+    Parses the canonical JSONL back into entries and folds the chain read-only,
+    using the SAME canonicalization replay and the chain sidecar use. Nothing is
+    written back into the log; this is a derived summarizing value. The import is
+    local to keep this module free of an import cycle (chain -> replay)."""
+    from .chain import chain_head
+
+    entries = [json.loads(line) for line in run_log_jsonl.splitlines() if line.strip()]
+    return chain_head(entries)
+
+
 def sign_run_log_jsonl(run_log_jsonl: str,
                        private_key: Ed25519PrivateKey | None = None) -> dict:
-    """Sign a run log's canonical JSONL and return the detached signature record
-    that lands in the packet sidecar / replay_info.
+    """Sign a run log and return the detached signature record that lands in the
+    packet sidecar / replay_info.
 
-    The record carries everything a verifier needs and nothing the hashed log
-    covers: the algorithm, the detached signature, the public key, its
-    fingerprint, and the honest demo-key caveat. It is metadata stored BESIDE the
-    log; it never enters the hashed JSONL, so the run-log sha and replay are
-    untouched."""
+    The signature is taken over the BOUND payload (`bound_payload_bytes`): the
+    run-log sha256 AND the chain head together, so a valid signature attests the
+    exact ordered, complete run, not just a byte stream. The record carries
+    everything a verifier needs and nothing the hashed log covers: the algorithm,
+    the detached signature, both attested values (sha256 + chain_head), the public
+    key, its fingerprint, and the honest demo-key caveat. It is metadata stored
+    BESIDE the log; it never enters the hashed JSONL, so the run-log sha and
+    replay are untouched (the chain head is derived read-only)."""
     if private_key is None:
         private_key = load_demo_private_key()
-    payload = canonical_signing_bytes(run_log_jsonl)
+    sha256_hex = _sha256_of_jsonl(run_log_jsonl)
+    chain_head_hex = _chain_head_of_jsonl(run_log_jsonl)
+    payload = bound_payload_bytes(sha256_hex, chain_head_hex)
     pub_hex = public_key_hex_of(private_key)
     return {
         "algorithm": "ed25519",
         "detached": True,
-        "signed_payload": "run_log_jsonl_utf8",
+        "signed_payload": "canonical_json{sha256,chain_head}",
+        "sha256": sha256_hex,
+        "chain_head": chain_head_hex,
         "signature": sign_bytes(payload, private_key),
         "public_key": pub_hex,
         "pubkey_fingerprint": fingerprint(pub_hex),
@@ -166,8 +227,16 @@ def sign_run_log_jsonl(run_log_jsonl: str,
 def verify_run_log_jsonl(run_log_jsonl: str, signature_record: dict) -> bool:
     """Verify a signature record (as produced by `sign_run_log_jsonl`) against a
     run log's canonical JSONL. True only when the detached signature is valid over
-    these exact bytes under the record's public key."""
-    payload = canonical_signing_bytes(run_log_jsonl)
+    the BOUND payload (sha256 + chain head) recomputed from these exact bytes.
+
+    The sha256 and chain head are recomputed from the run log handed in, NOT read
+    from the record, so a tamper that edits a field (sha moves), reorders, or
+    omits an entry (chain head moves) changes the bound payload and the signature
+    fails. Binding the head is what makes a REORDER, which leaves the byte sha of
+    a re-sealed log free to be forged, break the signature too."""
+    sha256_hex = _sha256_of_jsonl(run_log_jsonl)
+    chain_head_hex = _chain_head_of_jsonl(run_log_jsonl)
+    payload = bound_payload_bytes(sha256_hex, chain_head_hex)
     return verify_bytes(
         payload,
         signature_record.get("signature", ""),

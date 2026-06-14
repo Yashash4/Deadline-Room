@@ -39,6 +39,15 @@ DERIVED sidecar from the same canonical bytes replay uses. Swap two entries or
 drop one and the chain head diverges, AND the script names the FIRST entry whose
 chain hash breaks. The chain is read-only over the log: the run-log sha and the
 byte-identical replay are untouched by it.
+
+Finally the signature beat closes the loop. The Ed25519 signature is taken over a
+BOUND payload (the run-log sha256 AND the chain head together), so it attests the
+exact ordered, complete run, not just the byte stream. That means a field flip
+(the sha moves) AND a reorder (the chain head moves) BOTH make the signature
+INVALID. Binding the head is what makes a reorder break the signature: a forger
+who re-seals a reordered log gets a fresh byte sha, but the chain head still
+moved, so the bound payload changed and the committed signature no longer
+verifies.
 """
 
 from __future__ import annotations
@@ -262,67 +271,84 @@ def main() -> int:
     omission_detected = omission_head_moved and omission_first_break is not None
     print()
 
-    # --- Step 6: the SIGNATURE breaks too ---------------------------------
+    # --- Step 6: the SIGNATURE breaks too, on a field flip AND a reorder ---
     # The flat hash and the chain both catch tampering, but neither binds the
-    # evidence to an IDENTITY. The detached Ed25519 signature does: it attests the
-    # sealed run-log bytes with the Warden's key. The same one-byte flip from
-    # Step 2 makes the signature INVALID, so the judge sees hash-break +
-    # chain-break + signature-INVALID all from one edit. The signature is read
-    # from a sidecar beside the log; it never lives in the hashed JSONL, so the
-    # run-log sha and replay above are untouched by it.
-    signature_detected = False
+    # evidence to an IDENTITY. The detached Ed25519 signature does, and it is
+    # taken over a BOUND payload: the run-log sha256 AND the chain head together.
+    # So the SAME one-byte field flip from Step 2 (the sha moves) makes it
+    # INVALID, AND the reorder from Step 4 (the chain head moves, the sha of a
+    # re-sealed log would not) ALSO makes it INVALID. That second break is the
+    # binding's whole point: before, a reorder slipped past a signature taken over
+    # the bare bytes of a re-sealed log; now it cannot. The signature is read from
+    # a sidecar beside the log; it never lives in the hashed JSONL, so the run-log
+    # sha and replay above are untouched by it.
+    field_sig_detected = False
+    reorder_sig_detected = False
     if SIG_PATH.exists():
         sig = json.loads(SIG_PATH.read_text(encoding="utf-8"))
         sealed_jsonl = sealed.to_jsonl()
         tampered_jsonl = tampered.to_jsonl()
+        reordered_jsonl = reordered.to_jsonl()
         sealed_sig_ok = verify_run_log_jsonl(sealed_jsonl, sig)
-        tampered_sig_ok = verify_run_log_jsonl(tampered_jsonl, sig)
-        print("Step 6  the Ed25519 signature over the sealed bytes")
-        print(f"  signer              : {sig.get('signer', 'Deadline Warden')}")
-        print(f"  key fingerprint     : {sig.get('pubkey_fingerprint', '')}")
-        print(f"  sealed bytes VALID  : {sealed_sig_ok}")
-        print(f"  tampered bytes VALID: {tampered_sig_ok}")
-        print("  -> the SAME one-byte field flip that moved the hash also makes")
-        print("     the signature INVALID: integrity AND authenticity both fail.")
+        field_sig_ok = verify_run_log_jsonl(tampered_jsonl, sig)
+        reorder_sig_ok = verify_run_log_jsonl(reordered_jsonl, sig)
+        print("Step 6  the Ed25519 signature over the BOUND payload (sha256 + "
+              "chain head)")
+        print(f"  signer                : {sig.get('signer', 'Deadline Warden')}")
+        print(f"  key fingerprint       : {sig.get('pubkey_fingerprint', '')}")
+        print(f"  signed over           : {sig.get('signed_payload', '')}")
+        print(f"  sealed bytes VALID    : {sealed_sig_ok}")
+        print(f"  field-flipped VALID   : {field_sig_ok}")
+        print(f"  REORDERED VALID       : {reorder_sig_ok}")
+        print("  -> the field flip moves the sha and the reorder moves the chain")
+        print("     head; either changes the bound payload, so BOTH make the")
+        print("     signature INVALID. Binding the head is what makes a reorder")
+        print("     break the signature, not just the chain.")
         print(f"  note: {DEMO_KEY_CAVEAT}")
-        signature_detected = sealed_sig_ok and not tampered_sig_ok
+        field_sig_detected = sealed_sig_ok and not field_sig_ok
+        reorder_sig_detected = sealed_sig_ok and not reorder_sig_ok
     else:
         print("Step 6  signature sidecar not found at "
               f"{SIG_PATH.relative_to(REPO_ROOT)}; skipping the signature beat.")
         # No sidecar is a setup gap, not a passing run: a missing receipt cannot
         # be treated as a detected tamper.
-        signature_detected = False
+        field_sig_detected = False
+        reorder_sig_detected = False
     print()
 
     # --- Verdict ----------------------------------------------------------
     # The evidence is authentic only when it matches its seal, self-certifies
     # under replay, its chain head matches, AND its signature verifies. A flipped
-    # field breaks the seal, self-certification, AND the signature; a reorder or
-    # an omission breaks the chain head and is point-at-able to the first broken
-    # link. All four must be detected.
+    # field breaks the seal, self-certification, AND the signature; a reorder
+    # breaks the chain head, names the first broken link, AND (now that the head
+    # is signed) the signature too; an omission breaks the chain head and is
+    # point-at-able. All of it must be detected.
     field_detected = seal_broken or not self_certifies
     all_detected = (field_detected and reorder_detected and omission_detected
-                    and signature_detected)
+                    and field_sig_detected and reorder_sig_detected)
     print("=" * 72)
     if all_detected:
-        print("VERDICT: PASS. Tamper detected four ways from one edit.")
-        print("  field flip : sealed hash moves AND replay re-derives the truth.")
-        print("  reorder    : chain head diverges; first broken link named.")
+        print("VERDICT: PASS. Tamper detected, and the signature now breaks on a "
+              "reorder too.")
+        print("  field flip : sealed hash moves, replay re-derives the truth, AND "
+              "the signature is INVALID.")
+        print("  reorder    : chain head diverges, first broken link named, AND "
+              "the signature is INVALID.")
         print("  omission   : chain head diverges; first broken link named.")
-        print("  signature  : the detached Ed25519 signature is now INVALID.")
-        print("The seal binds content, the chain binds order and count, the "
+        print("The seal binds content, the chain binds order and count, and the "
               "signature")
-        print("binds authenticity to the Warden's key, and replay re-executes the "
-              "state")
-        print("machine rather than echoing the log. Verified, not asserted.")
+        print("now binds BOTH (sha256 + chain head) to the Warden's key, so a "
+              "reorder")
+        print("breaks the signature, not just the chain. Verified, not asserted.")
         print("=" * 72)
         return 0
 
     print("VERDICT: FAIL. A tamper went undetected.")
-    print(f"  field flip detected : {field_detected}")
-    print(f"  reorder detected    : {reorder_detected}")
-    print(f"  omission detected   : {omission_detected}")
-    print(f"  signature detected  : {signature_detected}")
+    print(f"  field flip detected     : {field_detected}")
+    print(f"  reorder detected        : {reorder_detected}")
+    print(f"  omission detected       : {omission_detected}")
+    print(f"  field breaks signature  : {field_sig_detected}")
+    print(f"  reorder breaks signature: {reorder_sig_detected}")
     print("Any False above is a real regression in the integrity machinery; "
           "do not ship.")
     print("=" * 72)

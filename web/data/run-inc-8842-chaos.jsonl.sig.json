@@ -1,8 +1,10 @@
 {
   "algorithm": "ed25519",
   "detached": true,
-  "signed_payload": "run_log_jsonl_utf8",
-  "signature": "0f174ba1c7c9281a40a1ccbd54253a8e2e610ddda24a23ba4490f8d82a9b7b631577bcf78627cd180818b69abbdb8d68d7b3949bace7ece48f1055fd1ee9d40e",
+  "signed_payload": "canonical_json{sha256,chain_head}",
+  "sha256": "00ab4ba53f8f8c0ed1a15f34f34413a521da85070364991c4b1921992f43a8e3",
+  "chain_head": "eaf2d8dc9732a2030fac482d819a72bd6aab477c8ce7f291893cbebaca5cfc4f",
+  "signature": "a684630407db385b2231a75638f6be5df219c9933f21c19fc2e6f87c60e357819224733a7a91f4a7864fb45d59041de377457a200947e847c773debb7eeb5406",
   "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
   "pubkey_fingerprint": "46e30f5bff8c221d",
   "signer": "Deadline Warden",

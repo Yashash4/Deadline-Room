@@ -6,6 +6,12 @@ captured run log and its detached Ed25519 signature, and verifies the signature
 against the committed Warden public key. No network, no private key needed to
 verify, just the public key that ships in the repo.
 
+The signature is taken over a BOUND payload: the run-log sha256 AND the per-entry
+chain head together. So VALID means "this exact ordered, complete run, attested
+by this key", not merely "these bytes". Both bound values are recomputed here
+from the bytes on disk and printed, so a field edit (sha moves) or a
+reorder/omission (chain head moves) both turn the signature INVALID.
+
   py scripts/verify_signature.py                          (a clean captured run)
   py scripts/verify_signature.py <run-log.jsonl>          (verify any run log)
   py scripts/verify_signature.py <run-log.jsonl> <packet.json>
@@ -33,12 +39,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from warden.chain import chain_head  # noqa: E402
 from warden.signing import (  # noqa: E402
     DEMO_KEY_CAVEAT,
     fingerprint,
     load_public_key_hex,
     verify_run_log_jsonl,
 )
+
+
+def _sha_and_head(jsonl: str) -> tuple[str, str]:
+    """Recompute the two values the signature binds, straight from the bytes on
+    disk: the run-log sha256 and the per-entry chain head. A verifier derives
+    these itself rather than trusting the record, so a field edit (sha moves) or
+    a reorder/omission (chain head moves) is caught."""
+    import hashlib
+    import json
+
+    sha = hashlib.sha256(jsonl.encode("utf-8")).hexdigest()
+    entries = [json.loads(line) for line in jsonl.splitlines() if line.strip()]
+    return sha, chain_head(entries)
 
 DEFAULT_LOG = REPO_ROOT / "web" / "data" / "run-inc-8842-normal.jsonl"
 DEFAULT_PACKET = REPO_ROOT / "web" / "data" / "packet-normal.json"
@@ -119,15 +139,24 @@ def main(argv: list[str]) -> int:
                                                         or pubkey_hex))
     valid = verify_run_log_jsonl(jsonl, sig)
 
+    # Recompute the two bound values from the bytes on disk so the receipt shows
+    # exactly what the signature attests: the byte sha AND the ordered-run head.
+    sha_now, head_now = _sha_and_head(jsonl)
+
     print(f"Algorithm  : {sig.get('algorithm', 'ed25519')} (detached)")
+    print(f"Signed over: {sig.get('signed_payload', 'canonical_json{sha256,chain_head}')}")
+    print(f"  sha256     : {sha_now}")
+    print(f"  chain_head : {head_now}")
     print(f"Signature  : {str(sig.get('signature', ''))[:32]}...")
     print(f"Signer     : {signer}")
     print()
 
     if valid:
         print(f"VALID. Signature verifies: signed by {signer} (key fp {sig_fp}).")
-        print("  The run-log bytes are authentic relative to this public key; one")
-        print("  flipped byte would make this INVALID.")
+        print("  The signature binds BOTH the run-log sha256 and the chain head, so")
+        print("  it attests this exact ORDERED, COMPLETE run, not just the bytes. A")
+        print("  flipped field (sha moves) or a reorder/omission (chain head moves)")
+        print("  would make this INVALID.")
         print()
         print(f"Note: {DEMO_KEY_CAVEAT}")
         print("=" * 72)

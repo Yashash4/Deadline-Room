@@ -53,6 +53,7 @@ ALLOWED_DASH_FILES = frozenset(
         "tests/test_sanitize_llm.py",
         "tests/test_second_opinion.py",
         "tests/test_voiceover_lines.py",
+        "tests/test_network_retry.py",
     }
 )
 

@@ -68,3 +68,20 @@ def test_script_runs_clean_and_exits_zero_with_pass_verdict():
     assert "Tamper detected" in out
     assert "seal binding broken : True" in out
     assert "self-certifies      : False" in out
+
+
+def test_script_shows_a_reorder_breaks_the_signature():
+    # The new binding: with the chain head signed, a reorder makes the signature
+    # INVALID too. The script's signature beat now verifies the reordered log and
+    # reports it as not valid; the verdict line names it.
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    out = result.stdout
+    assert "sealed bytes VALID    : True" in out
+    assert "REORDERED VALID       : False" in out
+    assert "the signature now breaks on a reorder too" in out

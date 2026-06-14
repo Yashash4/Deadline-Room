@@ -916,10 +916,18 @@ async function verifyAll() {
   let allOk = true;
   const reorderOn = $("#reorder-toggle") && $("#reorder-toggle").checked;
 
+  // The two values the signature binds, recomputed client-side from the bundled
+  // log: the run-log sha256 (Check 1) and the chain head (Check 2). They are
+  // passed to the signature check so the browser verifies the SAME bound payload
+  // Python signs (canonical {sha256, chain_head}), not the bare bytes.
+  let recomputedSha = null;
+  let recomputedHead = null;
+
   // ---- Check 1: byte-identical replay hash --------------------------------
   try {
     const canonical = canonicalJsonl(runLogEntries);
     const hex = await sha256Hex(canonical);
+    recomputedSha = hex;
     $("#recomputed-hash").textContent = hex;
     if (hex === packet.replay.original_sha256) {
       setPill("#hash-pill", "ok", "MATCH");
@@ -950,11 +958,15 @@ async function verifyAll() {
       entriesToHash[swapAt + 1] = tmp;
     }
     const recomputed = await chainHashes(entriesToHash);
-    const recomputedHead = recomputed.length ? recomputed[recomputed.length - 1] : GENESIS_HEX;
-    $("#recomputed-chain").textContent = recomputedHead;
+    const chainHeadNow = recomputed.length ? recomputed[recomputed.length - 1] : GENESIS_HEX;
+    // The head the signature check sees is the head actually computed here: the
+    // honest head normally, or the reordered head when the toggle is on. With the
+    // head bound into the signature, a reorder must turn the signature INVALID.
+    recomputedHead = chainHeadNow;
+    $("#recomputed-chain").textContent = chainHeadNow;
 
     if (!reorderOn) {
-      if (recomputedHead === trustedHead) {
+      if (chainHeadNow === trustedHead) {
         setPill("#chain-pill", "ok", "MATCH");
         $("#chain-detail").textContent = `Chain head over ${runLogEntries.length} entries matches. Any reorder or omission would move it.`;
       } else {
@@ -974,14 +986,17 @@ async function verifyAll() {
     $("#chain-detail").textContent = "Chain check could not run: " + err.message;
   }
 
-  // ---- Check 3: Ed25519 signature -----------------------------------------
-  await verifySignature();
+  // ---- Check 3: Ed25519 signature over the BOUND payload ------------------
+  // Verify against the canonical {sha256, chain_head} object Python signs, using
+  // the sha and head this run recomputed above. The three checks compose into
+  // one bound proof: the signature attests this exact ordered, complete run.
+  await verifySignature(recomputedSha, recomputedHead);
 
   // ---- Roll-up ------------------------------------------------------------
   const sigPill = $("#sig-pill").textContent;
   if (reorderOn) {
     vr.className = "verify-result pending";
-    vr.textContent = "Chain deliberately broken by the reorder toggle (that is the point). Untoggle and re-verify to see all three pass.";
+    vr.textContent = "Reorder toggle on (that is the point): the chain head moved, and because the head is bound into the signature, the signature is now INVALID too. Untoggle and re-verify to see all three pass.";
   } else if (allOk && (sigPill === "VALID" || sigPill === "unsupported")) {
     vr.className = "verify-result ok";
     vr.textContent = sigPill === "VALID"
@@ -993,9 +1008,25 @@ async function verifyAll() {
   }
 }
 
-async function verifySignature() {
+// The exact bytes the signature is taken over: the canonical JSON object that
+// BINDS the run-log sha256 to the chain head. Mirrors Python's
+// json.dumps({"sha256":..,"chain_head":..}, sort_keys=True, separators=(",",":")),
+// so sorted keys render as {"chain_head":"...","sha256":"..."} with no spaces.
+// Rebuilding the identical bytes here is what lets the browser verify the same
+// signature Python produced.
+function boundPayloadString(sha256Hex, chainHeadHex) {
+  return "{" + JSON.stringify("chain_head") + ":" + JSON.stringify(chainHeadHex)
+    + "," + JSON.stringify("sha256") + ":" + JSON.stringify(sha256Hex) + "}";
+}
+
+async function verifySignature(recomputedSha, recomputedHead) {
   const sig = packet.replay.signature;
   if (!sig) { setPill("#sig-pill", "pending", "no signature"); return; }
+  // The bound payload needs both client-recomputed values. If either check above
+  // failed to produce one, fall back to the values recorded in the packet so the
+  // signature still has something to verify against.
+  const sha = recomputedSha || packet.replay.original_sha256;
+  const head = recomputedHead || packet.replay.chain_head || (sig && sig.chain_head);
   // Detect WebCrypto Ed25519 support up front (older Safari lacks it). The hash
   // and chain checks already passed independently, so we degrade gracefully.
   if (!(crypto.subtle && crypto.subtle.importKey)) {
@@ -1016,16 +1047,17 @@ async function verifySignature() {
       return;
     }
     const sigBytes = hexToBytes(sig.signature);
-    // The signature covers the canonical run-log UTF-8 bytes (signed_payload =
-    // run_log_jsonl_utf8), which equal the bundled log's canonical bytes.
-    const signedBytes = new TextEncoder().encode(canonicalJsonl(runLogEntries));
+    // The signature covers the canonical {sha256, chain_head} object, NOT the bare
+    // run-log bytes. Binding the head means a reorder (which moves the head) turns
+    // the signature INVALID too, not just the chain check.
+    const signedBytes = new TextEncoder().encode(boundPayloadString(sha, head));
     const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, sigBytes, signedBytes);
     if (valid) {
       setPill("#sig-pill", "ok", "VALID");
-      $("#sig-detail").textContent = `Signed by ${sig.signer}, key fingerprint ${sig.pubkey_fingerprint}. The browser verified the Ed25519 signature over the run-log bytes against the bundled public key.`;
+      $("#sig-detail").textContent = `Signed by ${sig.signer}, key fingerprint ${sig.pubkey_fingerprint}. The browser verified the Ed25519 signature over the bound payload (run-log sha256 + chain head) against the bundled public key: this exact ordered, complete run is attested.`;
     } else {
       setPill("#sig-pill", "fail", "INVALID");
-      $("#sig-detail").textContent = "The signature did not verify against the bundled public key.";
+      $("#sig-detail").textContent = "The signature did not verify against the bundled public key (the bound sha256 + chain head no longer match what was signed).";
     }
   } catch (err) {
     setPill("#sig-pill", "warn", "unsupported");

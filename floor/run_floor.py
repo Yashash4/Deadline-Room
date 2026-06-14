@@ -65,6 +65,7 @@ from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
 from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
+from warden.chain import head_for_log  # noqa: E402
 from warden.signing import sign_run_log_jsonl  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
@@ -689,23 +690,35 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     byte_identical = replayed.to_jsonl() == log.to_jsonl()
     trace.say(f"[9] Replay byte-identical: {byte_identical} (sha {original_sha[:12]}...)")
 
+    # ---- Per-entry hash chain head (derived sidecar) ------------------------
+    # The single value that summarizes the ORDERED, COMPLETE run: each entry's
+    # hash folds in the prior, so reorder or omit an entry and the head moves. It
+    # is computed read-only from the same canonical entries the sha covers and
+    # replay reproduces, so it never enters the hashed JSONL: original_sha and the
+    # byte-identical replay are untouched. It is persisted into the packet replay
+    # block and bound into the signature below.
+    chain_head_hex = head_for_log(log)
+
     # ---- Detached Ed25519 signature (additive: integrity -> authenticity) ----
-    # Signs the canonical run-log bytes (the SAME bytes the sha hashes and replay
-    # reproduces). The signature lives in replay_info / the packet sidecar, never
-    # in the hashed JSONL, so original_sha and the byte-identical replay are
-    # untouched. One flipped byte makes this signature INVALID, which the tamper
-    # test and scripts/verify_signature.py both demonstrate.
+    # Signs the BOUND payload: the canonical run-log sha256 AND the chain head
+    # together, so a valid signature attests the exact ordered, complete run, not
+    # just a byte stream. The signature lives in replay_info / the packet sidecar,
+    # never in the hashed JSONL, so original_sha and the byte-identical replay are
+    # untouched. One flipped field (the sha moves) OR a reorder/omission (the
+    # chain head moves) makes this signature INVALID, which the tamper test and
+    # scripts/verify_signature.py both demonstrate.
     signature = sign_run_log_jsonl(log.to_jsonl())
     trace.say(f"    Signed by {signature['signer']} (ed25519, key fp "
-              f"{signature['pubkey_fingerprint']}); signature is detached, the "
-              f"run-log sha is unchanged.")
+              f"{signature['pubkey_fingerprint']}) over sha256 + chain_head; the "
+              f"signature is detached, the run-log sha is unchanged.")
 
     # ---- Assemble + write the Examiner Packet -------------------------
     packet = _assemble_packet(
         room_id, trace, clocks, claims_by_branch, blocked, resolved,
         breached, filings, mode, ledger,
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
-                     "byte_identical": byte_identical, "signature": signature},
+                     "byte_identical": byte_identical, "chain_head": chain_head_hex,
+                     "signature": signature},
         amendment=amendment,
         provider_set=provider_set, provider_validation=provider_validation,
         materiality=materiality_record, recruit=recruit_record,
@@ -2006,8 +2019,14 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     trace.say(f"[10] Replay byte-identical: {byte_identical} "
               f"(sha {original_sha[:12]}...)")
 
-    # Detached Ed25519 signature over the canonical run-log bytes (additive; the
-    # signature is metadata beside the log, never inside the hashed JSONL).
+    # The per-entry chain head: the derived summary of the ordered, complete run,
+    # persisted into the packet replay block and bound into the signature below.
+    chain_head_hex = head_for_log(log)
+
+    # Detached Ed25519 signature over the BOUND payload (run-log sha256 + chain
+    # head), so a valid signature attests the exact ordered, complete run. The
+    # signature is metadata beside the log, never inside the hashed JSONL, and the
+    # chain head is derived read-only, so original_sha and replay are untouched.
     signature = sign_run_log_jsonl(log.to_jsonl())
 
     packet = _assemble_legacy_packet(
@@ -2015,7 +2034,8 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
         filings=[{"regime": "NIS2", "by": "NIS2 Drafter", "model": nis2_role.model,
                   "rationale": nis2_role.rationale, "text": drafted["text"]}],
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
-                     "byte_identical": byte_identical, "signature": signature},
+                     "byte_identical": byte_identical, "chain_head": chain_head_hex,
+                     "signature": signature},
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}.jsonl"
