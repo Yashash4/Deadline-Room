@@ -1,5 +1,14 @@
 """Fake in-memory Band: just enough lifecycle semantics to test the Warden
-without the real API. Mirrors the documented model:
+without the real API.
+
+This is an in-process TEST / SIMULATION double, NOT part of the deterministic
+no-LLM trust core. The Warden's guarantees (typed transitions, exactly-once,
+byte-identical replay, the statutory clocks) live in state_machine.py, ledger.py,
+replay.py, chain.py, and clocks.py and hold against the real Band exactly as they
+hold here; this file only stands in for Band's message lifecycle so the core is
+testable offline. Nothing here gates, counts, or clocks anything.
+
+Mirrors the documented model:
 
   delivered -> processing -> processed/failed, auto-incrementing attempt
   counter on re-delivery, /messages/next drain on reconnect.
