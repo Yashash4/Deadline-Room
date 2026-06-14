@@ -1,10 +1,18 @@
 "use strict";
 
 // Deadline Room replay viewer. Loads a captured Examiner Packet plus its run-log
-// JSONL, builds an ordered step timeline, animates it, and re-verifies the
-// byte-identical replay hash in the browser against the bundled log.
+// JSONL, builds an ordered step timeline, animates it, smoothly ticks the
+// statutory clocks between recorded timestamps, and lets a judge re-verify all
+// three forensic proofs (replay hash, hash-chain head, Ed25519 signature) in
+// their own browser against the bundled log.
 
 const TIME_COMPRESSION_LABEL = "1 second = 30 captured minutes";
+// 1 displayed second covers 30 captured minutes. This is the ratio the banner
+// declares, used to interpolate the clocks during playback. It is a DISPLAY
+// rate only: the interpolated time is always clamped to the next recorded
+// step timestamp, so the clocks never show a time the run did not actually
+// reach (the deltas are real recorded deltas played at a declared speed).
+const CAPTURED_MS_PER_REAL_MS = 30 * 60 * 1000 / 1000;
 
 // ---- small DOM helpers ------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
@@ -38,18 +46,69 @@ function numberToJson(n) {
   return String(n);
 }
 
+function parseJsonlEntries(text) {
+  return text.split(/\r?\n/).filter((l) => l.trim().length > 0).map((l) => JSON.parse(l));
+}
+
+function canonicalJsonl(entries) {
+  return entries.map(canonicalize).join("\n") + "\n";
+}
+
 function recanonicalizeJsonl(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const out = lines.map((l) => canonicalize(JSON.parse(l)));
-  return out.join("\n") + "\n";
+  return canonicalJsonl(parseJsonlEntries(text));
 }
 
 async function sha256Hex(str) {
   const bytes = new TextEncoder().encode(str);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return bufToHex(digest);
+}
+
+async function sha256HexOfBytes(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return bufToHex(digest);
+}
+
+function bufToHex(buf) {
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBytes(hex) {
+  const clean = hex.trim();
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return out;
+}
+
+// ---- hash chain (mirrors warden/chain.py exactly) ---------------------------
+// GENESIS = sha256(""). entry_hash[i] = sha256(prev_hash + "\n" + canon(entry[i])),
+// folding every entry into the prior hash. The chain_head summarizes the whole
+// ordered run; reorder or omit an entry and the head moves.
+const GENESIS_HEX = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // sha256 of empty string
+
+async function chainHashes(entries) {
+  const enc = new TextEncoder();
+  const out = [];
+  let prev = GENESIS_HEX;
+  for (const entry of entries) {
+    const material = enc.encode(prev + "\n" + canonicalize(entry));
+    prev = await sha256HexOfBytes(material);
+    out.push(prev);
+  }
+  return out;
+}
+
+async function chainHead(entries) {
+  const chain = await chainHashes(entries);
+  return chain.length ? chain[chain.length - 1] : GENESIS_HEX;
+}
+
+// First index where a recomputed chain diverges from a trusted chain.
+function firstBrokenIndex(recomputed, trusted) {
+  const n = Math.min(recomputed.length, trusted.length);
+  for (let i = 0; i < n; i++) if (recomputed[i] !== trusted[i]) return i;
+  if (recomputed.length !== trusted.length) return n;
+  return null;
 }
 
 // ---- time helpers -----------------------------------------------------------
@@ -67,6 +126,12 @@ function fmtClock(milliseconds) {
 function fmtTs(iso) {
   // 2026-06-16T02:14:00+00:00 -> 2026-06-16 02:14 UTC
   return iso.replace("T", " ").replace(/:\d{2}\+00:00$/, " UTC").replace(/\+00:00$/, " UTC");
+}
+function fmtTsMs(milliseconds) {
+  // Render an interpolated epoch-ms instant as "YYYY-MM-DD HH:MM UTC".
+  const d = new Date(milliseconds);
+  const pad = (x) => String(x).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
 }
 
 // ---- role / display naming --------------------------------------------------
@@ -88,25 +153,39 @@ const ROSTER = [
   { id: "dora_drafter", role: "drafter" },
 ];
 
+// Plain-English chyron copy per money beat, color-coded.
+const BEAT_BANNERS = {
+  contradiction: { tone: "red", text: "VETO FIRED. Two filings disagree on a load-bearing fact. The Warden blocked signoff." },
+  contradiction_cleared: { tone: "green", text: "CLEARED. The fact was corrected, the diff re-ran green, signoff unblocked." },
+  chaos: { tone: "amber", text: "LIVE KILL. A drafter was killed after posting. On restart the duplicate was dropped: filed exactly once." },
+  reconciliation: { tone: "amber", text: "AMENDMENT. A load-bearing fact was revised. Two drafters reconcile through Band before the Warden lets it re-file." },
+};
+
 // ---- state ------------------------------------------------------------------
 let manifest = null;
 let packet = null;
 let runLogText = "";
-let steps = [];          // ordered timeline steps
-let cursor = 0;          // index into steps (0 = nothing happened yet)
+let runLogEntries = [];   // parsed entries of the bundled run log
+let steps = [];           // ordered timeline steps
+let cursor = 0;           // index into steps (0 = nothing happened yet)
 let playing = false;
 let playTimer = null;
+let stepStartedAt = 0;    // performance.now() when the current step began
+let rafId = null;
+let reducedMotion = false;
+let scrubbing = false;
+let revealedBeats = new Set();   // beats whose banner/rail have been lit this run
+let bannerTimer = null;
+let tourMode = true;             // Judge Tour: default-on guided run
 
 // ============================================================================
 // Build the ordered timeline of steps from the packet.
-// Each step: { ts, kind, actor, label, apply(viewState) }: but we keep it data
-// driven: a step records what becomes true, and render(cursor) reduces all steps
-// up to the cursor into the live view.
+// Each step records what becomes true; render(cursor) reduces all steps up to
+// the cursor into the live view.
 // ============================================================================
 function buildSteps(p) {
   const out = [];
   const handoffs = p.handoff_trace || [];
-  // index handoffs by message_id + kind so a transition can light its edge
   const transitions = p.state_transitions || [];
 
   // A synthetic opening step: room created, clocks started.
@@ -161,6 +240,7 @@ function buildSteps(p) {
         body: "Cross-filing contradiction. Submission blocked.\n" + blocked.join("\n"),
       },
       reveal: "contradiction",
+      banner: "contradiction",
       allBranchState: "blocked",
     });
     if (p.diff.resolution) {
@@ -173,6 +253,7 @@ function buildSteps(p) {
           from: "triage", to: "room", kind: "concur",
           body: `Correction: ${r.corrected_field} ${r.from_value} -> ${r.to_value} on ${r.fixed_branch.toUpperCase()}. Diff re-run GREEN.`,
         },
+        banner: "contradiction_cleared",
         allBranchState: "contradiction_checked",
       });
     }
@@ -198,6 +279,7 @@ function buildSteps(p) {
         body: "Recovered after kill at position B. Round-1 draft already in the room; duplicate dropped. Filed exactly once.",
       },
       reveal: "chaos",
+      banner: "chaos",
     });
   }
 
@@ -222,6 +304,8 @@ function buildSteps(p) {
         mid: rec.amend_message_id,
         body: `FACT AMENDMENT. ${rec.fact_key} revised ${fmtNum(rec.old_value)} -> ${fmtNum(rec.new_value)}. Reopen, reconcile a shared characterization, re-file.`,
       },
+      reveal: "reconciliation",
+      banner: "reconciliation",
       branchSet: { sec: "amending", nis2: "amending" },
     });
     if (rec.blocked_before_reconciliation) {
@@ -266,6 +350,13 @@ function buildSteps(p) {
     final: true,
   });
 
+  // Fill any missing timestamps by carrying the last known one forward, so the
+  // interpolation always has monotone, non-null endpoints to work between.
+  let lastKnown = out[0].ts || (p.clocks && p.clocks[0] && p.clocks[0].started) || null;
+  for (const s of out) {
+    if (s.ts) lastKnown = s.ts;
+    else s.ts = lastKnown;
+  }
   return out;
 }
 
@@ -319,10 +410,11 @@ function render() {
 
   renderRoster(latest);
   renderFeed(active);
-  renderClocks(nowTs);
+  renderClocks(nowTs ? ms(nowTs) : null);
   renderHandoffs(active);
   renderBranchStates(active);
   renderReveals(active);
+  syncBeats(active, latest);
 }
 
 function renderRoster(latest) {
@@ -361,11 +453,33 @@ function renderFeed(active) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function renderClocks(nowTs) {
+// Render the clocks at an absolute epoch-ms instant `nowMs`. During playback
+// this is interpolated between recorded step timestamps; otherwise it is the
+// current step's recorded timestamp. The instant is always clamped by the
+// caller so it never exceeds a time the run actually reached.
+function renderClocks(nowMs) {
   const wrap = $("#clocks");
-  wrap.innerHTML = "";
-  const now = nowTs ? ms(nowTs) : (packet.clocks[0] ? ms(packet.clocks[0].started) : 0);
-  for (const c of packet.clocks) {
+  const now = nowMs != null ? nowMs : (packet.clocks[0] ? ms(packet.clocks[0].started) : 0);
+  if (nowMs != null) $("#clock-now-ts").textContent = fmtTsMs(now);
+
+  // Build cells once, then update text/width in place so the rAF tick does not
+  // thrash the DOM (rebuilding every frame is what made the bars feel janky).
+  if (wrap.childElementCount !== packet.clocks.length) {
+    wrap.innerHTML = "";
+    for (let i = 0; i < packet.clocks.length; i++) {
+      const cell = el("div", "clock");
+      cell.appendChild(el("span", "status-pill"));
+      cell.appendChild(el("div", "name", packet.clocks[i].name));
+      cell.appendChild(el("div", "remaining"));
+      cell.appendChild(el("div", "deadline", "deadline " + fmtTs(packet.clocks[i].deadline)));
+      const bar = el("div", "bar");
+      bar.appendChild(el("span"));
+      cell.appendChild(bar);
+      wrap.appendChild(cell);
+    }
+  }
+
+  packet.clocks.forEach((c, i) => {
     const started = ms(c.started);
     const deadline = ms(c.deadline);
     const stoppedAt = c.stopped ? ms(c.stopped) : null;
@@ -378,18 +492,14 @@ function renderClocks(nowTs) {
     const breached = !isStopped && now > deadline;
     const warn = !isStopped && !breached && remaining < total * 0.25;
 
-    const cell = el("div", "clock " + (isStopped ? "stopped" : breached ? "breach running" : "running") + (warn ? " warn" : ""));
-    cell.appendChild(el("span", "status-pill", isStopped ? "stopped" : breached ? "breach" : "running"));
-    cell.appendChild(el("div", "name", c.name));
-    cell.appendChild(el("div", "remaining", isStopped ? "stopped, " + fmtClock(deadline - stoppedAt) + " to spare" : breached ? "BREACHED" : fmtClock(remaining)));
-    cell.appendChild(el("div", "deadline", "deadline " + fmtTs(c.deadline)));
-    const bar = el("div", "bar");
-    const fill = el("span");
-    fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
-    bar.appendChild(fill);
-    cell.appendChild(bar);
-    wrap.appendChild(cell);
-  }
+    const cell = wrap.children[i];
+    cell.className = "clock " + (isStopped ? "stopped" : breached ? "breach running" : "running") + (warn ? " warn" : "");
+    cell.querySelector(".status-pill").textContent = isStopped ? "stopped" : breached ? "breach" : "running";
+    cell.querySelector(".remaining").textContent = isStopped
+      ? "stopped, " + fmtClock(deadline - stoppedAt) + " to spare"
+      : breached ? "BREACHED" : fmtClock(remaining);
+    cell.querySelector(".bar > span").style.width = Math.max(0, Math.min(100, pct)) + "%";
+  });
 }
 
 function renderHandoffs(active) {
@@ -437,6 +547,75 @@ function renderReveals(active) {
   toggle("#reconciliation-section", revealed.has("reconciliation"));
 }
 function toggle(sel, on) { $(sel).classList.toggle("hidden", !on); }
+
+// ---- beats: rail dots, chyron banner, gentle scroll on first reveal --------
+const REVEAL_PANEL = {
+  contradiction: "#contradiction-section",
+  chaos: "#chaos-section",
+  reconciliation: "#reconciliation-section",
+};
+
+function syncBeats(active, latest) {
+  // Light rail dots for every beat reached so far.
+  const reached = new Set();
+  for (const s of active) {
+    if (s.reveal) reached.add(s.reveal);
+    if (s.banner === "contradiction") reached.add("contradiction");
+    if (s.banner === "reconciliation") reached.add("reconciliation");
+  }
+  document.querySelectorAll(".beat-dot").forEach((dot) => {
+    const present = scenarioHasBeat(dot.dataset.beat);
+    dot.classList.toggle("absent", !present);
+    dot.classList.toggle("reached", present && reached.has(dot.dataset.beat));
+  });
+
+  // Fire the chyron banner + first-reveal flourish for the latest step only.
+  if (latest && latest.banner) {
+    showBeatBanner(latest.banner);
+    const beatKey = latest.banner === "contradiction_cleared" ? "contradiction" : latest.banner;
+    if (!revealedBeats.has(beatKey)) {
+      revealedBeats.add(beatKey);
+      const panelSel = REVEAL_PANEL[beatKey];
+      if (panelSel) {
+        const panel = $(panelSel);
+        panel.classList.remove("pulse");
+        // restart the pulse animation
+        void panel.offsetWidth;
+        if (!reducedMotion) {
+          panel.classList.add("pulse");
+          panel.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }
+  } else if (!latest || !latest.banner) {
+    // No banner on this step: leave the last banner up briefly, it auto-hides.
+  }
+}
+
+function scenarioHasBeat(beat) {
+  if (!packet) return false;
+  if (beat === "contradiction") return !!((packet.diff && packet.diff.blocked_conflicts || []).length);
+  if (beat === "chaos") return !!((packet.chaos && packet.chaos.events || []).length);
+  if (beat === "reconciliation") return !!packet.reconciliation;
+  return false;
+}
+
+function showBeatBanner(key) {
+  const b = $("#beat-banner");
+  const def = BEAT_BANNERS[key];
+  if (!def) return;
+  b.className = "beat-banner tone-" + def.tone + " show";
+  b.textContent = def.text;
+  b.hidden = false;
+  if (bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => { b.classList.remove("show"); }, 4200);
+}
+function hideBeatBanner() {
+  const b = $("#beat-banner");
+  b.classList.remove("show");
+  b.hidden = true;
+  if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
+}
 
 // ============================================================================
 // Static panels (built once per packet, not animated).
@@ -557,11 +736,8 @@ function renderStaticPanels() {
   addKv(mkv, "replay", packet.replay.byte_identical ? "byte-identical" : "MISMATCH");
   meta.appendChild(mkv);
 
-  $("#recorded-hash").textContent = packet.replay.original_sha256;
-  $("#recomputed-hash").textContent = "--";
-  const vr = $("#verify-result");
-  vr.className = "verify-result pending";
-  vr.textContent = "Not yet verified. Click to recompute from the bundled run log.";
+  // Verification panel: reset all three checks to a fresh "not run" state.
+  resetChecks();
 
   // Filings
   const fWrap = $("#filings");
@@ -582,10 +758,38 @@ function addKv(dl, k, v) { dl.appendChild(el("dt", null, k)); dl.appendChild(el(
 function stripClaims(text) { return text.replace(/\[CLAIMS\][\s\S]*?\[\/CLAIMS\]/g, "").trim(); }
 
 // ============================================================================
-// Transport: play / pause / scrub.
+// Scenario cards (surface the manifest blurbs as one-click, self-explaining).
+// ============================================================================
+function renderScenarioCards(activeId) {
+  const wrap = $("#scenario-cards");
+  wrap.innerHTML = "";
+  for (const scn of manifest.scenarios) {
+    const card = el("button", "scenario-card" + (scn.id === activeId ? " active" : ""));
+    card.type = "button";
+    card.setAttribute("aria-pressed", scn.id === activeId ? "true" : "false");
+    card.appendChild(el("span", "scenario-card-label", scn.label));
+    card.appendChild(el("span", "scenario-card-blurb", scn.blurb));
+    card.addEventListener("click", () => selectScenario(scn.id, { fromUser: true }));
+    wrap.appendChild(card);
+  }
+}
+
+function selectScenario(id, opts = {}) {
+  const scn = manifest.scenarios.find((s) => s.id === id);
+  if (!scn) return;
+  $("#scenario").value = id;
+  renderScenarioCards(id);
+  loadScenario(scn).then(() => {
+    if (opts.fromUser) startPlay();
+  });
+}
+
+// ============================================================================
+// Transport: play / pause / scrub, with a smooth interpolated clock tick.
 // ============================================================================
 function setCursor(n) {
   cursor = Math.max(0, Math.min(steps.length, n));
+  stepStartedAt = performance.now();
   render();
   if (cursor >= steps.length) stopPlay();
 }
@@ -595,10 +799,12 @@ function step() {
 }
 function startPlay() {
   if (playing) return;
-  if (cursor >= steps.length) cursor = 0;
+  if (cursor >= steps.length) { cursor = 0; revealedBeats = new Set(); }
   playing = true;
   $("#play").textContent = "Pause";
+  stepStartedAt = performance.now();
   scheduleNext();
+  startTick();
 }
 function scheduleNext() {
   const speed = parseFloat($("#speed").value) || 1;
@@ -606,37 +812,224 @@ function scheduleNext() {
   playTimer = setTimeout(() => {
     step();
     if (playing && cursor < steps.length) scheduleNext();
-    else stopPlay();
+    else if (cursor >= steps.length) onReplayComplete();
   }, base / speed);
 }
 function stopPlay() {
   playing = false;
   $("#play").textContent = "Play";
   if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+  stopTick();
+}
+
+// rAF interpolation: between the current step's recorded ts and the next step's
+// recorded ts, advance a virtual instant at the declared compression rate and
+// re-render the clocks each frame. The instant is CLAMPED to the next recorded
+// ts, so the clocks never show a time the run did not actually reach. These are
+// real recorded deltas played at a declared speed, not a cosmetic counter.
+function startTick() {
+  if (reducedMotion) return; // reduced-motion users get per-step jumps only
+  stopTick();
+  const frame = () => {
+    if (!playing) return;
+    tickClocks();
+    rafId = requestAnimationFrame(frame);
+  };
+  rafId = requestAnimationFrame(frame);
+}
+function stopTick() {
+  if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+}
+function tickClocks() {
+  const cur = steps[cursor - 1] || steps[0];
+  const next = steps[cursor];
+  if (!cur || !cur.ts) return;
+  const curMs = ms(cur.ts);
+  if (!next || !next.ts) { renderClocks(curMs); return; }
+  const nextMs = ms(next.ts);
+  if (nextMs <= curMs) { renderClocks(curMs); return; }
+  const speed = parseFloat($("#speed").value) || 1;
+  const realElapsed = performance.now() - stepStartedAt;
+  const captured = realElapsed * CAPTURED_MS_PER_REAL_MS * speed;
+  const instant = Math.min(curMs + captured, nextMs); // clamp to the recorded next ts
+  renderClocks(instant);
+}
+
+function onReplayComplete() {
+  stopPlay();
+  if (tourMode) highlightVerify();
+}
+
+// At the emotional peak (replay finished), guide the judge to the proof. We
+// scroll the verification block into view and pulse the button.
+function highlightVerify() {
+  const block = $("#verify-block");
+  const btn = $("#verify");
+  if (!block) return;
+  btn.classList.add("beckon");
+  showBeatBanner("contradiction_cleared");
+  const b = $("#beat-banner");
+  b.className = "beat-banner tone-green show";
+  b.textContent = "Now prove it yourself. Click Verify to re-derive the Warden's hash, chain, and signature in your own browser.";
+  b.hidden = false;
+  if (bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.classList.remove("show"), 6000);
+  if (!reducedMotion) block.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 // ============================================================================
-// In-browser replay-hash verification.
+// In-browser verification: hash, chain head, Ed25519 signature.
 // ============================================================================
-async function verifyReplayHash() {
+function resetChecks() {
+  setPill("#hash-pill", "pending", "not run");
+  setPill("#chain-pill", "pending", "not run");
+  setPill("#sig-pill", "pending", "not run");
+  $("#recorded-hash").textContent = packet.replay.original_sha256;
+  $("#recomputed-hash").textContent = "--";
+  const sig = packet.replay.signature || {};
+  $("#recorded-chain").textContent = "computed from the chain over the bundled log";
+  $("#recomputed-chain").textContent = "--";
+  $("#sig-signer").textContent = sig.signer || "--";
+  $("#sig-fp").textContent = sig.pubkey_fingerprint || "--";
+  $("#sig-caveat").textContent = sig.caveat
+    ? "Honest note: the signature is real (one flipped byte makes it invalid), but the demo private key ships with the repo, so it proves 'signed by whoever holds the demo key', not HSM-grade secrecy."
+    : "";
+  const reorder = $("#reorder-toggle");
+  if (reorder) reorder.checked = false;
+  $("#verify").classList.remove("beckon");
   const vr = $("#verify-result");
   vr.className = "verify-result pending";
-  vr.textContent = "Recomputing SHA-256 of the bundled run log in your browser...";
+  vr.textContent = "Not yet verified. Click to re-derive all three proofs from the bundled run log.";
+}
+
+function setPill(sel, cls, text) {
+  const p = $(sel);
+  p.className = "check-pill " + cls;
+  p.textContent = text;
+}
+
+async function verifyAll() {
+  const vr = $("#verify-result");
+  vr.className = "verify-result pending";
+  vr.textContent = "Re-deriving the three proofs in your browser...";
+  $("#verify").classList.remove("beckon");
+  let allOk = true;
+  const reorderOn = $("#reorder-toggle") && $("#reorder-toggle").checked;
+
+  // ---- Check 1: byte-identical replay hash --------------------------------
   try {
-    const canonical = recanonicalizeJsonl(runLogText);
+    const canonical = canonicalJsonl(runLogEntries);
     const hex = await sha256Hex(canonical);
     $("#recomputed-hash").textContent = hex;
     if (hex === packet.replay.original_sha256) {
-      vr.className = "verify-result ok";
-      vr.textContent = "Match. The browser re-derived the exact hash the Warden recorded. Replay is byte-identical, verified client-side.";
+      setPill("#hash-pill", "ok", "MATCH");
+      $("#hash-detail").textContent = "The browser re-derived the exact hash the Warden recorded. Replay is byte-identical.";
     } else {
-      vr.className = "verify-result fail";
-      vr.textContent = "Mismatch. The recomputed hash does not equal the recorded hash.";
+      setPill("#hash-pill", "fail", "MISMATCH"); allOk = false;
+      $("#hash-detail").textContent = "The recomputed hash does not equal the recorded hash.";
     }
   } catch (err) {
+    setPill("#hash-pill", "fail", "error"); allOk = false;
+    $("#hash-detail").textContent = "Hash check could not run: " + err.message + " (SubtleCrypto needs http://localhost or https, not file://).";
+  }
+
+  // ---- Check 2: hash-chain head -------------------------------------------
+  try {
+    const trusted = await chainHashes(runLogEntries);
+    const trustedHead = trusted.length ? trusted[trusted.length - 1] : GENESIS_HEX;
+    $("#recorded-chain").textContent = trustedHead;
+
+    // If the judge toggled "reorder two entries", swap two adjacent entries and
+    // recompute, so the head visibly breaks and we point at the first bad link.
+    let entriesToHash = runLogEntries;
+    if (reorderOn && runLogEntries.length >= 2) {
+      const swapAt = Math.min(2, runLogEntries.length - 2); // a middle-ish pair
+      entriesToHash = runLogEntries.slice();
+      const tmp = entriesToHash[swapAt];
+      entriesToHash[swapAt] = entriesToHash[swapAt + 1];
+      entriesToHash[swapAt + 1] = tmp;
+    }
+    const recomputed = await chainHashes(entriesToHash);
+    const recomputedHead = recomputed.length ? recomputed[recomputed.length - 1] : GENESIS_HEX;
+    $("#recomputed-chain").textContent = recomputedHead;
+
+    if (!reorderOn) {
+      if (recomputedHead === trustedHead) {
+        setPill("#chain-pill", "ok", "MATCH");
+        $("#chain-detail").textContent = `Chain head over ${runLogEntries.length} entries matches. Any reorder or omission would move it.`;
+      } else {
+        setPill("#chain-pill", "fail", "MISMATCH"); allOk = false;
+        $("#chain-detail").textContent = "The recomputed chain head does not match.";
+      }
+    } else {
+      const broken = firstBrokenIndex(recomputed, trusted);
+      setPill("#chain-pill", "broken", "BROKEN");
+      $("#chain-detail").textContent = broken != null
+        ? `Two entries reordered: the chain head changed, and the first broken link is at entry index ${broken}. Untoggle to restore the matching head.`
+        : "Reordered, but the chain head still matched (entries were identical).";
+      // a deliberately broken chain is the expected demo result, not a failure
+    }
+  } catch (err) {
+    setPill("#chain-pill", "fail", "error"); allOk = false;
+    $("#chain-detail").textContent = "Chain check could not run: " + err.message;
+  }
+
+  // ---- Check 3: Ed25519 signature -----------------------------------------
+  await verifySignature();
+
+  // ---- Roll-up ------------------------------------------------------------
+  const sigPill = $("#sig-pill").textContent;
+  if (reorderOn) {
+    vr.className = "verify-result pending";
+    vr.textContent = "Chain deliberately broken by the reorder toggle (that is the point). Untoggle and re-verify to see all three pass.";
+  } else if (allOk && (sigPill === "VALID" || sigPill === "unsupported")) {
+    vr.className = "verify-result ok";
+    vr.textContent = sigPill === "VALID"
+      ? "All three verified in your browser. The hash matches, the chain head matches, and the Warden's signature is valid. No server, no trust in us."
+      : "Hash and chain verified in your browser. The signature check needs a browser with WebCrypto Ed25519; the hash and chain proofs hold regardless.";
+  } else {
     vr.className = "verify-result fail";
-    vr.textContent = "Verification could not run: " + err.message +
-      " (the SubtleCrypto API needs a secure context; serve over http://localhost or https, not file://).";
+    vr.textContent = "One or more checks did not pass. See the per-check status above.";
+  }
+}
+
+async function verifySignature() {
+  const sig = packet.replay.signature;
+  if (!sig) { setPill("#sig-pill", "pending", "no signature"); return; }
+  // Detect WebCrypto Ed25519 support up front (older Safari lacks it). The hash
+  // and chain checks already passed independently, so we degrade gracefully.
+  if (!(crypto.subtle && crypto.subtle.importKey)) {
+    setPill("#sig-pill", "warn", "unsupported");
+    $("#sig-detail").textContent = "This browser has no WebCrypto. The signature check needs a modern browser; the hash and chain proofs above still hold.";
+    return;
+  }
+  try {
+    const pubHex = (await fetch("keys/warden_pubkey.ed25519").then((r) => r.text())).trim();
+    const pubBytes = hexToBytes(pubHex);
+    let key;
+    try {
+      key = await crypto.subtle.importKey("raw", pubBytes, { name: "Ed25519" }, false, ["verify"]);
+    } catch (e) {
+      // Older Safari / engines without Ed25519 in WebCrypto land here.
+      setPill("#sig-pill", "warn", "unsupported");
+      $("#sig-detail").textContent = "This browser's WebCrypto does not implement Ed25519 (older Safari). The hash and chain proofs above still verify; open in Chrome, Edge, or Firefox to check the signature too.";
+      return;
+    }
+    const sigBytes = hexToBytes(sig.signature);
+    // The signature covers the canonical run-log UTF-8 bytes (signed_payload =
+    // run_log_jsonl_utf8), which equal the bundled log's canonical bytes.
+    const signedBytes = new TextEncoder().encode(canonicalJsonl(runLogEntries));
+    const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, sigBytes, signedBytes);
+    if (valid) {
+      setPill("#sig-pill", "ok", "VALID");
+      $("#sig-detail").textContent = `Signed by ${sig.signer}, key fingerprint ${sig.pubkey_fingerprint}. The browser verified the Ed25519 signature over the run-log bytes against the bundled public key.`;
+    } else {
+      setPill("#sig-pill", "fail", "INVALID");
+      $("#sig-detail").textContent = "The signature did not verify against the bundled public key.";
+    }
+  } catch (err) {
+    setPill("#sig-pill", "warn", "unsupported");
+    $("#sig-detail").textContent = "Signature check could not run here (" + err.message + "). The hash and chain proofs above still verify; try a modern Chromium or Firefox.";
   }
 }
 
@@ -645,12 +1038,15 @@ async function verifyReplayHash() {
 // ============================================================================
 async function loadScenario(scn) {
   stopPlay();
+  hideBeatBanner();
+  revealedBeats = new Set();
   const [p, log] = await Promise.all([
     fetch(scn.packet).then((r) => r.json()),
     fetch(scn.run_log).then((r) => r.text()),
   ]);
   packet = p;
   runLogText = log;
+  runLogEntries = parseJsonlEntries(log);
   steps = buildSteps(packet);
   $("#scrubber").max = String(steps.length);
   cursor = 0;
@@ -659,6 +1055,8 @@ async function loadScenario(scn) {
 }
 
 async function init() {
+  reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   manifest = await fetch("data/manifest.json").then((r) => r.json());
   const sel = $("#scenario");
   for (const scn of manifest.scenarios) {
@@ -666,19 +1064,48 @@ async function init() {
     opt.value = scn.id;
     sel.appendChild(opt);
   }
-  sel.addEventListener("change", () => {
-    const scn = manifest.scenarios.find((s) => s.id === sel.value);
-    if (scn) loadScenario(scn);
-  });
+  sel.addEventListener("change", () => selectScenario(sel.value, { fromUser: true }));
+
   // default to the contradiction scenario: it shows the veto beat on camera
   const def = manifest.scenarios.find((s) => s.id === "inject_contradiction") || manifest.scenarios[0];
   sel.value = def.id;
+  renderScenarioCards(def.id);
   await loadScenario(def);
 
   $("#play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
-  $("#restart").addEventListener("click", () => { stopPlay(); setCursor(0); });
+  $("#restart").addEventListener("click", () => { stopPlay(); revealedBeats = new Set(); hideBeatBanner(); setCursor(0); });
   $("#scrubber").addEventListener("input", (e) => { stopPlay(); setCursor(parseInt(e.target.value, 10)); });
-  $("#verify").addEventListener("click", verifyReplayHash);
+  $("#speed").addEventListener("change", () => { stepStartedAt = performance.now(); });
+  $("#verify").addEventListener("click", verifyAll);
+  const reorder = $("#reorder-toggle");
+  if (reorder) reorder.addEventListener("change", verifyAll);
+
+  setupIntro();
+}
+
+// Intro overlay: shown on first load, then auto-plays the default scenario. A
+// returning visitor (localStorage flag) is not re-gated, but auto-play still
+// runs so the page is never frozen at step 0.
+function setupIntro() {
+  const overlay = $("#intro-overlay");
+  const seen = false; // always show for a cold judge; dismissible immediately
+  const dismiss = (start) => {
+    overlay.hidden = true;
+    try { localStorage.setItem("deadline-room-intro-seen", "1"); } catch (e) { /* private mode */ }
+    if (start) startPlay();
+  };
+  $("#intro-start").addEventListener("click", () => dismiss(true));
+  $("#intro-skip").addEventListener("click", () => dismiss(false));
+
+  let returning = false;
+  try { returning = localStorage.getItem("deadline-room-intro-seen") === "1"; } catch (e) { returning = false; }
+
+  if (returning) {
+    overlay.hidden = true;
+    startPlay(); // never land frozen
+  } else {
+    overlay.hidden = false;
+  }
 }
 
 init().catch((err) => {

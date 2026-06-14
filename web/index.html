@@ -4,10 +4,25 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Deadline Room: replay viewer</title>
-<meta name="description" content="Forensic replay viewer for the Deadline Room: a multi-agent regulated breach-reporting war room on Band. Replays captured live runs with byte-identical replay verification." />
+<meta name="description" content="Forensic replay viewer for the Deadline Room: a multi-agent regulated breach-reporting war room on Band. Replays captured live runs with byte-identical replay, hash-chain, and Ed25519 signature verification you can re-run in your own browser." />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+<!-- Intro overlay: the first thing a cold judge sees. Auto-shown on load. -->
+<div id="intro-overlay" class="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
+  <div class="intro-card">
+    <span class="intro-logo" aria-hidden="true"></span>
+    <h2 id="intro-title">A bank was breached. Four government deadlines started at once.</h2>
+    <p>Four AI teams race to file four regulatory reports. A no-AI referee, the Deadline Warden, blocks any two reports that contradict each other, and the books survive a live agent being killed mid-run.</p>
+    <p class="intro-proof">This is a forensic replay of a real recorded run. At the end you can re-derive the proof in your own browser: the hash, the tamper-evident chain, and the Warden's signature. No server, no trust in us.</p>
+    <div class="intro-actions">
+      <button id="intro-start" class="btn primary big">Watch the replay</button>
+      <button id="intro-skip" class="btn ghost">Skip intro</button>
+    </div>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="brand">
     <span class="logo" aria-hidden="true"></span>
@@ -23,6 +38,20 @@
 </header>
 
 <div id="compression-banner" class="compression-banner" role="status"></div>
+
+<!-- Scenario cards: surface the manifest blurbs so the four runs are self-explaining. -->
+<section class="scenario-cards" id="scenario-cards" aria-label="Captured scenarios"></section>
+
+<!-- Beats rail: shows the judge there are three signature moments and that they are arriving. -->
+<div class="beats-rail" id="beats-rail" aria-label="Signature beats">
+  <span class="beats-rail-label">Watch for</span>
+  <div class="beat-dot" data-beat="contradiction"><span class="dot"></span>Veto</div>
+  <div class="beat-dot" data-beat="chaos"><span class="dot"></span>Live kill</div>
+  <div class="beat-dot" data-beat="reconciliation"><span class="dot"></span>Amendment</div>
+</div>
+
+<!-- Beat banner / chyron: the plain-English headline of the current money moment. -->
+<div id="beat-banner" class="beat-banner" role="status" aria-live="polite" hidden></div>
 
 <main>
   <!-- Hero: the four racing clocks -->
@@ -94,20 +123,47 @@
     <div id="reconciliation-body"></div>
   </section>
 
-  <!-- The Examiner Packet -->
-  <section class="panel packet-panel">
+  <!-- The Examiner Packet: the climactic "verify it yourself" beat -->
+  <section class="panel packet-panel" id="packet-panel">
     <div class="panel-head">
       <h2>Examiner Packet</h2>
       <span id="verdict-badge" class="badge"></span>
     </div>
     <div class="packet-grid">
       <div class="packet-meta" id="packet-meta"></div>
-      <div class="replay-verify">
-        <h3>Byte-identical replay</h3>
-        <p class="small muted">Re-hash the bundled run log in your browser and compare it to the hash the Warden recorded. No server.</p>
-        <div class="hash-row"><span class="hash-label">recorded</span><code id="recorded-hash">--</code></div>
-        <div class="hash-row"><span class="hash-label">recomputed</span><code id="recomputed-hash">--</code></div>
-        <button id="verify" class="btn primary">Verify replay hash in browser</button>
+      <div class="verify-block" id="verify-block">
+        <div class="verify-intro">
+          <h3>Verify it yourself</h3>
+          <p class="small muted">Re-run all three proofs in your own browser. No server, no trust in us. Each check reads the bundled run log and recomputes the same value the Warden recorded.</p>
+        </div>
+
+        <!-- Check 1: byte-identical replay hash -->
+        <div class="check" id="check-hash">
+          <div class="check-head"><span class="check-name">1. Byte-identical replay hash</span><span class="check-pill pending" id="hash-pill">not run</span></div>
+          <div class="hash-row"><span class="hash-label">recorded</span><code id="recorded-hash">--</code></div>
+          <div class="hash-row"><span class="hash-label">recomputed</span><code id="recomputed-hash">--</code></div>
+          <div id="hash-detail" class="check-detail muted small">SHA-256 of the bundled run log, recomputed client-side, compared to the hash the Warden recorded.</div>
+        </div>
+
+        <!-- Check 2: hash-chain head -->
+        <div class="check" id="check-chain">
+          <div class="check-head"><span class="check-name">2. Tamper-evident chain head</span><span class="check-pill pending" id="chain-pill">not run</span></div>
+          <div class="hash-row"><span class="hash-label">recorded</span><code id="recorded-chain">--</code></div>
+          <div class="hash-row"><span class="hash-label">recomputed</span><code id="recomputed-chain">--</code></div>
+          <div id="chain-detail" class="check-detail muted small">A per-entry hash chain folds each log entry into the prior hash, so a reorder or omission moves the head and points at the first broken link.</div>
+          <label class="reorder-toggle"><input type="checkbox" id="reorder-toggle" /> Reorder two entries (watch the chain break)</label>
+        </div>
+
+        <!-- Check 3: Ed25519 signature -->
+        <div class="check" id="check-sig">
+          <div class="check-head"><span class="check-name">3. Warden signature (Ed25519)</span><span class="check-pill pending" id="sig-pill">not run</span></div>
+          <div class="hash-row"><span class="hash-label">signer</span><code id="sig-signer">--</code></div>
+          <div class="hash-row"><span class="hash-label">key fp</span><code id="sig-fp">--</code></div>
+          <div id="sig-detail" class="check-detail muted small">The Warden signed the run-log bytes with an Ed25519 key. The browser verifies the signature against the bundled public key.</div>
+          <div id="sig-caveat" class="check-caveat small muted"></div>
+        </div>
+
+        <button id="verify" class="btn primary big verify-all">Verify all three in my browser</button>
         <div id="verify-result" class="verify-result"></div>
       </div>
     </div>
