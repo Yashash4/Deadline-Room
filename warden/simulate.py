@@ -3,7 +3,7 @@ the fake Band, with an injectable kill schedule. This is what the property
 tests drive with randomized kill points.
 
 Drafter behavior is a deterministic stub (the real LLM drafters plug in
-behind the same envelope on day 2-3); the Warden never knows the difference,
+behind the same envelope); the Warden never knows the difference,
 which is the point.
 """
 
