@@ -4,7 +4,7 @@
 # Demo:   docker run --rm deadline-room python floor/run_floor.py   (needs keys)
 #
 # The deterministic core needs only the standard library plus pytest, so the
-# default command exercises the whole 247-test suite with no API keys and no
+# default command exercises the whole 282-test suite with no API keys and no
 # network. The live floor run needs BAND_API_KEY + FEATHERLESS_API_KEY passed
 # in at runtime.
 FROM python:3.11-slim

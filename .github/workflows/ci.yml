@@ -1,7 +1,7 @@
 name: ci
 
 # Green checks on every push and pull request. Three gates run:
-#   1. the 247-test property suite (the deterministic core, no keys, no network)
+#   1. the 282-test property suite (the deterministic core, no keys, no network)
 #   2. ruff lint over the whole repository
 #   3. the hygiene gate: fails the build if any tracked file carries an em-dash
 #      (U+2014), an en-dash (U+2013), or an AI-attribution trailer. The forbidden

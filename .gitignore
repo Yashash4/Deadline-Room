@@ -1,8 +1,8 @@
 __pycache__/
 *.pyc
 .env
-.env.example
 .env.*
+!.env.example
 AGENTS.md
 .pytest_cache/
 *.egg-info/
