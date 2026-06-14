@@ -1,0 +1,138 @@
+# Regulation-as-config: the declarative regime catalog.
+#
+# Each record below is ONE statutory reporting regime. The engine (clocks,
+# roster, recruit) reads this file and produces the live floor FROM the data, so
+# adding a regulator is a data edit here, not a code change in warden/ or floor/.
+#
+# Field reference (every regime carries the same shape):
+#   key            stable identifier for the regime
+#   authority      the competent authority the filing goes to
+#   branch         the protocol branch / correlation-id suffix (inc-NNNN:<branch>)
+#   regime_label   human label rendered in the packet and used as the regime name
+#   trigger_event  the statutory event the clock is anchored on, one of:
+#                    "incident occurrence"        (T0)
+#                    "becoming aware"             (awareness)
+#                    "materiality determination"  (SEC Item 1.05 determination)
+#                    "determination (recruit moment)"  (recruit-time determination)
+#   clock:
+#     length         the statutory window, an integer
+#     unit           "hours" (calendar) or "business_days"
+#     business_days  true when the count is in business days (SEC), false otherwise
+#     holiday_calendar  the named calendar a business-day clock consults
+#                       (only "US_FEDERAL_2026" is wired today; calendar clocks
+#                       name "none")
+#   format_profile   the per-regime filing field skeleton id (floor/formats.py)
+#   start:
+#     mode    "startup"  the clock starts when the floor opens (anchor below)
+#             "recruit"  the clock starts at the runtime-recruit moment
+#     anchor  for startup clocks, which timestamp anchors the clock:
+#               "incident_t0"             NIS2 + DORA
+#               "materiality_determination" SEC
+#   recruit (recruit-mode regimes only):
+#     jurisdiction  the blast-radius token that triggers the recruit (e.g. "UK")
+#     name_tokens   tokens matched against a peer's name/handle on /agent/peers
+#
+# The behaviour and demo dates produced from this catalog are byte-identical to
+# the prior hardcoded constants: this file is the SOURCE of those constants, not
+# a change to them.
+
+regimes:
+  - key: nis2_early
+    authority: national CSIRT (NIS2)
+    branch: nis2-early
+    regime_label: NIS2 early warning
+    trigger_event: becoming aware
+    clock:
+      name: NIS2 early warning (24h)
+      length: 24
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+    format_profile: nis2_early
+    start:
+      mode: startup
+      anchor: incident_t0
+
+  - key: nis2_full
+    authority: national CSIRT (NIS2)
+    branch: nis2
+    regime_label: NIS2
+    trigger_event: becoming aware
+    clock:
+      name: NIS2 full notification (72h)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+    format_profile: nis2_full
+    start:
+      mode: startup
+      anchor: incident_t0
+
+  - key: dora
+    authority: lead competent authority (DORA, via national NCA)
+    branch: dora
+    regime_label: DORA
+    trigger_event: incident occurrence
+    clock:
+      name: DORA major-incident (72h)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+    format_profile: dora
+    start:
+      mode: startup
+      anchor: incident_t0
+
+  - key: sec
+    authority: U.S. Securities and Exchange Commission
+    branch: sec
+    regime_label: SEC
+    trigger_event: materiality determination
+    clock:
+      name: SEC 8-K (4 business days)
+      length: 4
+      unit: business_days
+      business_days: true
+      holiday_calendar: US_FEDERAL_2026
+    format_profile: sec_8k
+    start:
+      mode: startup
+      anchor: materiality_determination
+
+  - key: uk_ico
+    authority: UK Information Commissioner's Office
+    branch: uk
+    regime_label: UK ICO
+    trigger_event: becoming aware
+    clock:
+      name: UK ICO / GDPR personal-data breach (72h)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+    format_profile: ico_art33
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: UK
+      name_tokens: [uk, ico]
+
+  - key: nydfs
+    authority: New York State Department of Financial Services (superintendent)
+    branch: nydfs
+    regime_label: NYDFS 23 NYCRR 500
+    trigger_event: determination (recruit moment)
+    clock:
+      name: NYDFS 23 NYCRR 500.17(a)(1) (72h from determination)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+    format_profile: nydfs_50017
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: NY
+      name_tokens: [nydfs]

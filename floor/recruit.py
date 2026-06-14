@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from floor import regimes
+
 
 @dataclass(frozen=True)
 class RecruitTarget:
@@ -40,43 +42,39 @@ class RecruitTarget:
     # for NYDFS it is the moment of determination. Defaulted so any future target
     # that omits it still constructs.
     trigger_event: str = "determination (recruit moment)"
+    # The real filing field skeleton (floor/formats.py id) the recruited drafter
+    # fills. Defaulted so any future target that omits it still constructs.
+    format_profile: str = ""
 
 
-# The UK ICO Drafter. Recruited only when a UK subsidiary is in the blast radius.
-# Its 72h GDPR personal-data-breach clock starts at recruit time.
-UK_ICO_TARGET = RecruitTarget(
-    jurisdiction="UK",
-    branch="uk",
-    regime="UK ICO",
-    name_tokens=("uk", "ico"),
-    clock_name="UK ICO / GDPR personal-data breach (72h)",
-    clock_hours=72,
-    # UK GDPR Art. 33 runs from AWARENESS of the breach. The recruit moment (a UK
-    # personal-data breach is found in scope) is that awareness.
-    trigger_event="becoming aware",
-)
+def target_from_spec(spec: "regimes.RegimeSpec") -> RecruitTarget:
+    """Build a RecruitTarget from a recruit-mode regime record in the catalog, so
+    the UK and NYDFS targets are produced FROM floor/regimes.yaml rather than from
+    hardcoded constants. The values are exactly the prior constants, so the live
+    behaviour and demo clocks are byte-identical."""
+    if not spec.is_recruit:
+        raise ValueError(f"regime {spec.key} is not a recruit-mode regime")
+    return RecruitTarget(
+        jurisdiction=spec.recruit_jurisdiction,
+        branch=spec.branch,
+        regime=spec.regime_label,
+        name_tokens=spec.recruit_name_tokens,
+        clock_name=spec.clock.name,
+        clock_hours=spec.clock.length,
+        trigger_event=spec.trigger_event,
+        format_profile=spec.format_profile,
+    )
 
 
-# The New York DFS Drafter. Recruited only when a New York licensed entity is in
-# the blast radius. 23 NYCRR 500.17(a)(1) requires notice to the superintendent
-# "as promptly as possible but in no event later than 72 hours after determining
-# that a cybersecurity incident has occurred." That window is a flat 72 CALENDAR
-# hours (no business-day or holiday arithmetic), and it runs from the moment of
-# determination, which here is the moment the New York branch enters scope and
-# the drafter is recruited, not incident T0. Same recruit seam as the UK clock,
-# a second independent statutory basis for "the obligation attaches when the
-# jurisdiction enters scope."
-NYDFS_TARGET = RecruitTarget(
-    jurisdiction="NY",
-    branch="nydfs",
-    regime="NYDFS 23 NYCRR 500",
-    name_tokens=("nydfs",),
-    clock_name="NYDFS 23 NYCRR 500.17(a)(1) (72h from determination)",
-    clock_hours=72,
-    # 23 NYCRR 500.17(a)(1) runs from DETERMINING a reportable cybersecurity
-    # event occurred. The recruit moment is that determination.
-    trigger_event="determination (recruit moment)",
-)
+# The recruit targets are produced FROM the declarative catalog. The UK ICO
+# Drafter is recruited only when a UK subsidiary is in the blast radius (its 72h
+# GDPR personal-data-breach clock starts at recruit time, anchored on awareness);
+# the NYDFS Drafter only when a New York licensed entity is in scope (a flat 72
+# CALENDAR-hour 500.17(a)(1) notice from the determination/recruit moment, no
+# business-day or holiday arithmetic). Both flow through the same recruit seam.
+_CATALOG = regimes.by_key(regimes.load_catalog())
+UK_ICO_TARGET = target_from_spec(_CATALOG["uk_ico"])
+NYDFS_TARGET = target_from_spec(_CATALOG["nydfs"])
 
 
 def jurisdiction_in_blast_radius(fact_record: dict, jurisdiction: str) -> bool:

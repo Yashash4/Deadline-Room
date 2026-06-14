@@ -129,12 +129,40 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
-                 regime: str = "NIS2", max_tokens: int = 700,
+                 regime: str = "NIS2", format_profile=None, max_tokens: int = 700,
                  timeout: int = 90) -> str:
     """Draft the regulatory notification body for one regime from the canonical
     fact-record on the named provider. Returns the model's text. Raises
     DrafterError on transport or empty-content failure (the caller decides
-    fallback)."""
+    fallback).
+
+    format_profile, when supplied, is a floor.formats.FormatProfile carrying the
+    REAL per-regime field skeleton (e.g. SEC 8-K Item 1.05's four mandated
+    elements). The model then writes prose INTO those labelled slots instead of a
+    generic structure, so the filing reads examiner-authored. The structured
+    [CLAIMS] block is attached separately and is never affected by this."""
+    if format_profile is not None:
+        from floor.formats import prompt_for
+        structure = prompt_for(format_profile)
+        system = (
+            "You are a regulatory breach-notification drafter for a bank's "
+            "incident response team. You write tight, examiner-ready filings. You "
+            "state only what the supplied fact-record supports, never invent "
+            "facts, and you fill the exact mandated fields the form requires. No "
+            "markdown headers; plain prose under each field label."
+        )
+        user = (
+            f"Draft the {regime} mandatory incident notification from this "
+            f"canonical fact-record. Use ONLY these facts. Keep it under 300 "
+            f"words total.\n\n{structure}\n\n"
+            f"FACT RECORD (canonical, authoritative):\n"
+            f"{json.dumps(fact_record, indent=2)}"
+        )
+        return llm_complete(
+            provider, model,
+            [{"role": "system", "content": system},
+             {"role": "user", "content": user}],
+            api_key=api_key, max_tokens=max_tokens, temperature=0.2, timeout=timeout)
     system = (
         "You are a regulatory breach-notification drafter for a bank's incident "
         "response team. You write tight, examiner-ready filings. You state only "

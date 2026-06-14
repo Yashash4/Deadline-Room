@@ -67,7 +67,7 @@ from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
-from floor import roster  # noqa: E402
+from floor import regimes, roster  # noqa: E402
 from floor.claims import parse_claims  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
@@ -218,6 +218,43 @@ TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
 # by the drafter process, not the model).
 AMEND_CONTAINMENT_FRAMING = "contained as of 2026-06-16T07:00:00+00:00"
 AMEND_DATA_BOUNDS = ("name", "address", "account_number")
+
+
+# The declarative regime catalog, loaded once. The startup clocks (NIS2 early +
+# full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
+# records, so adding a regulator is appending a YAML block, not editing code.
+REGIME_CATALOG = regimes.load_catalog()
+
+# The fixed timestamp each startup anchor resolves to. The catalog names the
+# anchor; this maps the name to the demo constant, so the clocks produced are
+# byte-identical to the prior hardcoded constructions.
+_STARTUP_ANCHOR_TS = {
+    regimes.ANCHOR_INCIDENT_T0: INCIDENT_T0,
+    regimes.ANCHOR_MATERIALITY_DETERMINATION: TS_SEC_DETERMINATION,
+}
+
+
+def _start_clocks_from_catalog(clocks: ClockEngine, branches=None) -> None:
+    """Start every startup-mode regime's statutory clock from the catalog, in
+    catalog order, on the live ClockEngine. A business-day clock (SEC) uses
+    start_sec_business_days; a calendar-hour clock (NIS2/DORA) uses start_hours.
+    The correlation id is INCIDENT_ID:<branch>, matching branch_corr.
+
+    branches, when given, restricts the started clocks to that set (the legacy
+    single-drafter floor starts only NIS2 + SEC, not DORA). The produced clocks
+    are exactly the prior hardcoded ones, so replay stays byte-identical."""
+    for spec in regimes.startup_regimes(REGIME_CATALOG):
+        if branches is not None and spec.branch not in branches:
+            continue
+        corr = f"{INCIDENT_ID}:{spec.branch}"
+        anchor_ts = _STARTUP_ANCHOR_TS[spec.start_anchor]
+        if spec.clock.business_days:
+            clocks.start_sec_business_days(
+                corr, anchor_ts, days=spec.clock.length,
+                trigger_event=spec.trigger_event)
+        else:
+            clocks.start_hours(spec.clock.name, corr, anchor_ts,
+                               spec.clock.length, trigger_event=spec.trigger_event)
 
 
 class StepTrace:
@@ -428,22 +465,18 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     branch_corr["uk"] = f"{INCIDENT_ID}:uk"
     branch_corr["nydfs"] = f"{INCIDENT_ID}:nydfs"
     DRAFTER_BRANCHES_THIS_RUN = [r.branch for r in DRAFTER_ROLES]
-    # NIS2 Article 23: the 24h early warning and the 72h notification both run
-    # from the SAME "becoming aware" moment (not 24h then a further 72h). In this
-    # incident the bank becomes aware essentially at occurrence, so the awareness
-    # anchor coincides with T0; the trigger_event labels it honestly as awareness.
-    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early",
-                       INCIDENT_T0, 24, trigger_event="becoming aware")
-    clocks.start_hours("NIS2 full notification (72h)", branch_corr["nis2"],
-                       INCIDENT_T0, 72, trigger_event="becoming aware")
-    # DORA Article 19 major-incident reporting; anchored here at occurrence and
-    # labelled as such (the classification-as-major refinement is deferred).
-    clocks.start_hours("DORA major-incident (72h)", branch_corr["dora"],
-                       INCIDENT_T0, 72, trigger_event="incident occurrence")
-    # SEC Item 1.05: four BUSINESS days from the materiality DETERMINATION, not
-    # from T0. The determination constant is fixed on 2026-06-16, so the deadline
-    # still lands on June 23 (Juneteenth + weekend skip), byte-identical.
-    clocks.start_sec_business_days(branch_corr["sec"], TS_SEC_DETERMINATION)
+    # Regulation-as-config: the startup clocks are produced FROM the declarative
+    # regime catalog (floor/regimes.yaml), not from hardcoded constants. Each
+    # startup regime names its clock length/unit, its business-day rule, and which
+    # fixed timestamp anchors it. NIS2 Article 23: the 24h early warning and the
+    # 72h notification both run from the SAME "becoming aware" moment (not 24h then
+    # a further 72h); in this incident awareness coincides with T0. DORA is
+    # anchored at occurrence and labelled as such. SEC Item 1.05 counts four
+    # BUSINESS days from the materiality DETERMINATION (fixed on 2026-06-16, so the
+    # deadline still lands June 23, Juneteenth + weekend skip, byte-identical). The
+    # values produced here are exactly the prior constants; only their SOURCE moved
+    # to data, so adding a regulator is a YAML edit, not a code change.
+    _start_clocks_from_catalog(clocks)
     for c in clocks.all():
         log.append("clock_started", {"clock": c.name, "correlation_id": c.correlation_id,
                                      "deadline": c.deadline.isoformat()})
@@ -1422,6 +1455,9 @@ def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set):
     if draft_fns is not None and target.branch in draft_fns:
         return draft_fns[target.branch]
     provider, model = roster.resolve(role, provider_set)
+    from floor.formats import format_profile_for
+    profile = (format_profile_for(target.format_profile)
+               if target.format_profile else None)
 
     def fn(claim_facts):
         body_facts = dict(claim_facts)
@@ -1429,10 +1465,12 @@ def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set):
         # Qwen for NYDFS) that spend a few hundred tokens on an internal preamble
         # before any visible content, so a 700-token budget can return empty. A
         # larger budget draws the filing out. Featherless is flat-rate, so the
-        # extra tokens cost nothing on the dev plan.
+        # extra tokens cost nothing on the dev plan. format_profile gives the
+        # recruited drafter its real per-regime field skeleton (ICO Art. 33,
+        # NYDFS 500.17).
         return draft_filing(body_facts, model=model, provider=provider,
-                            regime=role.regime, timeout=timeout,
-                            max_tokens=2000)
+                            regime=role.regime, format_profile=profile,
+                            timeout=timeout, max_tokens=2000)
     return fn
 
 
@@ -1554,21 +1592,42 @@ def _claim_facts_for(branch: str, mode: str, *, corrupted: bool) -> dict:
     return facts
 
 
+# Branch -> format profile id, lifted from the declarative catalog. The startup
+# drafters (NIS2 full, DORA, SEC) fill the REAL per-regime field skeleton named in
+# floor/regimes.yaml; the LLM writes prose into the labelled slots while the
+# structured [CLAIMS] block stays untouched.
+_FORMAT_PROFILE_BY_BRANCH = {
+    spec.branch: spec.format_profile for spec in REGIME_CATALOG
+}
+
+
+def _format_profile_for_branch(branch: str):
+    """Resolve the FormatProfile a branch's filing should fill, or None if the
+    branch names no profile (no profile -> the generic drafter path is used)."""
+    from floor.formats import format_profile_for
+    pid = _FORMAT_PROFILE_BY_BRANCH.get(branch, "")
+    return format_profile_for(pid) if pid else None
+
+
 def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER_DEV):
     if draft_fns is not None:
         return draft_fns[branch]
 
     provider, model = roster.resolve(role, provider_set)
+    profile = _format_profile_for_branch(branch)
 
     def fn(claim_facts):
         # The LLM drafts prose from the FULL canonical fact-record body plus the
         # branch's asserted incident_start; the structured claims are attached by
         # the drafter process, not formatted by the model. The provider + model
         # come from the active provider set (dev = Featherless, prod = the split).
+        # format_profile gives the model the real per-regime field skeleton to
+        # fill (e.g. SEC 8-K Item 1.05's mandated elements).
         body_facts = dict(CANONICAL_FACTS)
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
         return draft_filing(body_facts, model=model, provider=provider,
-                            regime=role.regime, timeout=timeout)
+                            regime=role.regime, format_profile=profile,
+                            timeout=timeout)
     return fn
 
 
@@ -1733,12 +1792,10 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
                         "drafter_id": drafter_id})
 
     corr_nis2 = f"{INCIDENT_ID}:nis2"
-    clocks.start_hours("NIS2 early warning (24h)", f"{INCIDENT_ID}:nis2-early",
-                       INCIDENT_T0, 24, trigger_event="becoming aware")
-    clocks.start_hours("NIS2 full notification (72h)", corr_nis2,
-                       INCIDENT_T0, 72, trigger_event="becoming aware")
-    # SEC Item 1.05: four business days from the materiality determination, not T0.
-    clocks.start_sec_business_days(f"{INCIDENT_ID}:sec", TS_SEC_DETERMINATION)
+    # The legacy single-drafter floor shows the NIS2 early + full clocks and the
+    # SEC clock (no DORA). Produce them from the same declarative catalog,
+    # restricted to those branches, byte-identical to the prior constants.
+    _start_clocks_from_catalog(clocks, branches={"nis2-early", "nis2", "sec"})
     for c in clocks.all():
         log.append("clock_started", {"clock": c.name, "correlation_id": c.correlation_id,
                                      "deadline": c.deadline.isoformat()})
