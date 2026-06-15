@@ -238,12 +238,40 @@ def test_warden_posts_acks_diff_and_release_in_normal_flow(tmp_path):
                 if f"recorded {r.regime} filing" in m["content"]
                 and f"{r.branch}-id" in m["mentions"]]
         assert len(acks) == 1, f"expected one Warden ack for {r.regime}"
-    # the green-diff announcement and the release announcements
+    # the green-diff announcement and the CONSOLIDATED release announcements: the
+    # room narration is two messages (first key across all branches, then second
+    # key across all branches), not six near-identical per-branch broadcasts.
     assert "Contradiction diff GREEN" in blob
-    assert blob.count("Awaiting second key") == 3   # one per branch (first key)
-    assert blob.count("RELEASED. Clock stopped.") == 3  # one per branch (both keys)
+    key1 = [m for m in warden_msgs
+            if "First of two" in m["content"] and "Awaiting" in m["content"]]
+    key2 = [m for m in warden_msgs
+            if "Both keys present on all" in m["content"]
+            and "RELEASED, clocks stopped." in m["content"]]
+    assert len(key1) == 1, "one consolidated first-key (GC) message, not three"
+    assert len(key2) == 1, "one consolidated second-key (Lena) message, not three"
+    # the single consolidated pair names every released branch once
+    for regime in ("NIS2", "SEC", "DORA"):
+        assert regime in key1[0]["content"]
+        assert regime in key2[0]["content"]
+    # the OLD six-broadcast form is gone
+    assert blob.count("Awaiting second key") == 0
+    assert blob.count("RELEASED. Clock stopped.") == 0
 
-    # the gate decisions and replay are UNCHANGED by the Warden talking
+    # the gate decisions and replay are UNCHANGED by the Warden talking: every
+    # branch still recorded two distinct keys in the run log (per-branch gate
+    # intact), only the room narration was consolidated.
+    run_log = (tmp_path / "run-inc-8842-normal.jsonl").read_text(encoding="utf-8")
+    entries = [json.loads(line) for line in run_log.splitlines() if line.strip()]
+    signoffs = [e["payload"] for e in entries if e["type"] == "release_signoff"]
+    # two distinct human keys per released branch (3 branches -> 6 signoffs)
+    assert len(signoffs) == 6
+    by_corr: dict[str, set] = {}
+    for s in signoffs:
+        by_corr.setdefault(s["correlation_id"], set()).add(s["role"])
+    assert len(by_corr) == 3
+    for roles in by_corr.values():
+        assert roles == {"general_counsel", "head_of_ir"}
+
     assert packet["diff"]["green"] is True
     assert packet["diff"]["blocked_conflicts"] == []
     assert packet["replay"]["byte_identical"] is True
@@ -325,6 +353,95 @@ def test_blocked_drafter_visibly_refiles_between_block_and_resolution(tmp_path):
     assert packet["diff"]["blocked_conflicts"]
     assert packet["diff"]["resolution"]["fixed_branch"] == "sec"
     assert packet["replay"]["byte_identical"] is True
+
+
+def test_contradiction_is_two_way_peer_reconciliation(tmp_path):
+    # The contradiction beat is a GENUINE two-way conversation, not the Warden
+    # dictating. After the Warden BLOCK the two conflicting drafters TALK to each
+    # other: SEC @mentions NIS2 asking which value is canonical, NIS2 @mentions
+    # SEC back confirming the fact-record value, THEN SEC re-files @Warden, THEN
+    # the Warden posts GREEN. Full exchange in order:
+    #   Warden BLOCK @SEC @NIS2
+    #   -> SEC @NIS2 reconcile
+    #   -> NIS2 @SEC confirm
+    #   -> SEC corrected re-file @Warden (incident_start 02:14 in [CLAIMS])
+    #   -> Warden GREEN
+    room, clients = _build_clients()
+    packet = run_floor(out_dir=str(tmp_path), mode="inject_contradiction",
+                       clients=clients, draft_fns=_stub_draft_fns())
+
+    def index_of(predicate):
+        for i, m in enumerate(room.messages):
+            if predicate(m):
+                return i
+        return -1
+
+    block_i = index_of(
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("BLOCKED."))
+    reconcile_i = index_of(
+        lambda m: m["sender"] == "sec-id"
+        and m["content"].startswith("@NIS2 Drafter")
+        and "Which is canonical" in m["content"])
+    confirm_i = index_of(
+        lambda m: m["sender"] == "nis2-id"
+        and m["content"].startswith("@SEC Drafter")
+        and "is canonical per the fact-record" in m["content"])
+    refile_i = index_of(
+        lambda m: m["sender"] == "sec-id" and "corrected re-filing" in m["content"])
+    green_i = index_of(
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved."))
+
+    assert block_i != -1, "the Warden must post its BLOCK"
+    assert reconcile_i != -1, "SEC must @mention NIS2 to reconcile"
+    assert confirm_i != -1, "NIS2 must @mention SEC back confirming the canonical value"
+    assert refile_i != -1, "SEC must post its corrected re-filing"
+    assert green_i != -1, "the Warden must post the GREEN resolution"
+
+    # strict ordering of the full two-way exchange
+    assert block_i < reconcile_i < confirm_i < refile_i < green_i
+
+    # SEC -> NIS2 reconcile @mentions NIS2 and names both conflicting values
+    reconcile = room.messages[reconcile_i]
+    assert reconcile["mentions"] == ["nis2-id"]
+    assert "2026-06-16T02:14:00+00:00" in reconcile["content"]
+    assert "2026-06-16T02:41:00+00:00" in reconcile["content"]
+
+    # NIS2 -> SEC confirm @mentions SEC back and states the canonical value
+    confirm = room.messages[confirm_i]
+    assert confirm["mentions"] == ["sec-id"]
+    assert "2026-06-16T02:14:00+00:00" in confirm["content"]
+
+    # the corrected re-file carries the canonical 02:14 in its [CLAIMS] block
+    refile = room.messages[refile_i]
+    content = refile["content"]
+    claims_block = content[content.index("[CLAIMS]"):content.index("[/CLAIMS]")]
+    assert "incident_start_utc=2026-06-16T02:14:00+00:00" in claims_block
+    assert "2026-06-16T02:41:00+00:00" not in claims_block
+
+    # gate decisions + replay UNCHANGED by the peer talk (additive visibility)
+    assert packet["diff"]["blocked_conflicts"]
+    assert packet["diff"]["resolution"]["fixed_branch"] == "sec"
+    assert packet["replay"]["byte_identical"] is True
+
+
+def test_peer_reconciliation_does_not_change_replay_or_sha(tmp_path):
+    # The SEC<->NIS2 reconciliation posts are additive visibility side-effects,
+    # NOT in the hashed run-log. Two contradiction runs produce the identical sha.
+    room_a, clients_a = _build_clients()
+    p_a = run_floor(out_dir=str(tmp_path / "a"), mode="inject_contradiction",
+                    clients=clients_a, draft_fns=_stub_draft_fns())
+    room_b, clients_b = _build_clients()
+    p_b = run_floor(out_dir=str(tmp_path / "b"), mode="inject_contradiction",
+                    clients=clients_b, draft_fns=_stub_draft_fns())
+    # the peer talk happened in both rooms
+    assert any(m["sender"] == "sec-id" and "Which is canonical" in m["content"]
+               for m in room_a.messages)
+    assert any(m["sender"] == "nis2-id" and "is canonical per the fact-record" in m["content"]
+               for m in room_b.messages)
+    # identical deterministic sha, replay byte-exact, SEC deadline unchanged
+    assert p_a["replay"]["original_sha256"] == p_b["replay"]["original_sha256"]
+    assert p_a["replay"]["byte_identical"] is True
+    assert p_b["replay"]["byte_identical"] is True
 
 
 def test_blocked_drafter_refile_does_not_change_replay_or_sha(tmp_path):

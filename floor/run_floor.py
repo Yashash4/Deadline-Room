@@ -691,14 +691,43 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # releases only when BOTH Lena (Head of IR) AND the GC sign. One key alone
     # never turns the lock. The gate is deterministic, composed outside the SM
     # table; the Warden admits HUMAN_RELEASED only once the gate reports two keys.
-    for corr in [branch_corr[b] for b in DRAFTER_BRANCHES_THIS_RUN]:
+    #
+    # The per-branch gate runs UNCHANGED (sign, log release_signoff, drive the
+    # HUMAN_RELEASED transition) for every released branch. The ROOM narration is
+    # consolidated: instead of six near-identical one-way broadcasts (two per
+    # branch), the Warden posts TWO messages, one when the first key (GC) has
+    # signed every released branch and one when the second key (Lena) completes
+    # them. The text is built from the deterministic RELEASE_SIGNERS roster and
+    # the branches the gate actually released; no model call, and the post is an
+    # additive visibility side-effect that never enters the hashed run-log.
+    released_branches_in_order: list[str] = []
+    for b in DRAFTER_BRANCHES_THIS_RUN:
+        corr = branch_corr[b]
         if sm.state(corr).value != "contradiction_checked":
             continue
         _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_DIFF, "warden", "warden")
-        _two_key_release(sm, trace, log, release_gate, corr, warden=warden,
-                         mentions=list(drafter_ids.values()))
+        if _two_key_release(sm, trace, log, release_gate, corr, warden=warden,
+                            mentions=list(drafter_ids.values()), narrate=False):
+            released_branches_in_order.append(b)
         clocks.stop(corr, TS_RELEASE)
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_RELEASE})
+    if warden is not None and released_branches_in_order:
+        gc_role, gc_actor, _gc_ts = RELEASE_SIGNERS[0]
+        lena_role, lena_actor, _lena_ts = RELEASE_SIGNERS[1]
+        branch_list = ", ".join(b.upper() for b in released_branches_in_order)
+        _warden_announce(
+            warden, trace,
+            f"{gc_actor.upper()} ({gc_role}) signed {branch_list}. First of two "
+            f"keys on each. Awaiting {lena_actor.upper()}.",
+            mentions=list(drafter_ids.values()),
+            dedup_key=f"warden:key1-all:{INCIDENT_ID}")
+        _warden_announce(
+            warden, trace,
+            f"{lena_actor.upper()} ({lena_role}) signed {branch_list}. Both keys "
+            f"present on all {len(released_branches_in_order)}. RELEASED, clocks "
+            f"stopped.",
+            mentions=list(drafter_ids.values()),
+            dedup_key=f"warden:key2-all:{INCIDENT_ID}")
     trace.say("[8] Warden opened signoff; two-key release (GC + Lena); "
               "clocks stopped")
 
@@ -1025,6 +1054,62 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
         "branch": fixed_branch,
     }
     corrected = parse_claims(emit_claims(fixed_branch, corrected_facts))
+
+    # ---- Peer-to-peer reconciliation (the two-way beat) ------------------
+    # BEFORE the blocked drafter re-files, the two conflicting drafters TALK to
+    # each other and settle which value is canonical, mirroring the amendment
+    # beat's PROPOSE/CONCUR exchange. The disagreement is real (the diff just
+    # caught it), so the conversation is justified, not filler: the blocked
+    # drafter @mentions its conflicting peer asking which value is canonical, and
+    # the peer @mentions back confirming the value from the fact-record. Both
+    # posts are DETERMINISTIC templated content built from the conflicting values
+    # the diff already produced and the canonical fact; no LLM call. Like every
+    # Band post in this flow each message id is recorded only in the human-facing
+    # handoff trace, NEVER in the hashed run-log, so the gate decisions, the
+    # run-log sha, and byte-identical replay are untouched.
+    if warden is not None and conflicts:
+        c0 = conflicts[0]
+        # The conflicting peer is the OTHER branch in the first conflict (the one
+        # that is not the branch being corrected). Both values come straight off
+        # the Conflict object; the canonical value is the fact-record's.
+        if c0.branch_a == fixed_branch:
+            peer_branch, fixed_value, peer_value = (
+                c0.branch_b, c0.value_a, c0.value_b)
+        else:
+            peer_branch, fixed_value, peer_value = (
+                c0.branch_a, c0.value_b, c0.value_a)
+        canonical_value = CANONICAL_FACTS[c0.field]
+        fixed_client = drafters.get(fixed_branch)
+        peer_client = drafters.get(peer_branch)
+        if (fixed_client is not None and peer_client is not None
+                and peer_branch in drafter_ids and fixed_branch in drafter_ids):
+            reconcile_res = fixed_client.post(
+                f"@{peer_branch.upper()} Drafter the Warden flagged a conflict on "
+                f"{c0.field}: you filed {peer_value}, I filed {fixed_value}. "
+                f"Which is canonical per the fact-record?",
+                mentions=[drafter_ids[peer_branch]],
+                dedup_key=f"reconcile:contradiction:{fixed_branch}")
+            reconcile_mid = _msg_id(reconcile_res)
+            trace.record_handoff(f"{fixed_branch.upper()} Drafter",
+                                 f"{peer_branch.upper()} Drafter",
+                                 "reconcile_query", reconcile_mid)
+            trace.say(f"    [{fixed_branch.upper()} Drafter -> "
+                      f"{peer_branch.upper()} Drafter] reconcile {c0.field}: "
+                      f"{peer_value} vs {fixed_value}? (msg {reconcile_mid})")
+
+            confirm_res = peer_client.post(
+                f"@{fixed_branch.upper()} Drafter {canonical_value} is canonical "
+                f"per the fact-record {c0.field}. {fixed_value} looks like a "
+                f"transposition.",
+                mentions=[drafter_ids[fixed_branch]],
+                dedup_key=f"reconcile:contradiction:{peer_branch}")
+            confirm_mid = _msg_id(confirm_res)
+            trace.record_handoff(f"{peer_branch.upper()} Drafter",
+                                 f"{fixed_branch.upper()} Drafter",
+                                 "reconcile_confirm", confirm_mid)
+            trace.say(f"    [{peer_branch.upper()} Drafter -> "
+                      f"{fixed_branch.upper()} Drafter] confirmed {canonical_value} "
+                      f"canonical per the fact-record (msg {confirm_mid})")
 
     # The blocked drafter SPEAKS its correction in the room BEFORE the Warden
     # narrates the green resolution: it re-files @mentioning the Warden, carrying
@@ -1364,15 +1449,21 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
 # the branch stays in awaiting_human_signoff.
 # ----------------------------------------------------------------------------
 def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
-                     *, warden=None, mentions=None) -> bool:
+                     *, warden=None, mentions=None, narrate=True) -> bool:
     """Drive the two-key release for one branch. Returns True iff the branch
     reached RELEASED. Records each sign-off and the withheld/released decisions in
     the run log, so the segregation of duties is replay-verifiable.
 
-    The Warden narrates each key step in the room ("GC signed. Awaiting second
-    key." then "Lena signed. RELEASED. Clocks stopped.") from the release gate's
-    own decision, so the segregation of duties is visible and not silent. The text
-    is read off the deterministic release decision; no model call.
+    When narrate is True (the amendment re-release) the Warden narrates each key
+    step in the room ("GC signed. Awaiting second key." then "Lena signed.
+    RELEASED. Clocks stopped.") from the release gate's own decision, so the
+    segregation of duties is visible and not silent. When narrate is False (the
+    initial release, which signs three branches in a row) the per-branch room
+    post is SUPPRESSED so the caller can post ONE consolidated message per key
+    instead of six near-identical broadcasts; the gate logic, the run-log
+    release_signoff entries, and the state-machine transitions are IDENTICAL
+    either way. The text is read off the deterministic release decision; no model
+    call.
 
     `signers` defaults to RELEASE_SIGNERS (the initial release). The amendment
     re-release passes AMEND_RELEASE_SIGNERS so the SAME two-key gate enforces both
@@ -1393,7 +1484,7 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
             # HUMAN_RELEASED; the branch waits for the second distinct key.
             trace.say(f"    [release] {corr}: {role} ({actor}) signed; "
                       f"{decision.reason}")
-            if warden is not None:
+            if warden is not None and narrate:
                 _warden_announce(
                     warden, trace,
                     f"{actor.upper()} ({role}) signed on {branch.upper()}. "
@@ -1408,7 +1499,7 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
                           actor, "human_owner")
         if not admitted:
             raise RuntimeError(f"two-key release rejected by the state machine for {corr}")
-        if warden is not None:
+        if warden is not None and narrate:
             _warden_announce(
                 warden, trace,
                 f"{actor.upper()} ({role}) signed on {branch.upper()}. Both keys "
