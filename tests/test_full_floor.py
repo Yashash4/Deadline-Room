@@ -269,6 +269,84 @@ def test_warden_posts_block_mentioning_conflicting_drafters(tmp_path):
     assert len(resolved) == 1
 
 
+def test_blocked_drafter_visibly_refiles_between_block_and_resolution(tmp_path):
+    # The contradiction beat must be a REAL round-trip: the blocked SEC drafter
+    # speaks its own corrected re-filing in the room, @mentioning the Warden,
+    # AFTER the Warden's BLOCK and BEFORE the Warden's GREEN resolution. The room
+    # shows the actual corrected filing (corrected [CLAIMS], incident_start 02:14),
+    # not just the Warden narrating a silent in-process fix.
+    room, clients = _build_clients()
+    packet = run_floor(out_dir=str(tmp_path), mode="inject_contradiction",
+                       clients=clients, draft_fns=_stub_draft_fns())
+
+    # locate the three messages by author and content
+    def index_of(predicate):
+        for i, m in enumerate(room.messages):
+            if predicate(m):
+                return i
+        return -1
+
+    block_i = index_of(
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("BLOCKED."))
+    refile_i = index_of(
+        lambda m: m["sender"] == "sec-id"
+        and "corrected re-filing" in m["content"])
+    resolved_i = index_of(
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved."))
+
+    assert block_i != -1, "the Warden must post its BLOCK"
+    assert refile_i != -1, "the SEC drafter must post its corrected re-filing"
+    assert resolved_i != -1, "the Warden must post the GREEN resolution"
+    # strict ordering: BLOCK -> SEC corrected re-file -> GREEN resolution
+    assert block_i < refile_i < resolved_i
+
+    block = room.messages[block_i]
+    refile = room.messages[refile_i]
+
+    # the Warden BLOCK @mentions SEC and its conflicting peer
+    assert "sec-id" in block["mentions"]
+    assert len(block["mentions"]) == 2
+
+    # the SEC re-filing is authored by the SEC drafter and @mentions the Warden
+    assert refile["sender"] == "sec-id"
+    assert refile["mentions"] == ["warden-id"]
+
+    # the corrected re-filing carries the corrected [CLAIMS] block: branch sec,
+    # incident_start the canonical 02:14. The claims block (the load-bearing
+    # facts the Warden diffs) holds 02:14 and NOT the perturbed 02:41.
+    content = refile["content"]
+    claims_block = content[content.index("[CLAIMS]"):content.index("[/CLAIMS]")]
+    assert "branch=sec" in claims_block
+    assert "incident_start_utc=2026-06-16T02:14:00+00:00" in claims_block
+    assert "2026-06-16T02:41:00+00:00" not in claims_block
+
+    # the gate decisions and replay are UNCHANGED by the drafter speaking: the
+    # diff blocked then resolved, and byte-identical replay holds
+    assert packet["diff"]["blocked_conflicts"]
+    assert packet["diff"]["resolution"]["fixed_branch"] == "sec"
+    assert packet["replay"]["byte_identical"] is True
+
+
+def test_blocked_drafter_refile_does_not_change_replay_or_sha(tmp_path):
+    # The corrected re-filing is an additive visibility side-effect, NOT in the
+    # hashed run-log. Two contradiction runs produce the same sha and replay holds.
+    room_a, clients_a = _build_clients()
+    p_a = run_floor(out_dir=str(tmp_path / "a"), mode="inject_contradiction",
+                    clients=clients_a, draft_fns=_stub_draft_fns())
+    room_b, clients_b = _build_clients()
+    p_b = run_floor(out_dir=str(tmp_path / "b"), mode="inject_contradiction",
+                    clients=clients_b, draft_fns=_stub_draft_fns())
+    # the SEC drafter DID re-file in both rooms
+    assert any("corrected re-filing" in m["content"]
+               for m in room_a.messages if m["sender"] == "sec-id")
+    assert any("corrected re-filing" in m["content"]
+               for m in room_b.messages if m["sender"] == "sec-id")
+    # the deterministic run-log sha is identical run to run, replay byte-exact
+    assert p_a["replay"]["original_sha256"] == p_b["replay"]["original_sha256"]
+    assert p_a["replay"]["byte_identical"] is True
+    assert p_b["replay"]["byte_identical"] is True
+
+
 def test_warden_posts_dedup_drop_on_chaos(tmp_path):
     room, clients = _build_clients()
     run_floor(out_dir=str(tmp_path), mode="chaos", clients=clients,
