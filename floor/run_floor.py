@@ -336,6 +336,39 @@ def _proto(sm: ProtocolStateMachine, trace: StepTrace, corr: str, event: Event,
     return result.admitted
 
 
+def _warden_announce(warden, trace: StepTrace, text: str,
+                     mentions: list | None = None,
+                     dedup_key: str | None = None) -> str:
+    """The Warden speaks IN the Band room. It posts its OWN deterministic decision
+    (an ack, a contradiction BLOCK, a green diff, a release key, a duplicate drop)
+    @mentioning the relevant drafters, so the gating that the deterministic core
+    already computed is VISIBLE in the room rather than happening silently
+    in-process.
+
+    This is an ADDITIVE visibility side-effect. The text is built ENTIRELY from
+    facts the deterministic state machine, diff, ledger, and release gate already
+    produced; the Warden makes ZERO LLM calls. The message id is recorded in the
+    human-facing handoff trace (like every other Band message id) but is NEVER
+    written into the hashed run-log event stream, so byte-identical replay and the
+    sealed run-log sha are untouched. The decision is made first and unchanged; the
+    post only narrates it."""
+    # Live Band requires every message to mention at least one participant
+    # (minItems: 1). Every caller addresses the relevant drafters; if a caller
+    # has no specific addressee, the Warden mentions itself so the decision still
+    # lands in the room. This is purely an addressing detail of the visibility
+    # post; it gates nothing.
+    addressees = [m for m in (mentions or []) if m]
+    if not addressees:
+        addressees = [warden.whoami()]
+    res = warden.post(text, mentions=addressees, dedup_key=dedup_key)
+    mid = _msg_id(res)
+    # Record who the Warden addressed for the handoff trace and Examiner Packet.
+    trace.record_handoff("Warden", "Room", "warden_decision", mid)
+    first_line = text.splitlines()[0] if text else ""
+    trace.say(f"    [Warden -> room] {first_line} (msg {mid})")
+    return mid
+
+
 # ----------------------------------------------------------------------------
 # Public entry point. Dispatches the legacy single-drafter path (kept verbatim
 # for the existing injected-client tests) and the full floor path.
@@ -584,7 +617,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         landed = _drive_drafter(
             client=client, warden_id=warden_id, branch=branch, regime=r.regime,
             claim_facts=claim_facts, draft_fn=fn, ledger=ledger, trace=trace,
-            chaos=(branch == chaos_branch),
+            chaos=(branch == chaos_branch), warden=warden,
+            drafter_id=drafter_ids[branch],
         )
         if not landed.get("text"):
             raise RuntimeError(f"{r.regime} Drafter did not produce a draft")
@@ -600,6 +634,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         trace.say(f"[6.{branch}] Warden draining /next for the {r.regime} draft ...")
         observed = _warden_observe_draft(
             warden=warden, sm=sm, trace=trace, corr=corr, branch=branch,
+            regime=r.regime, drafter_id=drafter_ids[branch],
         )
         if observed is None:
             raise RuntimeError(f"Warden never observed the {r.regime} draft")
@@ -649,6 +684,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
         sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
+        warden=warden, drafter_ids=drafter_ids,
     )
 
     # ---- Two-key signoff + human release. Segregation of duties: a filing
@@ -659,7 +695,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         if sm.state(corr).value != "contradiction_checked":
             continue
         _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_DIFF, "warden", "warden")
-        _two_key_release(sm, trace, log, release_gate, corr)
+        _two_key_release(sm, trace, log, release_gate, corr, warden=warden,
+                         mentions=list(drafter_ids.values()))
         clocks.stop(corr, TS_RELEASE)
         log.append("clock_stopped", {"correlation_id": corr, "ts": TS_RELEASE})
     trace.say("[8] Warden opened signoff; two-key release (GC + Lena); "
@@ -741,7 +778,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
 
 
 def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
-                   ledger: IdempotencyLedger, trace: StepTrace, chaos: bool) -> dict:
+                   ledger: IdempotencyLedger, trace: StepTrace, chaos: bool,
+                   warden=None, drafter_id=None) -> dict:
     """Run one drafter through the live handoff by driving the message lifecycle
     by hand (drain /next, mark processing, draft via Featherless, post back with
     a dedup key, mark processed). Driving it manually lets the chaos beat model a
@@ -769,6 +807,13 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
             })
             trace.say(f"    {regime} Drafter recovered: duplicate dropped "
                       f"(ledger {entry.disposition.value}), no double draft")
+            if warden is not None:
+                _warden_announce(
+                    warden, trace,
+                    f"@{regime} Drafter: duplicate {regime} filing dropped (ledger "
+                    f"{entry.disposition.value}). Exactly-once held, no double-file.",
+                    mentions=[drafter_id] if drafter_id else None,
+                    dedup_key=f"warden:dedup:{branch}:{INCIDENT_ID}")
             return
         trace.say(f"    {regime} Drafter saw the mention (msg {mid}); calling "
                   f"its assigned model ...")
@@ -874,9 +919,11 @@ def _forget_handled(client) -> None:
         handled.clear()
 
 
-def _warden_observe_draft(*, warden, sm, trace, corr, branch):
+def _warden_observe_draft(*, warden, sm, trace, corr, branch, regime, drafter_id):
     """Warden drains /next for one drafter's reply, parses the structured claims
-    block (deterministic, no LLM), and advances the typed state machine. Returns
+    block (deterministic, no LLM), and advances the typed state machine. As it
+    records the filing it ANNOUNCES the acknowledgment in the room, @mentioning the
+    drafter, so the recording is visible and not a silent in-process step. Returns
     the parsed FactClaims, or None if the draft was never seen."""
     observed = {"claims": None}
 
@@ -885,26 +932,47 @@ def _warden_observe_draft(*, warden, sm, trace, corr, branch):
         trace.record_lifecycle(mid, "processing")
         content = message.get("content", "")
         claims = parse_claims(content)  # pure string parse, Warden side
-        _proto(sm, trace, corr, Event.DRAFT_STARTED, TS_DRAFT, f"{branch}_drafter", "drafter")
-        _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_DRAFT, f"{branch}_drafter", "drafter")
+        admitted = _proto(sm, trace, corr, Event.DRAFT_STARTED, TS_DRAFT,
+                          f"{branch}_drafter", "drafter")
+        admitted = _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_DRAFT,
+                          f"{branch}_drafter", "drafter") and admitted
         observed["claims"] = claims
         trace.record_lifecycle(mid, "processed")
         trace.say(f"    Warden parsed {branch} claims, recorded DRAFT_POSTED (msg {mid})")
+        # The Warden acks the filing in the room, reading the values straight off
+        # the claims it just parsed. Deterministic text, no model call.
+        if admitted:
+            c = claims.canonical()
+            _warden_announce(
+                warden, trace,
+                f"@{regime} Drafter: recorded {regime} filing. Claims: "
+                f"incident_start {c['incident_start_utc']}, "
+                f"records {c['records_affected']:,}, attacker {c['attacker']}, "
+                f"containment {c['containment']}. State: DRAFT_POSTED.",
+                mentions=[drafter_id],
+                dedup_key=f"warden:ack:{branch}:{INCIDENT_ID}")
         return None
 
     warden.run(handle, poll_seconds=2.0, max_loops=12, idle_breaks=6)
     return observed["claims"]
 
 
-def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
+def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
+                   *, warden=None, drafter_ids=None):
     """Run the deterministic cross-filing diff. On a conflict the Warden BLOCKS:
     it emits DIFF_BLOCKED on every drafted branch (signoff cannot open) and the
     packet shows the red conflict. Then the resolution path corrects the fact,
     the diff is re-run GREEN, and DIFF_PASSED admits signoff.
 
+    On both outcomes the Warden ANNOUNCES the result in the room (a green-diff
+    note, or a BLOCK that @mentions the two conflicting drafters and states the
+    exact disagreement) so the gate is visible. The announced text is read from
+    the deterministic conflict objects the diff already produced.
+
     Returns (blocked_conflicts, resolution) where blocked_conflicts is the list
     of human-readable conflicts caught (empty if the run was clean) and
     resolution describes the corrected fact (or None)."""
+    drafter_ids = drafter_ids or {}
     drafted = [b for b in branch_corr if b in claims_by_branch]
     claims = [claims_by_branch[b] for b in drafted]
     conflicts = diff_claims(claims)
@@ -915,6 +983,13 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
             _proto(sm, trace, branch_corr[b], Event.DIFF_PASSED, TS_DIFF, "warden", "warden")
         trace.say(f"[7] Contradiction diff: GREEN (no conflicts across "
                   f"{len(drafted)} filings)")
+        if warden is not None:
+            _warden_announce(
+                warden, trace,
+                f"Contradiction diff GREEN across {len(drafted)} filings. "
+                f"Load-bearing facts agree. Opening signoff.",
+                mentions=list(drafter_ids.values()),
+                dedup_key=f"warden:diff-green:{INCIDENT_ID}")
         return [], None
 
     # Red. Block signoff on every drafted branch.
@@ -924,6 +999,21 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
     trace.say("[7] Contradiction diff: BLOCKED. The Warden refused signoff.")
     for line in blocked_human:
         trace.say(f"        RED: {line}")
+
+    # The Warden posts the BLOCK into the room, @mentioning the two conflicting
+    # drafters by id and stating the exact conflict, all read off the first
+    # deterministic Conflict object. No filing releases until the facts agree.
+    if warden is not None and conflicts:
+        c0 = conflicts[0]
+        block_mentions = [drafter_ids[b] for b in (c0.branch_a, c0.branch_b)
+                          if b in drafter_ids]
+        _warden_announce(
+            warden, trace,
+            f"BLOCKED. @{c0.branch_a.upper()} Drafter says {c0.field}="
+            f"{c0.value_a}; @{c0.branch_b.upper()} Drafter says {c0.field}="
+            f"{c0.value_b}. No signoff until these agree.",
+            mentions=block_mentions,
+            dedup_key=f"warden:block:{INCIDENT_ID}")
 
     # Resolution: Triage corrects the perturbed fact, the offending drafter
     # re-asserts the canonical value, the diff is re-run and goes green.
@@ -957,6 +1047,14 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode):
     }
     trace.say(f"[7b] Fact corrected on {fixed_branch.upper()}; diff re-run GREEN; "
               f"signoff unblocked.")
+    if warden is not None:
+        _warden_announce(
+            warden, trace,
+            f"Resolved. @{fixed_branch.upper()} Drafter re-filed incident_start "
+            f"{CANONICAL_FACTS['incident_start_utc']}. Diff re-run GREEN across "
+            f"{len(drafted)} filings. Opening signoff.",
+            mentions=[drafter_ids[fixed_branch]] if fixed_branch in drafter_ids else [],
+            dedup_key=f"warden:diff-resolved:{INCIDENT_ID}")
     return blocked_human, resolution
 
 
@@ -1013,6 +1111,13 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
         raise RuntimeError("guard let the amendment through before reconciliation")
     trace.say(f"[A2] Warden guard BLOCKED the amendment before reconciliation: "
               f"{pre.reason}")
+    _warden_announce(
+        warden, trace,
+        f"AMENDMENT BLOCKED. @SEC Drafter and @NIS2 Drafter: records_affected "
+        f"revised {old_records:,} -> {AMENDED_RECORDS:,}. No re-release until you "
+        f"concur on one shared figure. {pre.reason}",
+        mentions=[sec_id, nis2_id],
+        dedup_key=f"warden:amend-block:{INCIDENT_ID}")
 
     # 3. SEC Drafter drains the amendment mention, drafts its proposed
     #    characterization (Featherless), and posts a PROPOSE envelope @mentioning
@@ -1159,6 +1264,13 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
                         "conflicts": [c.human() for c in conflicts]})
     if conflicts:
         raise RuntimeError(f"amended filings still contradict: {conflicts}")
+    _warden_announce(
+        warden, trace,
+        f"Concurrence recorded. @SEC Drafter and @NIS2 Drafter agree "
+        f"records_affected={AMENDED_RECORDS:,}. Amended diff GREEN. Opening "
+        f"signoff under the two-key gate.",
+        mentions=[sec_id, nis2_id],
+        dedup_key=f"warden:amend-green:{INCIDENT_ID}")
     for b in AMENDMENT_BRANCHES:
         corr = branch_corr[b]
         _proto(sm, trace, corr, Event.DIFF_PASSED, TS_AMEND_RELEASE, "warden", "warden")
@@ -1171,7 +1283,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
         # distinct keys again from scratch. One key alone never turns the lock.
         release_gate.reset(corr)
         released = _two_key_release(sm, trace, log, release_gate, corr,
-                                    signers=AMEND_RELEASE_SIGNERS)
+                                    signers=AMEND_RELEASE_SIGNERS, warden=warden,
+                                    mentions=[sec_id, nis2_id])
         if not released:
             raise RuntimeError(
                 f"amendment re-release for {corr} did not obtain two keys")
@@ -1216,15 +1329,22 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
 # once two distinct keys are present. One key alone is recorded as withheld and
 # the branch stays in awaiting_human_signoff.
 # ----------------------------------------------------------------------------
-def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None) -> bool:
+def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
+                     *, warden=None, mentions=None) -> bool:
     """Drive the two-key release for one branch. Returns True iff the branch
     reached RELEASED. Records each sign-off and the withheld/released decisions in
     the run log, so the segregation of duties is replay-verifiable.
+
+    The Warden narrates each key step in the room ("GC signed. Awaiting second
+    key." then "Lena signed. RELEASED. Clocks stopped.") from the release gate's
+    own decision, so the segregation of duties is visible and not silent. The text
+    is read off the deterministic release decision; no model call.
 
     `signers` defaults to RELEASE_SIGNERS (the initial release). The amendment
     re-release passes AMEND_RELEASE_SIGNERS so the SAME two-key gate enforces both
     distinct keys at the amendment timestamps. Every release path goes through
     here; none releases on a single key."""
+    branch = corr.split(":", 1)[1] if ":" in corr else corr
     for role, actor, ts in (signers if signers is not None else RELEASE_SIGNERS):
         decision = release_gate.sign(corr, role, actor, ts)
         log.append("release_signoff", {
@@ -1239,6 +1359,13 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None) -> b
             # HUMAN_RELEASED; the branch waits for the second distinct key.
             trace.say(f"    [release] {corr}: {role} ({actor}) signed; "
                       f"{decision.reason}")
+            if warden is not None:
+                _warden_announce(
+                    warden, trace,
+                    f"{actor.upper()} ({role}) signed on {branch.upper()}. "
+                    f"One key of two. Awaiting second key.",
+                    mentions=mentions,
+                    dedup_key=f"warden:key1:{branch}:{ts}")
             continue
         # Both keys present. NOW the Warden admits the HUMAN_RELEASED transition.
         trace.say(f"    [release] {corr}: {role} ({actor}) signed; "
@@ -1247,6 +1374,13 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None) -> b
                           actor, "human_owner")
         if not admitted:
             raise RuntimeError(f"two-key release rejected by the state machine for {corr}")
+        if warden is not None:
+            _warden_announce(
+                warden, trace,
+                f"{actor.upper()} ({role}) signed on {branch.upper()}. Both keys "
+                f"present. RELEASED. Clock stopped.",
+                mentions=mentions,
+                dedup_key=f"warden:released:{branch}:{ts}")
         return True
     return False
 
@@ -1444,6 +1578,15 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
                                  "late_started_at_recruit": True})
     trace.say(f"[R3] {target.clock_name} started at the recruit moment "
               f"{ts_recruit} (NOT incident T0).")
+    _warden_announce(
+        warden, trace,
+        f"@{target.regime} Drafter recruited. Blast radius names a "
+        f"{target.jurisdiction} entity, so the {ordinal} clock "
+        f"({target.clock_name}, {target.clock_hours}h) starts now at the recruit "
+        f"moment {ts_recruit}, not incident T0. File your {target.regime} "
+        f"notification.",
+        mentions=[agent_id],
+        dedup_key=f"warden:recruit:{target.branch}:{INCIDENT_ID}")
 
     # 4. The branch opens its protocol: Triage @mentions the recruited drafter
     #    with the fact-record. FACT_RECORD_POSTED on the branch.
