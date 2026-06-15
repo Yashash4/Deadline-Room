@@ -245,3 +245,21 @@ def test_packet_html_shows_reconciliation_audit_trail(tmp_path):
     assert "hash-linked envelope chain" in html
     assert "CONCURRED" in html
     assert "2,100,000" in html
+
+
+# ---- the Warden narrates the amendment gating in the room --------------------
+
+def test_warden_narrates_amendment_block_and_release(tmp_path):
+    room, _ = _run(tmp_path)
+    warden_msgs = [m for m in room.messages if m["sender"] == "warden-id"]
+    blob = "\n".join(m["content"] for m in warden_msgs)
+    # the Warden posts the amendment BLOCK, @mentioning both reconciling drafters
+    blocks = [m for m in warden_msgs if m["content"].startswith("AMENDMENT BLOCKED.")]
+    assert len(blocks) == 1
+    assert "sec-id" in blocks[0]["mentions"]
+    assert "nis2-id" in blocks[0]["mentions"]
+    # and posts the green-after-concurrence note at the reconciled figure
+    assert "Concurrence recorded." in blob
+    assert "Amended diff GREEN" in blob
+    # and narrates the two-key re-release for both amended branches
+    assert blob.count("RELEASED. Clock stopped.") >= 2
