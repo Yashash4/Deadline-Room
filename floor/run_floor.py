@@ -70,7 +70,7 @@ from warden.signing import sign_run_log_jsonl  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
-from floor.claims import parse_claims  # noqa: E402
+from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
@@ -684,7 +684,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
         sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
-        warden=warden, drafter_ids=drafter_ids,
+        warden=warden, drafter_ids=drafter_ids, drafters=drafters,
     )
 
     # ---- Two-key signoff + human release. Segregation of duties: a filing
@@ -958,7 +958,7 @@ def _warden_observe_draft(*, warden, sm, trace, corr, branch, regime, drafter_id
 
 
 def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
-                   *, warden=None, drafter_ids=None):
+                   *, warden=None, drafter_ids=None, drafters=None):
     """Run the deterministic cross-filing diff. On a conflict the Warden BLOCKS:
     it emits DIFF_BLOCKED on every drafted branch (signoff cannot open) and the
     packet shows the red conflict. Then the resolution path corrects the fact,
@@ -973,6 +973,7 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
     of human-readable conflicts caught (empty if the run was clean) and
     resolution describes the corrected fact (or None)."""
     drafter_ids = drafter_ids or {}
+    drafters = drafters or {}
     drafted = [b for b in branch_corr if b in claims_by_branch]
     claims = [claims_by_branch[b] for b in drafted]
     conflicts = diff_claims(claims)
@@ -1015,15 +1016,48 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
             mentions=block_mentions,
             dedup_key=f"warden:block:{INCIDENT_ID}")
 
-    # Resolution: Triage corrects the perturbed fact, the offending drafter
-    # re-asserts the canonical value, the diff is re-run and goes green.
+    # Resolution: the offending drafter re-asserts the canonical value. The
+    # corrected fact-record for that branch is the canonical record verbatim, so
+    # the corrected claims block carries incident_start 02:14 and the diff clears.
     fixed_branch = _contradicted_branch(claims_by_branch)
-    corrected = parse_claims(
-        "[CLAIMS]\nbranch={}\nincident_start_utc={}\nrecords_affected={}\n"
-        "attacker={}\ncontainment={}\n[/CLAIMS]".format(
-            fixed_branch, CANONICAL_FACTS["incident_start_utc"],
-            CANONICAL_FACTS["records_affected"], CANONICAL_FACTS["attacker"],
-            CANONICAL_FACTS["containment"]))
+    corrected_facts = {
+        **CANONICAL_FACTS,
+        "branch": fixed_branch,
+    }
+    corrected = parse_claims(emit_claims(fixed_branch, corrected_facts))
+
+    # The blocked drafter SPEAKS its correction in the room BEFORE the Warden
+    # narrates the green resolution: it re-files @mentioning the Warden, carrying
+    # the corrected [CLAIMS] block (incident_start now 02:14). This is the real
+    # round-trip the room must show, a visible drafter post, not a Warden
+    # narration of a silent in-process fix. The content is DETERMINISTIC (a short
+    # templated correction note plus build_draft_body's corrected claims block);
+    # the drafter makes no new LLM call. Like every Band post in this flow the
+    # message id is recorded only in the human-facing handoff trace, NEVER in the
+    # hashed run-log, so the gate decisions, the run-log sha, and byte-identical
+    # replay are untouched.
+    fixed_client = drafters.get(fixed_branch)
+    if fixed_client is not None and warden is not None:
+        correction_note = (
+            f"{fixed_branch.upper()} mandatory notification, corrected re-filing. "
+            f"incident_start_utc reconciled to "
+            f"{CANONICAL_FACTS['incident_start_utc']} per the canonical "
+            f"fact-record; the prior {CONTRADICTION_START_UTC} was a "
+            f"transposition error. Re-filed."
+        )
+        corrected_body = build_draft_body(correction_note, fixed_branch,
+                                          corrected_facts)
+        res = fixed_client.post(
+            f"@Deadline Warden corrected re-filing.\n\n{corrected_body}",
+            mentions=[warden.whoami()],
+            dedup_key=f"draft:{fixed_branch}:{INCIDENT_ID}:round-2-corrected")
+        corr_mid = _msg_id(res)
+        trace.record_handoff(f"{fixed_branch.upper()} Drafter", "Warden",
+                             "corrected_refile", corr_mid)
+        trace.say(f"    [{fixed_branch.upper()} Drafter -> Warden] corrected "
+                  f"re-filing: incident_start now "
+                  f"{CANONICAL_FACTS['incident_start_utc']} (msg {corr_mid})")
+
     claims_by_branch[fixed_branch] = corrected
     # DIFF_BLOCKED bounced EVERY drafted branch back to DRAFTING. To re-open the
     # gate each branch must re-submit: the corrected branch re-posts its fixed
