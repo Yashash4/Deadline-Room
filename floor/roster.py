@@ -135,6 +135,25 @@ NYDFS_DRAFTER = Role(
               "its New York regulator filing without a single-vendor dependency.",
 )
 
+# The Challenger is the adversarial pre-submission reviewer (floor/challenger.py):
+# an independent LLM agent that critiques each drafted filing BEFORE the Warden
+# gates it, posting a structured [CHALLENGE] into the room @mentioning the
+# drafter. It is a real, distinct Band agent (keys in .env as BAND_*_CHALLENGER)
+# so its critique appears in the room under its own identity. It runs on a SECOND
+# open family (Qwen on Featherless) so the reviewer is a genuinely different model
+# from the DeepSeek drafters it challenges, not one model arguing with itself. It
+# NEVER gates: its objections are content, adjudicated by the deterministic
+# grounding scorer. Under the free-tier 10-agent cap.
+CHALLENGER = Role(
+    role="challenger", name="Challenger", branch="", regime="",
+    key_env="BAND_API_KEY_CHALLENGER", id_env="BAND_AGENT_ID_CHALLENGER",
+    model="Qwen/Qwen2.5-72B-Instruct",
+    rationale="Qwen2.5-72B-Instruct holds the adversarial Challenger because the "
+              "red-team reviewer must be a DIFFERENT open family from the "
+              "DeepSeek drafters it critiques, so the challenge is one model "
+              "interrogating another, not a model marking its own homework.",
+)
+
 # Materiality is an LLM judgment role (floor/materiality.py) that decides whether
 # the SEC clock is triggered at all. On dev it runs on Featherless. It is not a
 # separate Band agent on the floor; it is invoked in-process by the Warden's

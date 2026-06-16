@@ -369,6 +369,66 @@ def _render_grounding(g: dict) -> str:
     return "".join(parts)
 
 
+def _render_adversarial_review(ar: dict) -> str:
+    """Render the adversarial pre-submission review (the Challenger beat): per
+    filing, the objections an INDEPENDENT Challenger agent raised, and which the
+    DETERMINISTIC grounding oracle confirmed versus overturned.
+
+    The win this section makes visible: the LLM Challenger critiques, but Python
+    adjudicates which critiques are real, so the verifier's own output is itself
+    checked by a replayable oracle. The Challenger never gates: its objections are
+    content; the deterministic grounding scorer is the sole adjudicator; the
+    Warden still consumes only the unchanged typed [CLAIMS] block. The whole
+    exchange is an additive Band side-effect outside the hashed run-log, so replay
+    stays byte-identical."""
+    if not ar or not ar.get("reviews"):
+        return ""
+    raised = ar.get("objections_raised", 0)
+    confirmed = ar.get("objections_confirmed", 0)
+    overturned = ar.get("objections_overturned", 0)
+    parts = ["<h2>7d. Adversarial review (Challenger, deterministically "
+             "adjudicated)</h2>",
+             "<p class='sub'>Before the Warden gates each filing, an independent "
+             "Challenger agent (a different open model from the drafters) "
+             "critiques it and posts a structured challenge into the room; the "
+             "drafter then revises or rebuts. Each objection is then cross-checked "
+             "by the EXISTING deterministic grounding oracle: the LLM critiques, "
+             "Python adjudicates which critiques are real. The Challenger never "
+             "gates; the Warden consumes only the unchanged typed claims.</p>",
+             f"<p class='ok'><strong>Adversarial review: {_esc(raised)} "
+             f"objection(s) raised, {_esc(confirmed)} confirmed by the "
+             f"deterministic grounding oracle, {_esc(overturned)} overturned.</strong></p>"]
+    for rev in ar["reviews"]:
+        regime = rev.get("regime") or rev.get("branch")
+        disp = rev.get("disposition", "")
+        src = rev.get("source", "")
+        parts.append(
+            f"<h3>{_esc(regime)} filing, challenged by <code>{_esc(src)}</code> "
+            f"-&gt; drafter {_esc(disp)}</h3>")
+        objs = rev.get("objections", [])
+        if not objs:
+            parts.append("<p class='ok'>No objections raised: the Challenger "
+                         "found the filing faithful.</p>")
+            continue
+        rows = []
+        for o in objs:
+            verdict = o.get("verdict", "")
+            cls = "ok" if verdict == "confirmed" else "bad"
+            label = "CONFIRMED" if verdict == "confirmed" else "OVERTURNED"
+            rows.append(
+                "<tr><td>" + _esc(o.get("target")) + "</td>"
+                "<td>" + _esc(o.get("claim")) + "</td>"
+                "<td>" + _esc(o.get("reason")) + "</td>"
+                f"<td class='{cls}'>" + label + "</td>"
+                "<td>" + _esc(o.get("evidence")) + "</td></tr>")
+        parts.append(
+            "<table><thead><tr><th>Target</th><th>Disputed claim</th>"
+            "<th>Challenger reason</th><th>Oracle verdict</th>"
+            "<th>Deterministic evidence</th></tr></thead><tbody>"
+            + "".join(rows) + "</tbody></table>")
+    return "".join(parts)
+
+
 def _render_reliability(rel: dict) -> str:
     """Render the network-reliability receipt: how many transient provider/Band
     failures (a 429/5xx or a transport hiccup) a later attempt auto-recovered this
@@ -734,6 +794,7 @@ def _render_html(p: dict) -> str:
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
+    adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
@@ -904,6 +965,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {chaos_block}
 
 {grounding_block}
+
+{adversarial_block}
 
 {release_block}
 
