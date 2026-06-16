@@ -165,11 +165,49 @@ _PUNCT_MAP = {
 }
 
 
+# Control fences the deterministic half of the system parses out of posted
+# messages: the load-bearing [CLAIMS] envelope the Warden diffs, the [RECONCILE]
+# amendment envelope, the [CHALLENGE] objection block, and the [MATERIALITY]
+# verdict block. The drafter PROCESS appends the one legitimate authoritative
+# block AFTER this sanitizer runs (see build_draft_body / draft_filing), so any
+# such fence appearing in MODEL output is never legitimate: it can only be a
+# prompt-injection trying to plant attacker-chosen values that a first-match
+# parser would gate on. We DEFANG every model-emitted fence into an inert,
+# visible escaped form so it can never be parsed as a real control envelope, then
+# the authoritative block the drafter attaches afterwards is the only one a parser
+# ever sees. This is the chokepoint half of a defense in depth; the parsers
+# (parse_claims and friends) assert exactly one block as the matching belt.
+_CONTROL_FENCES = (
+    "[CLAIMS]", "[/CLAIMS]",
+    "[RECONCILE]", "[/RECONCILE]",
+    "[CHALLENGE]", "[/CHALLENGE]",
+    "[MATERIALITY]", "[/MATERIALITY]",
+)
+
+
+def defang_control_fences(text: str) -> str:
+    """Neutralize any control-envelope fence emitted in MODEL text so it can never
+    be parsed as a real block. Replaces the square brackets with parentheses
+    (e.g. [CLAIMS] -> (CLAIMS)), which is inert to the [TOKEN] parsers, stays
+    human-readable so an injection attempt is visible in the prose, and contains
+    no em/en dashes. Pure string work; a clean draft (no fences) is untouched, so
+    this is a no-op on every legitimate filing and replay stays byte-identical."""
+    for fence in _CONTROL_FENCES:
+        if fence in text:
+            text = text.replace(fence, "(" + fence[1:-1] + ")")
+    return text
+
+
 def sanitize_llm_text(text: str) -> str:
-    """Normalize model output to clean ASCII punctuation (no em/en dashes)."""
+    """Normalize model output to clean ASCII punctuation (no em/en dashes) and
+    defang any control-envelope fence the model emitted, so a prompt injection can
+    never plant a parsable [CLAIMS]/[RECONCILE]/[CHALLENGE]/[MATERIALITY] block in
+    the prose. The drafter process appends the authoritative block AFTER this
+    runs, so the only legitimate block survives intact."""
     for bad, good in _PUNCT_MAP.items():
         text = text.replace(bad, good)
-    return text.replace(",  ", ", ")
+    text = text.replace(",  ", ", ")
+    return defang_control_fences(text)
 
 
 # Each factual sentence in the filing cites the fact-record FIELD it relies on,
@@ -202,8 +240,14 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
     claim_facts is the fact dict this drafter is asserting (normally the shared
     fact-record; in the contradiction demo one drafter's copy is perturbed). The
     LLM never formats the claims; the drafter process attaches them, so the
-    load-bearing facts are deterministic and the Warden's diff is checkable."""
-    return prose.rstrip() + "\n\n" + emit_claims(branch, claim_facts)
+    load-bearing facts are deterministic and the Warden's diff is checkable.
+
+    The prose is sanitized here before the authoritative block is appended, so any
+    control-envelope fence the model emitted (a prompt injection) is defanged and
+    cannot be parsed as a rival [CLAIMS] block. On the live path the prose already
+    passed through sanitize_llm_text inside llm_complete, so this is idempotent and
+    a no-op for a clean filing; replay stays byte-identical."""
+    return sanitize_llm_text(prose).rstrip() + "\n\n" + emit_claims(branch, claim_facts)
 
 
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,

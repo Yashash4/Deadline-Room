@@ -29,6 +29,17 @@ from warden.diff import Containment, FactClaims
 
 _BLOCK = re.compile(r"\[CLAIMS\](.*?)\[/CLAIMS\]", re.DOTALL)
 
+
+class ClaimsInjectionError(ValueError):
+    """More than one [CLAIMS] block was present in a single posted message.
+
+    A filing carries EXACTLY ONE authoritative claims block, the one the drafter
+    process appends after sanitizing the model prose. A second block is not a
+    parse ambiguity to resolve by silently taking the first (the historic
+    first-match bug a prompt injection exploited): it is an attack signature. We
+    refuse to guess which block is load-bearing and fail loudly instead. Subclasses
+    ValueError so existing callers that catch ValueError keep working."""
+
 # The load-bearing fact fields a filing must agree on. Keep in lockstep with
 # warden/diff.py FactClaims.
 CLAIM_FIELDS = ("incident_start_utc", "records_affected", "attacker", "containment")
@@ -52,14 +63,21 @@ def emit_claims(branch: str, facts: dict) -> str:
 def parse_claims(text: str) -> FactClaims:
     """Parse a fenced claims block out of a posted message into a FactClaims.
 
-    Raises ValueError if the block is missing or malformed. The Warden owns this
-    parse; it is deterministic string work with zero LLM involvement.
+    Raises ValueError if the block is missing or malformed, and
+    ClaimsInjectionError (a ValueError) if MORE THAN ONE block is present, because
+    a duplicate block is an injection signature, not an ambiguity to resolve by
+    taking the first match. The Warden owns this parse; it is deterministic string
+    work with zero LLM involvement.
     """
-    m = _BLOCK.search(text or "")
-    if not m:
+    blocks = _BLOCK.findall(text or "")
+    if not blocks:
         raise ValueError("no [CLAIMS] block in message")
+    if len(blocks) > 1:
+        raise ClaimsInjectionError(
+            f"expected exactly one [CLAIMS] block, found {len(blocks)}; a second "
+            f"block is an injection signature, refusing to guess the load-bearing one")
     fields: dict[str, str] = {}
-    for raw in m.group(1).strip().splitlines():
+    for raw in blocks[0].strip().splitlines():
         raw = raw.strip()
         if not raw or "=" not in raw:
             continue

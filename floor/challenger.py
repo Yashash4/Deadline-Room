@@ -189,6 +189,12 @@ def challenge_filing(filing_text: str, fact_record: dict, *, model: str,
 def _strip_claims(text: str) -> str:
     """Drop the [CLAIMS] block so the Challenger sees only human prose. The claims
     block is the deterministic Warden-owned envelope, not the Challenger's
-    concern."""
-    idx = text.find("[CLAIMS]")
+    concern.
+
+    Cut at the LAST [CLAIMS] occurrence: the drafter appends the one authoritative
+    block at the end after sanitizing the prose, so the last occurrence is the
+    real boundary. A first-occurrence cut would let a model-injected earlier fence
+    blind the Challenger to everything after it. The sanitizer defangs any such
+    injected fence, so a clean filing has exactly one block and last == first."""
+    idx = text.rfind("[CLAIMS]")
     return text[:idx] if idx != -1 else text
