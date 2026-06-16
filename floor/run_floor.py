@@ -70,6 +70,8 @@ from warden.signing import sign_run_log_jsonl  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
+from floor.challenger import challenge_filing  # noqa: E402
+from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
 from floor.drafter import (  # noqa: E402
@@ -134,6 +136,11 @@ TS_FACTS = "2026-06-16T02:31:00+00:00"
 # source change, never the demo date.
 TS_SEC_DETERMINATION = "2026-06-16T02:31:00+00:00"
 TS_DRAFT = "2026-06-16T03:11:00+00:00"
+# The adversarial Challenger reviews each filing between the draft and the diff.
+# Fixed so any timestamped trace stays stable; the challenge posts are additive
+# Band side-effects that never enter the hashed log, so this constant never
+# reaches the run-log JSONL and replay is byte-identical with or without it.
+TS_CHALLENGE = "2026-06-16T03:30:00+00:00"
 TS_DIFF = "2026-06-16T04:00:00+00:00"
 TS_RESOLVE = "2026-06-16T04:20:00+00:00"
 # Two-key release: the GC signs first, then Lena (Head of IR). Fixed, distinct
@@ -299,6 +306,15 @@ class StepTrace:
         self.lifecycle: dict[str, list[str]] = {}
         self.chaos_events: list[dict] = []
         self.negotiation: list[dict] = []
+        # Adversarial-review records, one per challenged filing. These are an
+        # ADDITIVE visibility artifact, derived from the filing prose + the
+        # fact-record + the Challenger's posted objections; they are NEVER
+        # appended to the hashed run-log event stream, exactly like the
+        # Warden-speaks-in-room and peer-reconciliation posts. The deterministic
+        # grounding-oracle adjudication is computed here, at trace/packet time,
+        # from data already present, so byte-identical replay and the run-log sha
+        # are untouched.
+        self.challenges: list[dict] = []
 
     def say(self, line: str) -> None:
         self.lines.append(line)
@@ -382,7 +398,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               materiality_fn=None, sec_facts: dict | None = None,
               uk_peers: list | None = None, second_opinion: bool = False,
               second_opinion_fn=None, nydfs_recruit: bool = False,
-              nydfs_peers: list | None = None) -> dict:
+              nydfs_peers: list | None = None,
+              challenge: bool = True, challenge_fns: dict | None = None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -411,7 +428,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            materiality_fn=materiality_fn, sec_facts=sec_facts,
                            uk_peers=uk_peers, second_opinion=second_opinion,
                            second_opinion_fn=second_opinion_fn,
-                           nydfs_recruit=nydfs_recruit, nydfs_peers=nydfs_peers)
+                           nydfs_recruit=nydfs_recruit, nydfs_peers=nydfs_peers,
+                           challenge=challenge, challenge_fns=challenge_fns)
 
 
 # ----------------------------------------------------------------------------
@@ -428,7 +446,9 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     second_opinion: bool = False,
                     second_opinion_fn=None,
                     nydfs_recruit: bool = False,
-                    nydfs_peers: list | None = None) -> dict:
+                    nydfs_peers: list | None = None,
+                    challenge: bool = True,
+                    challenge_fns: dict | None = None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -464,6 +484,19 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         _require_live(roster.TRIAGE, "Triage", "BAND_API_KEY_TRIAGE / BAND_AGENT_ID_TRIAGE")
         for r in DRAFTER_ROLES:
             _require_live(r, f"{r.regime} Drafter", f"{r.key_env} / {r.id_env}")
+        if challenge and not roster.CHALLENGER.live:
+            # The adversarial Challenger posts as its own distinct Band agent, so
+            # the live path needs its own remote agent. Surface the exact human
+            # step; never fake a key. The Challenger is under the free-tier
+            # 10-agent cap. (Tests run via FakeBand with no key.)
+            raise RuntimeError(
+                "Challenger agent not configured. A human must create the "
+                "Challenger remote agent in the Band UI, then add "
+                "BAND_API_KEY_CHALLENGER and BAND_AGENT_ID_CHALLENGER to "
+                "code/.env. (This is the only live step the adversarial-review "
+                "beat needs; tests run via FakeBand with no key. To run the floor "
+                "without the Challenger, the engine still gates and replays "
+                "identically.)")
         if uk_recruit:
             _require_live(roster.UK_DRAFTER, "UK ICO Drafter",
                           f"{roster.UK_DRAFTER.key_env} / {roster.UK_DRAFTER.id_env}")
@@ -501,10 +534,20 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         r.branch: _client(clients, r.branch, r, f"{r.branch}_drafter", f"draft:{r.branch}")
         for r in DRAFTER_ROLES
     }
+    # The adversarial Challenger is its own distinct Band agent: it posts the
+    # [CHALLENGE] into the room under its own identity, so the critique is a real
+    # agent-to-agent message and not the Warden talking. It is always-on by
+    # default; when challenge is False the floor runs exactly as before. On the
+    # injected (test) path the Challenger runs only when both a "challenger"
+    # client AND a challenge_fns entry are supplied, so the existing floor tests
+    # that inject neither keep their exact behavior; the live path always runs it
+    # (gated by the live-key check above).
+    challenger = _resolve_challenger(challenge, clients, challenge_fns)
 
     warden_id = warden.whoami()
     triage_id = triage.whoami()
     drafter_ids = {b: d.whoami() for b, d in drafters.items()}
+    challenger_id = challenger.whoami() if challenger is not None else ""
     trace.say(f"[1] Warden identity:  {warden_id}")
     trace.say(f"    Triage identity:  {triage_id}")
     for r in DRAFTER_ROLES:
@@ -519,8 +562,16 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     for r in DRAFTER_ROLES:
         drafters[r.branch].join(room_id)
         warden.add_participant(drafter_ids[r.branch])
+    if challenger is not None:
+        # The Challenger joins the room so it can post its [CHALLENGE] under its
+        # own identity. This is a Band-side recruit (add_participant), NOT a
+        # logged event: the hashed "room" entry below is UNCHANGED, so the
+        # run-log sha and byte-identical replay are exactly as before.
+        challenger.join(room_id)
+        warden.add_participant(challenger_id)
     trace.say(f"[2] Warden created incident room {room_id} and recruited "
-              f"Triage + {len(DRAFTER_ROLES)} drafters")
+              f"Triage + {len(DRAFTER_ROLES)} drafters"
+              + (" + the adversarial Challenger" if challenger is not None else ""))
     log.append("room", {"band_room_id": room_id, "warden_id": warden_id,
                         "triage_id": triage_id, "drafter_ids": drafter_ids,
                         "mode": mode})
@@ -639,6 +690,20 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         if observed is None:
             raise RuntimeError(f"Warden never observed the {r.regime} draft")
         claims_by_branch[branch] = observed
+
+        # ---- Adversarial Challenger (always-on): an independent agent critiques
+        # this filing BEFORE the Warden gates it, then the drafter REVISES or
+        # REBUTS. The challenge is content; the deterministic grounding oracle
+        # adjudicates which objections are real. Every Band post here is an
+        # additive visibility side-effect that NEVER enters the hashed run-log.
+        if challenger is not None:
+            _challenger_phase(
+                challenger=challenger, drafter_client=client,
+                trace=trace, branch=branch, regime=r.regime,
+                challenger_id=challenger_id, drafter_id=drafter_ids[branch],
+                warden_id=warden_id, filing_text=landed["text"],
+                fact_record=CANONICAL_FACTS, draft_timeout=draft_timeout,
+                challenge_fns=challenge_fns)
 
     # ---- UK runtime recruit (content-driven). The UK ICO Drafter is discovered
     # and recruited LIVE only if the blast radius names a UK subsidiary. Its 72h
@@ -984,6 +1049,119 @@ def _warden_observe_draft(*, warden, sm, trace, corr, branch, regime, drafter_id
 
     warden.run(handle, poll_seconds=2.0, max_loops=12, idle_breaks=6)
     return observed["claims"]
+
+
+# ----------------------------------------------------------------------------
+# Adversarial Challenger phase (always-on). An independent LLM agent reviews one
+# drafted filing BEFORE the Warden gates it, posts a structured [CHALLENGE] into
+# the room @mentioning the drafter, and the drafter REVISES (corrected re-file)
+# or REBUTS (one-line defense) @mentioning the Challenger and the Warden back.
+#
+# The whole exchange is an ADDITIVE Band/trace side-effect: nothing here is
+# appended to the hashed run-log JSONL, exactly like the Warden-speaks-in-room
+# and peer-reconciliation posts. The Warden still consumes only the unchanged
+# typed [CLAIMS] block; the Challenger never gates, counts, clocks, or releases.
+# The deterministic grounding scorer ADJUDICATES which objections are real; the
+# adjudication is computed here from already-present data (the filing prose + the
+# fact-record + the posted objections) and stored on the trace for the packet,
+# never logged. So the LLM critiques and Python decides who was right.
+# ----------------------------------------------------------------------------
+def _challenger_phase(*, challenger, drafter_client, trace, branch,
+                      regime, challenger_id, drafter_id, warden_id, filing_text,
+                      fact_record, draft_timeout, challenge_fns) -> dict:
+    """Run one adversarial-review round-trip for a filing and record it on the
+    trace. Returns the adjudication record dict (also appended to
+    trace.challenges). Makes ZERO entries in the hashed run-log."""
+    fn = _challenge_fn_for(branch, challenge_fns, draft_timeout)
+    challenge = fn(filing_text, fact_record)
+
+    # 1. The Challenger posts its structured [CHALLENGE] into the room,
+    #    @mentioning the drafter. A real agent-to-agent Band message under the
+    #    Challenger's own identity.
+    obj_lines = "\n".join(
+        f"- target={o.target}; claim={o.claim}; reason={o.reason}"
+        for o in challenge.objections) or "- none (filing is faithful)"
+    challenge_text = (
+        f"@{regime} Drafter adversarial review of your filing. "
+        f"{len(challenge.objections)} objection(s) raised.\n[CHALLENGE]\n"
+        + obj_lines + "\n[/CHALLENGE]")
+    ch_res = challenger.post(
+        challenge_text, mentions=[drafter_id] if drafter_id else None,
+        dedup_key=f"challenge:{branch}:{INCIDENT_ID}")
+    ch_mid = _msg_id(ch_res)
+    trace.record_handoff("Challenger", f"{regime} Drafter", "challenge", ch_mid)
+    trace.say(f"    [Challenger -> {regime} Drafter] {len(challenge.objections)} "
+              f"objection(s) raised (msg {ch_mid})")
+
+    # 2. The deterministic grounding oracle adjudicates each objection. Pure
+    #    Python over the already-produced filing prose + fact-record; no gate.
+    result = adjudicate(challenge, filing_text, fact_record)
+
+    # 3. The drafter REVISES (when an objection is deterministically confirmed)
+    #    or REBUTS (when every objection is overturned), @mentioning the
+    #    Challenger and the Warden back. Either way the typed [CLAIMS] block the
+    #    Warden gates is UNCHANGED: the Challenger has no authority to alter the
+    #    load-bearing facts, only to provoke a visible defend/revise.
+    if result.confirmed:
+        verb = "REVISE"
+        reply_text = (
+            f"@Challenger @Deadline Warden {regime} Drafter will REVISE: it "
+            f"acknowledges {result.confirmed} objection(s) the deterministic "
+            f"grounding oracle confirmed and corrects the prose. The load-bearing "
+            f"facts in [CLAIMS] are unchanged.")
+    else:
+        verb = "REBUT"
+        reply_text = (
+            f"@Challenger @Deadline Warden {regime} Drafter will REBUT: the "
+            f"deterministic grounding oracle overturned all {result.raised} "
+            f"objection(s); every challenged span traces to the fact-record.")
+    mentions = [m for m in (challenger_id, warden_id) if m]
+    reply_res = drafter_client.post(
+        reply_text, mentions=mentions or None,
+        dedup_key=f"challenge-reply:{branch}:{INCIDENT_ID}")
+    reply_mid = _msg_id(reply_res)
+    trace.record_handoff(f"{regime} Drafter", "Challenger", verb.lower(), reply_mid)
+    trace.say(f"    [{regime} Drafter -> Challenger] {verb}: "
+              f"{result.confirmed} confirmed, {result.overturned} overturned "
+              f"by the grounding oracle (msg {reply_mid})")
+
+    record = {
+        "branch": branch,
+        "regime": regime,
+        "source": result.source,
+        "memo": result.memo,
+        "disposition": verb,
+        "raised": result.raised,
+        "confirmed": result.confirmed,
+        "overturned": result.overturned,
+        "objections": [o.as_dict() for o in result.objections],
+        "challenge_message_id": ch_mid,
+        "reply_message_id": reply_mid,
+    }
+    trace.challenges.append(record)
+    return record
+
+
+def _challenge_fn_for(branch, challenge_fns, timeout):
+    """Resolve the Challenger review function for one branch. Tests inject
+    challenge_fns keyed by branch; live runs call the Challenger's open model on
+    Featherless. Returns fn(filing_text, fact_record) -> Challenge."""
+    if challenge_fns is not None and branch in challenge_fns:
+        return challenge_fns[branch]
+
+    provider, model = roster.resolve(roster.CHALLENGER, roster.PROVIDER_DEV)
+
+    def fn(filing_text, fact_record):
+        # The Challenger runs on a reasoning open model (Qwen) that spends a few
+        # hundred tokens on an internal preamble before any visible content, so a
+        # larger budget is used; Featherless is flat-rate, so the extra tokens
+        # cost nothing on dev. The sequential single-call path respects the
+        # one-big-model-at-a-time and switch-cap limits.
+        return challenge_filing(
+            filing_text, fact_record, model=model, provider=provider,
+            branch=branch, max_tokens=2000, timeout=timeout,
+            max_attempts=LIVE_NET_ATTEMPTS)
+    return fn
 
 
 def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
@@ -1953,6 +2131,28 @@ def _client(clients, key, role, name, ns):
                     max_attempts=LIVE_NET_ATTEMPTS)
 
 
+def _resolve_challenger(challenge: bool, clients: dict | None, challenge_fns):
+    """Resolve the Challenger Band client, or None when the Challenger does not
+    run this floor.
+
+    challenge=False -> never runs (None).
+    Live path (clients is None) -> always a live Challenger on its own Band key
+        (the live-key requirement is enforced earlier with a clear human step).
+    Injected/test path (clients given) -> runs only when BOTH a "challenger"
+        client AND a challenge_fns entry are injected. This keeps every existing
+        floor test, which injects neither, byte-for-byte unchanged while letting
+        the Challenger test inject both."""
+    if not challenge:
+        return None
+    if clients is None:
+        return LiveBand(api_key=roster.CHALLENGER.agent_key,
+                        agent_name="challenger", dedup_namespace="challenger",
+                        max_attempts=LIVE_NET_ATTEMPTS)
+    if "challenger" in clients and challenge_fns:
+        return clients["challenger"]
+    return None
+
+
 def _claim_facts_for(branch: str, mode: str, *, corrupted: bool) -> dict:
     """The facts a drafter asserts. In inject_contradiction the SEC branch is fed
     a perturbed incident_start; everyone else (and every other mode) gets the
@@ -2099,6 +2299,19 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "filings": grounding,
             "all_pass": all(g["score"] >= GROUNDING_THRESHOLD for g in grounding),
         },
+        # Adversarial review (the Challenger beat). Per filing: the objections the
+        # independent Challenger agent raised, and which the deterministic
+        # grounding oracle CONFIRMED versus OVERTURNED. This is derived from
+        # already-present data (the filing prose, the fact-record, the Challenger's
+        # posted objections) at packet time; it is NOT in the hashed run-log, so
+        # the run-log sha and byte-identical replay are untouched. Omitted entirely
+        # when the Challenger did not run.
+        "adversarial_review": {
+            "reviews": list(trace.challenges),
+            "objections_raised": sum(c["raised"] for c in trace.challenges),
+            "objections_confirmed": sum(c["confirmed"] for c in trace.challenges),
+            "objections_overturned": sum(c["overturned"] for c in trace.challenges),
+        } if trace.challenges else {},
         "chaos": {
             "events": trace.chaos_events,
             "duplicates_dropped": ledger.duplicates_dropped(),
