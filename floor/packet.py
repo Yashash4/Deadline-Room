@@ -109,6 +109,38 @@ def _render_chaos(chaos: dict) -> str:
     return "".join(parts)
 
 
+def _render_security(security: dict) -> str:
+    """Render the prompt-injection defense section, if an injection beat ran. Each
+    record shows the attacker-chosen values the planted [CLAIMS] block carried, the
+    authoritative values the Warden actually gated on, and that the sanitizer
+    defanged the fence so the filing was unchanged."""
+    injections = security.get("injections", [])
+    if not injections:
+        return ""
+    neutralized = security.get("neutralized", 0)
+    parts = ["<h2>7c. Prompt injection neutralized</h2>"]
+    parts.append(
+        f"<p class='ok'>Injection attempts neutralized at the sanitize "
+        f"chokepoint: <strong>{_esc(neutralized)}</strong>. A planted [CLAIMS] "
+        "block never reached the Warden's parse; the filing gated on the "
+        "authoritative facts.</p>")
+    for inj in injections:
+        att = inj.get("attacker_values", {})
+        auth = inj.get("authoritative_values", {})
+        parts.append(
+            f"<p class='bad'><strong>{_esc(inj.get('regime'))}</strong> "
+            f"{_esc(inj.get('note'))}</p>")
+        parts.append(_rows(
+            ["Field", "Attacker planted", "Warden gated on (authoritative)"],
+            [["records_affected", att.get("records_affected"),
+              auth.get("records_affected")],
+             ["incident_start_utc", att.get("incident_start_utc"),
+              auth.get("incident_start_utc")],
+             ["attacker", att.get("attacker"), auth.get("attacker")],
+             ["containment", att.get("containment"), auth.get("containment")]]))
+    return "".join(parts)
+
+
 def _render_reconciliation(rec: dict) -> str:
     """Render the amendment beat: the fact revision, the reopened branches, the
     agent-to-agent reconciliation exchange (who @mentioned whom, the proposed vs
@@ -793,6 +825,7 @@ def _render_html(p: dict) -> str:
     diff_summary = _render_diff(diff)
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
+    security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
@@ -963,6 +996,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {filing_blocks or '<p>No filings drafted.</p>'}
 
 {chaos_block}
+
+{security_block}
 
 {grounding_block}
 

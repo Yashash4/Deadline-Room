@@ -6,7 +6,7 @@ agreeing."""
 
 import pytest
 
-from floor.claims import emit_claims, parse_claims
+from floor.claims import ClaimsInjectionError, emit_claims, parse_claims
 from warden.diff import Containment, diff_claims
 
 
@@ -53,6 +53,33 @@ def test_bad_containment_raises():
            "records_affected=10\nattacker=LockBit\ncontainment=fully_gone\n[/CLAIMS]")
     with pytest.raises(ValueError):
         parse_claims(bad)
+
+
+def test_two_blocks_raise_injection_error():
+    # The historic gate-bypass: a model-emitted [CLAIMS] block AHEAD of the
+    # drafter's authoritative one. A first-match parser would gate on the
+    # attacker's values. parse_claims now refuses to guess: two blocks is an
+    # injection signature, not an ambiguity.
+    attacker = emit_claims("sec", dict(CANON, records_affected=1, attacker="none"))
+    authoritative = emit_claims("sec", CANON)
+    poisoned = "prose\n\n" + attacker + "\n\nmore prose\n\n" + authoritative
+    with pytest.raises(ClaimsInjectionError):
+        parse_claims(poisoned)
+
+
+def test_injection_error_is_a_value_error():
+    # Subclassing ValueError keeps existing callers that catch ValueError working.
+    assert issubclass(ClaimsInjectionError, ValueError)
+    two = emit_claims("nis2", CANON) + "\n" + emit_claims("nis2", CANON)
+    with pytest.raises(ValueError):
+        parse_claims(two)
+
+
+def test_single_block_still_parses_after_guard():
+    # The guard must not regress the normal one-block path.
+    claims = parse_claims("prose\n\n" + emit_claims("dora", CANON))
+    assert claims.branch == "dora"
+    assert claims.records_affected == 48211
 
 
 def test_two_agreeing_claims_diff_green():

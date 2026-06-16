@@ -233,8 +233,15 @@ def _is_year(norm: str) -> bool:
 def _strip_claims(text: str) -> str:
     """Score only the human prose, never the [CLAIMS] block. The claims block is
     the deterministic Warden-owned envelope; it is grounded by construction and
-    is not LLM prose, so it must not enter the faithfulness score."""
-    idx = text.find("[CLAIMS]")
+    is not LLM prose, so it must not enter the faithfulness score.
+
+    Cut at the LAST [CLAIMS] occurrence, not the first. The drafter appends the
+    one authoritative block at the END after sanitizing the prose, so the last
+    occurrence is the real envelope boundary. A first-occurrence cut would let a
+    model-injected earlier fence hide everything after it from the scorer (the
+    historic blind spot). The sanitizer defangs any such injected fence, so on a
+    clean run there is exactly one block and last == first; this is the belt."""
+    idx = text.rfind("[CLAIMS]")
     return text[:idx] if idx != -1 else text
 
 
