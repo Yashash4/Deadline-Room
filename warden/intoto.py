@@ -58,9 +58,7 @@ from .chain import chain_head
 from .signing import (
     DEMO_KEY_CAVEAT,
     fingerprint,
-    load_demo_private_key,
     load_public_key,
-    public_key_hex_of,
 )
 
 # The in-toto Statement envelope type id, fixed by the spec (v1).
@@ -180,6 +178,7 @@ def build_statement(
 def build_dsse_envelope(
     statement: dict,
     private_key: Ed25519PrivateKey | None = None,
+    provider: object | None = None,
 ) -> dict:
     """Wrap an in-toto Statement in a signed DSSE envelope.
 
@@ -191,13 +190,27 @@ def build_dsse_envelope(
 
     Ed25519 is deterministic, so a given Statement always yields the same
     envelope signature, which keeps the sidecar reproducible byte for byte.
+
+    KEY CUSTODY. The DSSE envelope signs with the SAME Warden key the run-log
+    signature uses, so it routes through the same custody `provider`
+    (`warden/custody.py`). The DEFAULT signs with the committed demo key in
+    process, byte-identical to before; production passes a `KmsProvider`/
+    `Pkcs11Provider` so the private key never leaves the KMS/HSM. The low-level
+    `private_key` argument is the test/escape-hatch override; passing both is a
+    configuration error and is rejected.
     """
-    if private_key is None:
-        private_key = load_demo_private_key()
+    if private_key is not None and provider is not None:
+        raise ValueError(
+            "pass a custody provider OR a raw private_key, not both")
+    if provider is None:
+        from .custody import LocalKeyProvider, warden_signing_provider
+        provider = (LocalKeyProvider(private_key)
+                    if private_key is not None
+                    else warden_signing_provider())
     payload = canonical_statement_bytes(statement)
     to_sign = pae(INTOTO_PAYLOAD_TYPE, payload)
-    sig = private_key.sign(to_sign)
-    pub_hex = public_key_hex_of(private_key)
+    sig = bytes.fromhex(provider.sign(to_sign))
+    pub_hex = provider.public_key_hex()
     return {
         "payloadType": INTOTO_PAYLOAD_TYPE,
         "payload": base64.standard_b64encode(payload).decode("ascii"),

@@ -30,8 +30,60 @@ by a key only a trusted Warden could ever hold".
 
 In production the private key lives in an HSM or KMS, never in the repo, with key
 rotation, a published key directory, and RFC-3161 timestamping so "signed after
-the fact" is also ruled out. Those are Phase 2. We claim nothing more than the
-mechanism delivers.
+the fact" is also ruled out. The custody seam for that is built today (see "Key
+custody: pointing the Warden and the TSA at a KMS/HSM" below); the only thing
+that is Phase 2 is wiring it to a specific cloud KMS or HSM. We claim nothing more
+than the mechanism delivers.
+
+## Key custody: pointing the Warden and the TSA at a KMS/HSM
+
+WHERE the signing key lives is a swappable provider, not a hard-coded seed load.
+The seam is `warden/custody.py`: a `SigningProvider` interface with `sign(payload)
+-> signature_hex`, `public_key_hex()`, and `fingerprint()`, and deliberately NO
+method that returns raw private-key bytes (a real KMS/HSM never hands the key
+back, it exposes only a sign operation behind an access policy). Both the Warden
+signing key and the demo TSA key route through this one interface.
+
+The DEFAULT providers (`warden_signing_provider()`, `tsa_signing_provider()`)
+return a `LocalKeyProvider` over the committed demo seeds in this directory. That
+is the pre-custody behavior, now behind the seam: the key is loaded and signs in
+process, so every sealed capture's signature, in-toto envelope, and RFC 3161
+token is byte-identical to before. The build stays keyless-runnable and offline.
+
+For PRODUCTION, return a remote provider instead, and no private key is in the
+repo:
+
+- `KmsProvider(key_id, region=..., endpoint=...)` signs through a cloud KMS
+  asymmetric-sign API. Create a non-exportable Ed25519 signing key in the KMS;
+  `public_key_hex()` fetches the public half once (AWS `GetPublicKey`, Azure
+  `getKey`, GCP `getPublicKey`) and `sign(payload)` calls the KMS sign operation
+  (AWS `kms.sign(KeyId=..., Message=payload, MessageType='RAW',
+  SigningAlgorithm='EDDSA')`, the Azure Key Vault Cryptography client `sign`, or
+  GCP `asymmetricSign`). The KMS returns the 64-byte Ed25519 signature; the
+  provider returns it as hex, the identical wire form the verifier already
+  accepts. The private key never leaves the KMS.
+- `Pkcs11Provider(module_path, token_label=..., key_label=...)` signs through a
+  PKCS#11 HSM (a Luna or YubiHSM in production, SoftHSM in test). Generate the
+  Ed25519 key ON the device as non-extractable, open a session, and `sign(payload)`
+  calls `C_Sign` with the EDDSA mechanism. The HSM signs internally; the host
+  process never sees the private key.
+
+Both ship as a CLEAN INTERFACE with documented wiring, not a live cloud call: a
+reproducible offline build must not depend on a cloud round-trip, so the
+`sign`/`public_key_hex` methods raise `NotImplementedError` with the exact SDK
+call to make, and a deployer fills them in against its KMS/HSM SDK. The
+`MockKmsProvider` in `warden/custody.py` proves the seam end to end in tests: it
+signs with the same Ed25519 primitive reached only through a KMS-shaped operation,
+and an UNCHANGED verifier accepts the result, so a real KMS/HSM is interchangeable
+through the interface without a cloud dependency in CI.
+
+Wiring is a single substitution: have `warden_signing_provider()` and
+`tsa_signing_provider()` return the production provider (or pass one explicitly,
+`sign_run_log_jsonl(..., provider=...)` and `DemoTimestampAuthority(provider=...)`).
+The bound payload, the signature record, and every verifier are unchanged, because
+only the custody of the private key changes, never the signature wire form. In
+that mode no private key is in the repo: the committed `.demo.` seeds are the
+demonstration default, not a production secret.
 
 ## RFC 3161 trusted timestamp (demo TSA)
 

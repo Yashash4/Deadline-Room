@@ -88,7 +88,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from .signing import bound_payload_bytes, public_key_hex_of
+from .signing import bound_payload_bytes
 
 # The demo TSA keypair lives beside the Warden signing keys. It is a SEPARATE key
 # from the Warden's: the Warden signs the artifact, the TSA witnesses and signs the
@@ -505,9 +505,14 @@ class DemoTimestampAuthority(TimestampAuthority):
     def __init__(self, gen_time: datetime | None = None,
                  private_key: Ed25519PrivateKey | None = None,
                  *, serial: int = DEMO_SERIAL,
-                 policy_oid: str = OID_DEMO_TSA_POLICY) -> None:
+                 policy_oid: str = OID_DEMO_TSA_POLICY,
+                 provider: object | None = None) -> None:
+        if private_key is not None and provider is not None:
+            raise ValueError(
+                "pass a custody provider OR a raw private_key, not both")
         self.gen_time = gen_time or DEMO_GENTIME
         self._private_key = private_key
+        self._provider = provider
         self.serial = serial
         self.policy_oid = policy_oid
 
@@ -516,19 +521,35 @@ class DemoTimestampAuthority(TimestampAuthority):
             return self._private_key
         return load_demo_tsa_private_key()
 
+    def _signing_provider(self) -> object:
+        """The custody provider that signs the TSTInfo (the TSA's key). DEFAULT:
+        the committed demo TSA key, in process, byte-identical to before. The
+        explicit `private_key` override is wrapped to the same interface, and a
+        deployment can pass a `KmsProvider`/`Pkcs11Provider` so the TSA private
+        key never leaves the KMS/HSM. Imported locally so this module need not
+        depend on custody at import time."""
+        if self._provider is not None:
+            return self._provider
+        if self._private_key is not None:
+            from .custody import LocalKeyProvider
+            return LocalKeyProvider(self._private_key)
+        from .custody import tsa_signing_provider
+        return tsa_signing_provider()
+
     def request_token(self, request_der: bytes) -> dict:
         """Issue a TimeStampResp dict for a DER TimeStampReq.
 
         Parses the messageImprint out of the request, builds the TSTInfo over it at
-        the fixed genTime, signs the TSTInfo DER with the demo TSA key, and returns a
-        response carrying PKIStatus granted (0), the TSTInfo DER (hex), the genTime,
-        the serial, the policy, the token signature (hex), and the TSA public key."""
+        the fixed genTime, signs the TSTInfo DER through the TSA custody provider
+        (the demo TSA key by default), and returns a response carrying PKIStatus
+        granted (0), the TSTInfo DER (hex), the genTime, the serial, the policy, the
+        token signature (hex), and the TSA public key."""
         digest = _message_imprint_digest_of_request(request_der)
         tst_info = build_tst_info(
             digest, self.gen_time, serial=self.serial, policy_oid=self.policy_oid)
-        key = self._key()
-        signature = key.sign(tst_info)
-        pub_hex = public_key_hex_of(key)
+        signer = self._signing_provider()
+        signature = bytes.fromhex(signer.sign(tst_info))
+        pub_hex = signer.public_key_hex()
         return {
             "standard": STANDARD,
             "tsa": "Deadline Room demo TSA",

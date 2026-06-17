@@ -169,7 +169,13 @@ def sign_bytes(payload: bytes, private_key: Ed25519PrivateKey | None = None) -> 
     64-byte signature). Uses the committed demo key unless one is supplied.
 
     Ed25519 is deterministic: the same payload and key always yield the same
-    signature, so the captured artifacts are reproducible byte for byte."""
+    signature, so the captured artifacts are reproducible byte for byte.
+
+    The optional `private_key` is the low-level escape hatch; the higher-level
+    signing entry points (`sign_run_log_jsonl`) take a custody `provider`
+    (`warden/custody.py`) so a deployment can sign through a KMS/HSM where the
+    private key never leaves the device. The DEFAULT here is still the committed
+    demo key, byte-identical to before."""
     if private_key is None:
         private_key = load_demo_private_key()
     return private_key.sign(payload).hex()
@@ -212,7 +218,8 @@ def _chain_head_of_jsonl(run_log_jsonl: str) -> str:
 def sign_run_log_jsonl(run_log_jsonl: str,
                        attestation_sha_hex: str,
                        fact_record_hash_hex: str,
-                       private_key: Ed25519PrivateKey | None = None) -> dict:
+                       private_key: Ed25519PrivateKey | None = None,
+                       provider: object | None = None) -> dict:
     """Sign a run log and return the detached signature record that lands in the
     packet sidecar / replay_info.
 
@@ -230,19 +237,39 @@ def sign_run_log_jsonl(run_log_jsonl: str,
     reads these two digests from the record, so editing either digest in the record
     changes the bound payload and breaks the signature.
 
+    KEY CUSTODY. Where the signing key lives is a `provider` (a `SigningProvider`
+    from `warden/custody.py`): an object with `sign(payload) -> hex`,
+    `public_key_hex()`, and `fingerprint()`. The DEFAULT provider signs with the
+    committed demo key in process, so the signature, the public key, and the
+    fingerprint are byte-identical to before; production passes a
+    `KmsProvider`/`Pkcs11Provider` so the private key never leaves the KMS/HSM,
+    and only the value of `signer`-side custody changes, never the wire form. The
+    low-level `private_key` argument is the test/escape-hatch override; if given it
+    wins, and it too is byte-identical to before. Passing both is a configuration
+    error and is rejected so a caller cannot silently sign with the wrong key.
+
     The record carries everything a verifier needs and nothing the hashed log
     covers: the algorithm, the detached signature, all four attested values, the
     public key, its fingerprint, and the honest demo-key caveat. It is metadata
     stored BESIDE the log; it never enters the hashed JSONL, so the run-log sha and
     replay are untouched (the chain head, the attestation digest, and the
     fact-record hash are all derived read-only)."""
-    if private_key is None:
-        private_key = load_demo_private_key()
+    if private_key is not None and provider is not None:
+        raise ValueError(
+            "pass a custody provider OR a raw private_key, not both")
+    if provider is None:
+        # The default custody seam: the committed demo signing key, in process.
+        # Imported locally because custody.py imports from this module; the import
+        # resolves at call time, after both modules are loaded, with no cycle.
+        from .custody import warden_signing_provider
+        provider = (_PrivateKeyProvider(private_key)
+                    if private_key is not None
+                    else warden_signing_provider())
     sha256_hex = _sha256_of_jsonl(run_log_jsonl)
     chain_head_hex = _chain_head_of_jsonl(run_log_jsonl)
     payload = bound_payload_bytes(
         sha256_hex, chain_head_hex, attestation_sha_hex, fact_record_hash_hex)
-    pub_hex = public_key_hex_of(private_key)
+    pub_hex = provider.public_key_hex()
     return {
         "algorithm": "ed25519",
         "detached": True,
@@ -251,13 +278,34 @@ def sign_run_log_jsonl(run_log_jsonl: str,
         "chain_head": chain_head_hex,
         "attestation_sha": attestation_sha_hex,
         "fact_record_hash": fact_record_hash_hex,
-        "signature": sign_bytes(payload, private_key),
+        "signature": provider.sign(payload),
         "public_key": pub_hex,
-        "pubkey_fingerprint": fingerprint(pub_hex),
+        "pubkey_fingerprint": provider.fingerprint(),
         "signer": "Deadline Warden",
         "demo_key": True,
         "caveat": DEMO_KEY_CAVEAT,
     }
+
+
+class _PrivateKeyProvider:
+    """Adapt a raw `Ed25519PrivateKey` to the custody `SigningProvider` surface,
+    so the explicit `private_key=` override in `sign_run_log_jsonl` flows through
+    the same provider code path. Byte-identical to the pre-custody path: it signs
+    with the supplied key and reports its public half. Internal to this module;
+    callers use the named providers in `warden/custody.py`."""
+
+    def __init__(self, private_key: Ed25519PrivateKey) -> None:
+        self._private_key = private_key
+        self._public_key_hex = public_key_hex_of(private_key)
+
+    def sign(self, payload: bytes) -> str:
+        return self._private_key.sign(payload).hex()
+
+    def public_key_hex(self) -> str:
+        return self._public_key_hex
+
+    def fingerprint(self) -> str:
+        return fingerprint(self._public_key_hex)
 
 
 def verify_run_log_jsonl(run_log_jsonl: str, signature_record: dict) -> bool:
