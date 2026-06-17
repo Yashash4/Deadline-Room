@@ -1,8 +1,9 @@
 {
   "incident": {
     "incident_id": "inc-8842",
-    "band_room_id": "35d8b273-6698-4981-a996-3af9726f4460",
+    "band_room_id": "fake-room-1",
     "mode": "amendment",
+    "provider_set": "dev",
     "fact_record": {
       "incident_id": "inc-8842",
       "incident_start_utc": "2026-06-16T02:14:00+00:00",
@@ -19,103 +20,208 @@
         "account_number"
       ],
       "regulated_entity": "Meridian Trust Bank N.V.",
-      "competent_authority": "national CSIRT (NIS2)"
+      "competent_authority": "national CSIRT (NIS2)",
+      "blast_radius": [
+        "EU: Meridian Trust Bank N.V."
+      ]
     }
   },
+  "providers": {
+    "provider_set": "dev",
+    "aiml_drafters": {},
+    "featherless_heroes": {},
+    "aiml_validation": {}
+  },
   "trace": [
-    "[1] Warden identity:  2a495c04-bc1e-429d-8a73-a75f827e55b6",
-    "    Triage identity:  2cc197a5-a919-461e-9ca8-eea5b80fe0b1",
-    "    NIS2 Drafter:  3aa52157-9ba6-4a9f-9304-90e5cdab875e (deepseek-ai/DeepSeek-V3.2)",
-    "    SEC Drafter:  e7c1a638-9ffe-4e05-bc1f-8c754f59bf91 (deepseek-ai/DeepSeek-V3-0324)",
-    "    DORA Drafter:  fedbb8d4-974d-42cd-8b22-0bd9f0c6e711 (Qwen/Qwen2.5-72B-Instruct)",
-    "[2] Warden created incident room 35d8b273-6698-4981-a996-3af9726f4460 and recruited Triage + 3 drafters",
-    "[3] Started 4 statutory clocks at T0 2026-06-16T02:14:00+00:00",
-    "[4] Triage posted the fact-record, @mentioned all drafters (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5)",
+    "[0] Provider set: DEV (every role on Featherless, zero AI/ML credit spent).",
+    "[1] Warden identity:  warden-id",
+    "    Triage identity:  triage-id",
+    "    NIS2 Drafter:  nis2-id (featherless:deepseek-ai/DeepSeek-V3.2)",
+    "    SEC Drafter:  sec-id (featherless:deepseek-ai/DeepSeek-V3-0324)",
+    "    DORA Drafter:  dora-id (featherless:Qwen/Qwen2.5-72B-Instruct)",
+    "[2] Warden created incident room fake-room-1 and recruited Triage + 3 drafters",
+    "[3] Started 4 statutory clocks: NIS2/DORA from T0 2026-06-16T02:14:00+00:00, SEC from the materiality determination 2026-06-16T02:31:00+00:00",
+    "[4] Triage posted the fact-record, @mentioned all drafters (msg m1)",
     "[5.nis2] NIS2 Drafter draining /next for the mention ...",
-    "    NIS2 Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
-    "    NIS2 Drafter drafted 1161 chars, posted back @mention Warden (msg 4735d878-d359-40bd-9319-a5746c588ede)",
+    "    NIS2 Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    NIS2 Drafter drafted 1314 chars, posted back @mention Warden (msg m2)",
     "[6.nis2] Warden draining /next for the NIS2 draft ...",
-    "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg 4735d878-d359-40bd-9319-a5746c588ede)",
+    "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg m2)",
+    "    [Warden -> room] @NIS2 Drafter: recorded NIS2 filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m3)",
     "[5.sec] SEC Drafter draining /next for the mention ...",
-    "    SEC Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
-    "    SEC Drafter drafted 980 chars, posted back @mention Warden (msg bb3bbdba-cd0e-445a-8237-c4c59ca19c0a)",
+    "    SEC Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    SEC Drafter drafted 1132 chars, posted back @mention Warden (msg m4)",
     "[6.sec] Warden draining /next for the SEC draft ...",
-    "    Warden parsed sec claims, recorded DRAFT_POSTED (msg bb3bbdba-cd0e-445a-8237-c4c59ca19c0a)",
+    "    Warden parsed sec claims, recorded DRAFT_POSTED (msg m4)",
+    "    [Warden -> room] @SEC Drafter: recorded SEC filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m5)",
     "[5.dora] DORA Drafter draining /next for the mention ...",
-    "    DORA Drafter saw the mention (msg e0d9cbda-ee1c-4dc9-b900-8df816a609e5); calling Featherless ...",
-    "    DORA Drafter drafted 1242 chars, posted back @mention Warden (msg 4078ef5f-9af6-4e61-8bba-c3b181502b59)",
+    "    DORA Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    DORA Drafter drafted 1395 chars, posted back @mention Warden (msg m6)",
     "[6.dora] Warden draining /next for the DORA draft ...",
-    "    Warden parsed dora claims, recorded DRAFT_POSTED (msg 4078ef5f-9af6-4e61-8bba-c3b181502b59)",
+    "    Warden parsed dora claims, recorded DRAFT_POSTED (msg m6)",
+    "    [Warden -> room] @DORA Drafter: recorded DORA filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m7)",
     "[7] Contradiction diff: GREEN (no conflicts across 3 filings)",
-    "[8] Warden opened signoff; human released; clocks stopped",
-    "[A1] Triage posted the fact amendment 48,211 -> 2,100,000; SEC and NIS2 branches reopened to amending (msg 77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0)",
+    "    [Warden -> room] Contradiction diff GREEN across 3 filings. Load-bearing facts agree. Opening signoff. (msg m8)",
+    "    [release] inc-8842:nis2: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:nis2: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [release] inc-8842:sec: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:sec: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [release] inc-8842:dora: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:dora: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [Warden -> room] GC (general_counsel) signed NIS2, SEC, DORA. First of two keys on each. Awaiting LENA. (msg m9)",
+    "    [Warden -> room] LENA (head_of_ir) signed NIS2, SEC, DORA. Both keys present on all 3. RELEASED, clocks stopped. (msg m10)",
+    "[8] Warden opened signoff; two-key release (GC + Lena); clocks stopped",
+    "[A1] Triage posted the fact amendment 48,211 -> 2,100,000; SEC and NIS2 branches reopened to amending (msg m11)",
     "[A2] Warden guard BLOCKED the amendment before reconciliation: no concur envelope for amend round 1: inc-8842:sec may not submit its amendment yet",
-    "[A3] SEC Drafter @mentioned NIS2 Drafter proposing how to characterize 2,100,000 (msg dbd6e9f0-9ce6-445e-853d-81a006a491d5)",
-    "[A4] NIS2 Drafter @mentioned SEC Drafter back, CONCUR (hash-linked to the proposal, msg 016ee372-9be4-4607-84c5-44f2679d1455)",
+    "    [Warden -> room] AMENDMENT BLOCKED. @SEC Drafter and @NIS2 Drafter: records_affected revised 48,211 -> 2,100,000. No re-release until you concur on one shared figure. no concur envelope for amend round 1: inc-8842:sec may not submit its amendment yet (msg m12)",
+    "[A3] SEC Drafter @mentioned NIS2 Drafter proposing how to characterize 2,100,000 (msg m13)",
+    "[A4] NIS2 Drafter @mentioned SEC Drafter back, CONCUR (hash-linked to the proposal, msg m14)",
     "[A5] Both branches submitted their amendments at the reconciled figure 2,100,000",
-    "[A6] Amended diff GREEN only after concurrence; both amendments signed and released",
-    "[9] Replay byte-identical: True (sha 157e8f08cd4c...)"
+    "    [Warden -> room] Concurrence recorded. @SEC Drafter and @NIS2 Drafter agree records_affected=2,100,000. Amended diff GREEN. Opening signoff under the two-key gate. (msg m17)",
+    "    [release] inc-8842:sec: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [Warden -> room] GC (general_counsel) signed on SEC. One key of two. Awaiting second key. (msg m18)",
+    "    [release] inc-8842:sec: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [Warden -> room] LENA (head_of_ir) signed on SEC. Both keys present. RELEASED. Clock stopped. (msg m19)",
+    "    [release] inc-8842:nis2: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [Warden -> room] GC (general_counsel) signed on NIS2. One key of two. Awaiting second key. (msg m20)",
+    "    [release] inc-8842:nis2: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [Warden -> room] LENA (head_of_ir) signed on NIS2. Both keys present. RELEASED. Clock stopped. (msg m21)",
+    "[A6] Amended diff GREEN only after concurrence; both amendments signed and released under the same two-key gate (GC + Lena)",
+    "[9] Replay byte-identical: True (sha 0ca07fb0a1f9...)",
+    "    Signed by Deadline Warden (ed25519, key fp 46e30f5bff8c221d) over sha256 + chain_head; the signature is detached, the run-log sha is unchanged."
   ],
   "handoff_trace": [
     {
       "from": "Triage",
       "to": "NIS2 Drafter",
       "kind": "fact_record",
-      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+      "message_id": "m1"
     },
     {
       "from": "Triage",
       "to": "SEC Drafter",
       "kind": "fact_record",
-      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+      "message_id": "m1"
     },
     {
       "from": "Triage",
       "to": "DORA Drafter",
       "kind": "fact_record",
-      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5"
+      "message_id": "m1"
     },
     {
       "from": "NIS2 Drafter",
       "to": "Warden",
       "kind": "draft",
-      "message_id": "4735d878-d359-40bd-9319-a5746c588ede"
+      "message_id": "m2"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m3"
     },
     {
       "from": "SEC Drafter",
       "to": "Warden",
       "kind": "draft",
-      "message_id": "bb3bbdba-cd0e-445a-8237-c4c59ca19c0a"
+      "message_id": "m4"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m5"
     },
     {
       "from": "DORA Drafter",
       "to": "Warden",
       "kind": "draft",
-      "message_id": "4078ef5f-9af6-4e61-8bba-c3b181502b59"
+      "message_id": "m6"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m7"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m8"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m9"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m10"
     },
     {
       "from": "Triage",
       "to": "SEC Drafter",
       "kind": "fact_amendment",
-      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0"
+      "message_id": "m11"
     },
     {
       "from": "Triage",
       "to": "NIS2 Drafter",
       "kind": "fact_amendment",
-      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0"
+      "message_id": "m11"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m12"
     },
     {
       "from": "SEC Drafter",
       "to": "NIS2 Drafter",
       "kind": "reconcile_propose",
-      "message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5"
+      "message_id": "m13"
     },
     {
       "from": "NIS2 Drafter",
       "to": "SEC Drafter",
       "kind": "reconcile_concur",
-      "message_id": "016ee372-9be4-4607-84c5-44f2679d1455"
+      "message_id": "m14"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m17"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m18"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m19"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m20"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m21"
     }
   ],
   "state_transitions": [
@@ -402,7 +508,7 @@
   ],
   "message_lifecycle": [
     {
-      "message_id": "e0d9cbda-ee1c-4dc9-b900-8df816a609e5",
+      "message_id": "m1",
       "states": [
         "processing",
         "processed",
@@ -413,36 +519,71 @@
       ]
     },
     {
-      "message_id": "4735d878-d359-40bd-9319-a5746c588ede",
+      "message_id": "m2",
       "states": [
         "processing",
         "processed"
       ]
     },
     {
-      "message_id": "bb3bbdba-cd0e-445a-8237-c4c59ca19c0a",
+      "message_id": "m4",
       "states": [
         "processing",
         "processed"
       ]
     },
     {
-      "message_id": "4078ef5f-9af6-4e61-8bba-c3b181502b59",
+      "message_id": "m6",
       "states": [
         "processing",
         "processed"
       ]
     },
     {
-      "message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0",
+      "message_id": "m5",
       "states": [
         "processing",
-        "processed",
         "processed"
       ]
     },
     {
-      "message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5",
+      "message_id": "m3",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m8",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m9",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m10",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m11",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m12",
+      "states": [
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m13",
       "states": [
         "processing",
         "processed"
@@ -453,6 +594,7 @@
     {
       "name": "NIS2 early warning (24h)",
       "correlation_id": "inc-8842:nis2-early",
+      "trigger_event": "becoming aware",
       "started": "2026-06-16T02:14:00+00:00",
       "deadline": "2026-06-17T02:14:00+00:00",
       "stopped": "",
@@ -461,6 +603,7 @@
     {
       "name": "NIS2 full notification (72h)",
       "correlation_id": "inc-8842:nis2",
+      "trigger_event": "becoming aware",
       "started": "2026-06-16T02:14:00+00:00",
       "deadline": "2026-06-19T02:14:00+00:00",
       "stopped": "2026-06-16T05:00:00+00:00",
@@ -469,6 +612,7 @@
     {
       "name": "DORA major-incident (72h)",
       "correlation_id": "inc-8842:dora",
+      "trigger_event": "incident occurrence",
       "started": "2026-06-16T02:14:00+00:00",
       "deadline": "2026-06-19T02:14:00+00:00",
       "stopped": "2026-06-16T05:00:00+00:00",
@@ -477,7 +621,8 @@
     {
       "name": "SEC 8-K (4 business days)",
       "correlation_id": "inc-8842:sec",
-      "started": "2026-06-16T02:14:00+00:00",
+      "trigger_event": "materiality determination",
+      "started": "2026-06-16T02:31:00+00:00",
       "deadline": "2026-06-23T23:59:59+00:00",
       "stopped": "2026-06-16T05:00:00+00:00",
       "breached": false
@@ -513,33 +658,120 @@
       "regime": "NIS2",
       "by": "NIS2 Drafter",
       "model": "deepseek-ai/DeepSeek-V3.2",
-      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank\u2019s incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3.2 holds NIS2 in dev because it is a strong open reasoning model that handles structured statutory prose at flat rate, so the day-to-day build burns no metered credit.",
+      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank's incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "SEC",
       "by": "SEC Drafter",
       "model": "deepseek-ai/DeepSeek-V3-0324",
-      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3-0324 holds SEC in dev as a separate open checkpoint from the NIS2 drafter, so two branches draft from genuinely different model state even before the prod split.",
+      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "DORA",
       "by": "DORA Drafter",
       "model": "Qwen/Qwen2.5-72B-Instruct",
-      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "provider": "featherless",
+      "rationale": "Qwen2.5-72B-Instruct holds DORA in dev because its long instruction-following is a good fit for DORA's incident-report field skeleton, and it is a third open family on flat rate.",
+      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "SEC",
       "by": "SEC Drafter",
       "model": "deepseek-ai/DeepSeek-V3-0324",
-      "text": "Amended 8-K (Item 1.05): records affected revised to 2,100,000. The revised affected-record count is two million one hundred thousand.\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3-0324 holds SEC in dev as a separate open checkpoint from the NIS2 drafter, so two branches draft from genuinely different model state even before the prod split.",
+      "text": "Amended 8-K (Item 1.05): records affected revised to 2,100,000. The revised forensic analysis determined 2,100,000 records were affected.\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
     },
     {
       "regime": "NIS2",
       "by": "NIS2 Drafter",
       "model": "deepseek-ai/DeepSeek-V3.2",
-      "text": "NIS2 intermediate report: records affected revised to 2,100,000. The revised affected-record count is two million one hundred thousand.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3.2 holds NIS2 in dev because it is a strong open reasoning model that handles structured statutory prose at flat rate, so the day-to-day build burns no metered credit.",
+      "text": "NIS2 intermediate report: records affected revised to 2,100,000. The revised forensic analysis determined 2,100,000 records were affected.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=2100000\nattacker=LockBit 3.0\ncontainment=contained\n[/CLAIMS]"
     }
   ],
+  "grounding": {
+    "threshold": 1.0,
+    "filings": [
+      {
+        "branch": "NIS2",
+        "grounded": 7,
+        "total": 7,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "NIS2",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "SEC",
+        "grounded": 7,
+        "total": 7,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "SEC",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "DORA",
+        "grounded": 8,
+        "total": 8,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "DORA",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "SEC",
+        "grounded": 2,
+        "total": 2,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "SEC",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "NIS2",
+        "grounded": 2,
+        "total": 2,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "NIS2",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      }
+    ],
+    "all_pass": true
+  },
+  "adversarial_review": {},
   "chaos": {
     "events": [],
     "duplicates_dropped": 0,
@@ -571,25 +803,26 @@
       }
     ]
   },
+  "security": {},
   "breached_clocks": [],
   "replay": {
-    "original_sha256": "157e8f08cd4c0d408fb811710067d6a5fa1175f28985d049a68edd67df307256",
-    "replayed_sha256": "157e8f08cd4c0d408fb811710067d6a5fa1175f28985d049a68edd67df307256",
+    "original_sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
+    "replayed_sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
     "byte_identical": true,
+    "chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
     "signature": {
       "algorithm": "ed25519",
       "detached": true,
       "signed_payload": "canonical_json{sha256,chain_head}",
-      "sha256": "157e8f08cd4c0d408fb811710067d6a5fa1175f28985d049a68edd67df307256",
-      "chain_head": "8f65c05efda169788ea2eb7288edf025f07d574dbd199a0d5dcf62c10ac70a4c",
-      "signature": "7a3b0974ee7089a6beac68be459f200fb41b0ffe9c6190453be4e2bff055cef0e3bdbb75ace70efd7083974787f6bf9c04d46763fa683ea5955d459a9b4bc90c",
+      "sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
+      "chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+      "signature": "23684ca56568bcf4fa7af8306e4008622f554b410c5543d1555375cd4aa5f9bf09d0889f66a8a284fe1eb3a9b93278e85880a148096305098b7dcae29a4fa20e",
       "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
       "pubkey_fingerprint": "46e30f5bff8c221d",
       "signer": "Deadline Warden",
       "demo_key": true,
       "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
-    },
-    "chain_head": "8f65c05efda169788ea2eb7288edf025f07d574dbd199a0d5dcf62c10ac70a4c"
+    }
   },
   "pending": [],
   "reconciliation": {
@@ -600,7 +833,7 @@
       "sec",
       "nis2"
     ],
-    "amend_message_id": "77cd72c7-1c66-4fe7-96d8-6f7afb9f4ce0",
+    "amend_message_id": "m11",
     "blocked_before_reconciliation": true,
     "block_reason": "no concur envelope for amend round 1: inc-8842:sec may not submit its amendment yet",
     "exchange": [
@@ -609,9 +842,9 @@
         "to": "NIS2 Drafter",
         "verdict": "propose",
         "proposed_value": 2100000,
-        "characterization": "The revised affected-record count is two million one hundred thousand.",
-        "band_message_id": "dbd6e9f0-9ce6-445e-853d-81a006a491d5",
-        "envelope_sha256": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e",
+        "characterization": "The revised forensic analysis determined 2,100,000 records were affected.",
+        "band_message_id": "m13",
+        "envelope_sha256": "0d5d46706afa4490c650c0fd9886bd98dc686dc683860019937b045410b94c64",
         "prior_envelope_hash": null
       },
       {
@@ -619,30 +852,79 @@
         "to": "SEC Drafter",
         "verdict": "concur",
         "proposed_value": 2100000,
-        "characterization": "The revised affected-record count is two million one hundred thousand.",
-        "band_message_id": "016ee372-9be4-4607-84c5-44f2679d1455",
-        "envelope_sha256": "4db07f713e46147ff1e5834ce0eaa2d2e968f4f3da8088448ae1bb18e814ec63",
-        "prior_envelope_hash": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e"
+        "characterization": "The revised forensic analysis determined 2,100,000 records were affected.",
+        "band_message_id": "m14",
+        "envelope_sha256": "53ffe8c719b632f41f037230d1a79eb29defee96b0bc0c3c9a35472cace47bbe",
+        "prior_envelope_hash": "0d5d46706afa4490c650c0fd9886bd98dc686dc683860019937b045410b94c64"
       }
     ],
     "concurred_value": 2100000,
-    "concurred_characterization": "The revised affected-record count is two million one hundred thousand.",
+    "concurred_characterization": "The revised forensic analysis determined 2,100,000 records were affected.",
     "diff_passed_only_after_concur": true,
     "envelope_chain": [
       {
         "verdict": "propose",
         "from": "sec_drafter",
         "to": "nis2_drafter",
-        "sha256": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e",
+        "sha256": "0d5d46706afa4490c650c0fd9886bd98dc686dc683860019937b045410b94c64",
         "prior_envelope_hash": null
       },
       {
         "verdict": "concur",
         "from": "nis2_drafter",
         "to": "sec_drafter",
-        "sha256": "4db07f713e46147ff1e5834ce0eaa2d2e968f4f3da8088448ae1bb18e814ec63",
-        "prior_envelope_hash": "a710abe1d4c2994f2ee9698a9104085b04b00b2834d506ee946460f9ff1dd91e"
+        "sha256": "53ffe8c719b632f41f037230d1a79eb29defee96b0bc0c3c9a35472cace47bbe",
+        "prior_envelope_hash": "0d5d46706afa4490c650c0fd9886bd98dc686dc683860019937b045410b94c64"
       }
+    ]
+  },
+  "release": {
+    "required_roles": [
+      "general_counsel",
+      "head_of_ir"
+    ],
+    "signoffs": [
+      {
+        "correlation_id": "inc-8842:nis2",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T08:55:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:nis2",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T09:00:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:sec",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T08:55:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:sec",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T09:00:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:dora",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T04:50:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:dora",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T05:00:00+00:00"
+      }
+    ],
+    "released_branches": [
+      "nis2",
+      "sec",
+      "dora"
     ]
   }
 }

@@ -24,10 +24,10 @@
     },
     {
       "id": "amendment",
-      "label": "Amendment reconciliation (live capture)",
+      "label": "Amendment reconciliation",
       "packet": "data/packet-amendment.json",
       "run_log": "data/run-inc-8842-amendment.jsonl",
-      "blurb": "After release a load-bearing fact is revised. Two drafters reconcile through Band over hash-linked envelopes; the amended diff stays blocked until they concur."
+      "blurb": "After release a load-bearing fact is revised. Two drafters reconcile through Band over hash-linked envelopes; the amended diff stays blocked until they concur, then both re-release under the same two-key gate."
     }
   ]
 }

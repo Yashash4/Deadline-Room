@@ -4,18 +4,24 @@ This writes one Examiner Packet JSON plus its matching run-log JSONL per scenari
 into web/data/, so the hosted viewer (web/index.html) can load real captured runs
 and re-verify each replay hash in the browser against the bundled log.
 
-The amendment scenario is the real live capture (real Band ids, real Featherless
-models, real filing prose, sha 157e8f08...): it is copied verbatim from
-floor/out/examiner-packet.json and floor/out/run-inc-8842-amendment.jsonl.
+All four scenarios (normal, inject_contradiction, chaos, amendment) are
+regenerated through the SAME floor orchestration over the in-process fake Band, so
+this script is reproducible offline with no API keys and every capture reflects
+the CURRENT floor: the two-key release_signoff events (segregation of duties), the
+Warden posting its decisions into the room, the two-way contradiction
+reconciliation, the consolidated release narration, and (for the amendment) the
+hash-linked propose/concur exchange and the two-key amendment re-release. Each
+packet's original_sha256 matches the sha256 of its own bundled run log, so the
+viewer's in-browser verify is exact and honest, and scripts/audit_run.py passes
+every invariant (including TWO-KEY RELEASE) over the sealed bytes.
 
-The normal, contradiction, and chaos scenarios are regenerated through the same
-floor orchestration over the in-process fake Band so this script is reproducible
-offline with no API keys. Each packet's original_sha256 matches the sha256 of its
-own bundled run log, so the viewer's in-browser verify is exact and honest. The
-regulator-facing filing prose from the live amendment capture is grafted in by
+The regulator-facing filing prose from the live amendment capture is grafted in by
 regime (same incident, same drafters, same models) so the rendered filings read as
-real regulatory notifications rather than test stubs. Filing text is not part of
-the run log, so grafting prose never changes the verifiable replay hash.
+real regulatory notifications rather than test stubs, and the amendment's two
+reconciliation characterizations are grafted from the genuine live propose/concur
+exchange. Filing and characterization text are not part of the hashed run log, so
+grafting prose never changes the verifiable replay hash; only the real event
+stream does.
 
 Run from code/:  py web/capture_scenarios.py
 """
@@ -36,8 +42,16 @@ from floor.shell_adapter import FakeBandClient, FakeRoom  # noqa: E402
 from warden.replay import RunLog  # noqa: E402
 
 OUT = _CODE / "web" / "data"
-LIVE_PACKET = _CODE / "floor" / "out" / "examiner-packet.json"
-LIVE_AMEND_LOG = _CODE / "floor" / "out" / "run-inc-8842-amendment.jsonl"
+LIVE_PACKET = _CODE / "web" / "data" / "packet-amendment.json"
+
+# The genuine reconciliation characterization both drafters concurred on in the
+# live amendment run (SEC proposes, NIS2 concurs, identical shared sentence). It
+# is grafted into the offline amendment capture so the reconciliation reads as the
+# real agent-to-agent prose. Characterization text is not part of the hashed run
+# log (only the envelope hashes and the verdicts are), so grafting it never moves
+# the sealed sha or the chain head.
+AMEND_CHARACTERIZATION = (
+    "The revised forensic analysis determined 2,100,000 records were affected.")
 
 
 def _build_clients():
@@ -64,22 +78,35 @@ def _real_prose_by_regime() -> dict:
     return prose
 
 
-def _stub_draft_fns(prose: dict):
+def _stub_draft_fns(prose: dict, mode: str):
     """Drafter stubs that return the real captured prose for each regime, so the
-    structured [CLAIMS] block the floor appends is parsed off genuine text."""
+    structured [CLAIMS] block the floor appends is parsed off genuine text.
+
+    For the amendment scenario the reconciliation characterization functions
+    (keyed f'{branch}:characterize') are stubbed too, so the propose/concur
+    exchange runs offline on the genuine shared characterization rather than
+    calling a live model."""
     def make(regime):
         text = prose.get(regime, "")
 
         def fn(claim_facts):
             return text
         return fn
-    return {r.branch: make(r.regime) for r in DRAFTER_ROLES}
+    fns: dict = {r.branch: make(r.regime) for r in DRAFTER_ROLES}
+    if mode == "amendment":
+        # SEC proposes, NIS2 concurs; both return the same genuine sentence the
+        # live drafters concurred on. The signature is fn(counterpart_text) -> str.
+        def characterize(_counterpart_text: str) -> str:
+            return AMEND_CHARACTERIZATION
+        fns["sec:characterize"] = characterize
+        fns["nis2:characterize"] = characterize
+    return fns
 
 
 def _capture(mode: str, prose: dict) -> dict:
     room, clients = _build_clients()
     packet = run_floor(out_dir=str(OUT), mode=mode, clients=clients,
-                       draft_fns=_stub_draft_fns(prose))
+                       draft_fns=_stub_draft_fns(prose, mode))
     # The floor wrote examiner-packet.json (generic name) and the run log. Move the
     # packet to a scenario-specific name and keep the matching run log.
     src = OUT / "examiner-packet.json"
@@ -101,18 +128,9 @@ def main() -> int:
     prose = _real_prose_by_regime()
 
     captured = {}
-    for mode in ("normal", "inject_contradiction", "chaos"):
+    for mode in ("normal", "inject_contradiction", "chaos", "amendment"):
         p = _capture(mode, prose)
         captured[mode] = p["replay"]["original_sha256"]
-
-    # Amendment: copy the real live capture verbatim, packet + run log.
-    shutil.copyfile(LIVE_PACKET, OUT / "packet-amendment.json")
-    shutil.copyfile(LIVE_AMEND_LOG, OUT / "run-inc-8842-amendment.jsonl")
-    amend = json.loads((OUT / "packet-amendment.json").read_text(encoding="utf-8"))
-    amend_log = RunLog.load(OUT / "run-inc-8842-amendment.jsonl")
-    assert amend_log.sha256() == amend["replay"]["original_sha256"], \
-        "amendment: bundled log hash does not match packet replay hash"
-    captured["amendment"] = amend["replay"]["original_sha256"]
 
     manifest = {
         "incident_id": "inc-8842",
@@ -134,12 +152,13 @@ def main() -> int:
              "blurb": "A drafter is killed after posting but before acking. On "
                       "restart the dedup ledger drops the duplicate, so the filing "
                       "lands exactly once."},
-            {"id": "amendment", "label": "Amendment reconciliation (live capture)",
+            {"id": "amendment", "label": "Amendment reconciliation",
              "packet": "data/packet-amendment.json",
              "run_log": "data/run-inc-8842-amendment.jsonl",
              "blurb": "After release a load-bearing fact is revised. Two drafters "
                       "reconcile through Band over hash-linked envelopes; the amended "
-                      "diff stays blocked until they concur."},
+                      "diff stays blocked until they concur, then both re-release "
+                      "under the same two-key gate."},
         ],
     }
     (OUT / "manifest.json").write_text(
