@@ -75,6 +75,25 @@ class ReportabilitySpec:
 
 
 @dataclass(frozen=True)
+class ObligationSpec:
+    """The declarative cross-border obligation attributes for one regime (E3.4).
+
+    The typed obligation data the pure no-LLM warden/obligations.py detector reads
+    for the regimes actually in scope, to find any mutually exclusive pair across
+    jurisdictions. `discloses` is the data elements the regime is MANDATED to put in
+    its notice; `forbids_disclosing` is the data elements its law FORBIDS
+    disclosing; `mandates` is the named obligation tags it asserts (a tag and its
+    declared opposite cannot both be satisfied). Each is a tuple of plain lowercase
+    tokens. `basis` is the cited statutory basis, rendered for the examiner and
+    never gated on. The detector reports conflicts; it never decides which law
+    prevails (that is the human two-key gate's call)."""
+    discloses: tuple[str, ...] = ()
+    forbids_disclosing: tuple[str, ...] = ()
+    mandates: tuple[str, ...] = ()
+    basis: str = ""
+
+
+@dataclass(frozen=True)
 class RegimeSpec:
     """One regime record from the catalog, in typed form.
 
@@ -93,6 +112,7 @@ class RegimeSpec:
     recruit_jurisdiction: str | None = None
     recruit_name_tokens: tuple[str, ...] = ()
     reportability: ReportabilitySpec | None = None
+    obligations: ObligationSpec | None = None
 
     @property
     def is_startup(self) -> bool:
@@ -126,6 +146,26 @@ def _parse_regime(record: dict) -> RegimeSpec:
             standard=standard,
             rule=str(reportability["rule"]),
         )
+    obligations = record.get("obligations")
+    obligations_spec = None
+    if obligations is not None:
+        # An obligations block, when present, declares the typed cross-border
+        # obligation attributes (E3.4). Tokens are lowercased so the pure detector
+        # compares plain set elements. A bare/empty block (no obligation token of
+        # any kind) is a catalog error, surfaced structurally: declaring the block
+        # at all is a claim that the regime carries a cross-border tension.
+        obligations_spec = ObligationSpec(
+            discloses=_token_tuple(obligations.get("discloses")),
+            forbids_disclosing=_token_tuple(obligations.get("forbids_disclosing")),
+            mandates=_token_tuple(obligations.get("mandates")),
+            basis=" ".join(str(obligations.get("basis", "")).split()),
+        )
+        if not (obligations_spec.discloses or obligations_spec.forbids_disclosing
+                or obligations_spec.mandates):
+            raise ValueError(
+                f"regime {record['key']} declares an empty obligations block; an "
+                f"obligations block must carry at least one of discloses, "
+                f"forbids_disclosing, or mandates")
     return RegimeSpec(
         key=record["key"],
         authority=record["authority"],
@@ -139,7 +179,16 @@ def _parse_regime(record: dict) -> RegimeSpec:
         recruit_jurisdiction=recruit.get("jurisdiction"),
         recruit_name_tokens=tuple(recruit.get("name_tokens", ())),
         reportability=reportability_spec,
+        obligations=obligations_spec,
     )
+
+
+def _token_tuple(value) -> tuple[str, ...]:
+    """Normalize a YAML obligation list into a tuple of lowercase tokens, in the
+    declared order. None or an empty list yields the empty tuple."""
+    if not value:
+        return ()
+    return tuple(str(v).strip().lower() for v in value if str(v).strip())
 
 
 def load_catalog(path: str | Path | None = None) -> list[RegimeSpec]:

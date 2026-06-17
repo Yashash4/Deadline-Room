@@ -265,6 +265,83 @@ def _render_reportability(r: dict) -> str:
     return "".join(parts)
 
 
+def _render_cross_border(cb: dict) -> str:
+    """Render the cross-border obligation-conflict beat (E3.4): the in-scope
+    regimes, the mutually exclusive obligations the deterministic detector caught,
+    the Warden's BLOCK, and the human two-key decision that resolved it. The defense
+    a litigator wants: the conflict was surfaced deterministically, both regulators
+    and both opposed obligations are named, and a HUMAN, not the system, chose.
+
+    The win this section makes visible: the contradiction veto did not just catch
+    two drafters disagreeing on a FACT, it caught two GOVERNMENTS demanding OPPOSITE
+    things, and the Warden refused to let an agent silently pick one regulator over
+    another. The detector NEVER decides which law prevails; it detects, halts, and
+    routes to the human. Rendered only when the cross-border beat ran."""
+    if not cb:
+        return ""
+    in_scope = ", ".join(cb.get("in_scope_regimes", []))
+    conflicts = cb.get("conflicts", [])
+    parts = ["<h2>5e. Cross-border obligation conflict "
+             "(detected, halted, human-routed)</h2>"]
+    parts.append(
+        "<p class='sub'>The cross-filing contradiction veto catches two drafters "
+        "disagreeing on a FACT. This is the cross-border analogue: two REGULATORS "
+        "imposing mutually exclusive OBLIGATIONS on the same true facts. A pure, "
+        "no-LLM detector reads each in-scope regime's DECLARED obligation data and "
+        "reports any conflicting pair; the Warden HALTS and routes the decision to "
+        "the human two-key gate. The Warden NEVER decides which law prevails (that "
+        "would be the conflict-of-laws resolver, which is deliberately out of "
+        "scope). It detects, halts, and routes.</p>")
+    parts.append(
+        f"<p class='sub'>Regimes in scope for this incident: "
+        f"<code>{_esc(in_scope)}</code>.</p>")
+    if not conflicts:
+        parts.append(
+            "<p class='ok'>No cross-border obligation conflict: the in-scope "
+            "regimes' declared obligations are compatible.</p>")
+        return "".join(parts)
+    parts.append(
+        "<p class='bad'><strong>Cross-border obligation conflict caught. The "
+        "Warden HALTED and routed the decision to the human two-key gate.</strong></p>")
+    rows = []
+    for c in conflicts:
+        kind = ("data-content (a disclosed element another jurisdiction forbids)"
+                if c.get("kind") == "data_content"
+                else "mandate (two declared-opposite obligations)")
+        rows.append(
+            "<tr><td>" + _esc(kind) + "</td>"
+            "<td><strong>" + _esc(c.get("regime_a")) + "</strong>: "
+            + _esc(c.get("obligation_a")) + "</td>"
+            "<td><strong>" + _esc(c.get("regime_b")) + "</strong>: "
+            + _esc(c.get("obligation_b")) + "</td>"
+            "<td>" + _esc(c.get("element") or "(n/a)") + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Conflict kind</th><th>Regulator A obligation</th>"
+        "<th>Regulator B obligation</th><th>Data element</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    # The cited statutory bases for the first conflict (the defensibility record).
+    c0 = conflicts[0]
+    if c0.get("basis_a") or c0.get("basis_b"):
+        parts.append(
+            f"<p class='sub'>Statutory basis: <strong>{_esc(c0.get('regime_a'))}</strong> "
+            f"{_esc(c0.get('basis_a'))}; <strong>{_esc(c0.get('regime_b'))}</strong> "
+            f"{_esc(c0.get('basis_b'))}.</p>")
+    # The human two-key resolution: who decided, and the recorded direction.
+    res = cb.get("resolution") or {}
+    if res:
+        decided_by = ", ".join(res.get("decided_by", []))
+        parts.append(
+            "<h3>Human two-key resolution (the Warden did not choose)</h3>")
+        parts.append(
+            f"<p class='ok'><strong>Resolved by two distinct human keys: "
+            f"<code>{_esc(decided_by)}</code>.</strong> The conflict was routed to "
+            f"the human two-key gate; the humans, not the system, made the call. "
+            f"This recorded decision is the only thing that let the run proceed.</p>")
+        parts.append(f"<p class='sub'>Recorded human decision: "
+                     f"{_esc(res.get('decision'))}</p>")
+    return "".join(parts)
+
+
 def _render_determination(d: dict) -> str:
     """Render the reasonable-basis determination record (E3.2): the named legal
     standard, the factor table where each factor is bound to the exact canonical
@@ -1193,6 +1270,7 @@ def _render_html(p: dict) -> str:
     grounding_block = _render_grounding(p.get("grounding", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
+    cross_border_block = _render_cross_border(p.get("cross_border", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
@@ -1357,6 +1435,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {clock_rows}
 
 {reportability_block}
+
+{cross_border_block}
 
 {materiality_block}
 

@@ -88,6 +88,8 @@ from warden.determination import validate_determination  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
+from warden.obligations import (  # noqa: E402
+    ConflictResolution, RegimeObligations, detect as detect_obligation_conflicts)
 from warden.release_gate import REQUIRED_ROLES, TwoKeyReleaseGate  # noqa: E402
 from warden.replay import RunLog, replay  # noqa: E402
 from warden.chain import head_for_log  # noqa: E402
@@ -258,8 +260,40 @@ NYDFS_IN_SCOPE_FACTS = {
 # NYDFS recruit fires on a normal run.
 CANONICAL_FACTS["blast_radius"] = ["EU: Meridian Trust Bank N.V."]
 
+# E3.4 cross-border obligation conflict. The --cross-border beat puts THREE
+# regimes with declared, mutually exclusive obligations in scope for the same
+# incident: SEC (public_disclosure + discloses affected_data_scope), DORA
+# (confidentiality_hold), and the UK ICO (forbids disclosing affected_data_scope).
+# The UK regime enters scope through the existing content-driven recruit, so the
+# blast radius names the UK subsidiary exactly as the UK recruit fixture does. The
+# pure no-LLM warden/obligations.py detector then finds the conflicting pairs and
+# the Warden HALTS, routing the recorded decision to the human two-key gate. It
+# never decides which law prevails.
+CROSS_BORDER_IN_SCOPE_FACTS = {
+    **CANONICAL_FACTS,
+    "blast_radius": ["EU: Meridian Trust Bank N.V.",
+                     "UK: Meridian Trust UK Ltd (London subsidiary)",
+                     "US: Meridian Trust ADRs (SEC registrant)"],
+}
 
-def _recruit_fact_record(uk_recruit: bool, nydfs_recruit: bool) -> dict:
+# The human direction recorded at the two-key gate that resolves the cross-border
+# conflict. This is the HUMAN's call (which way, and why); the Warden never writes
+# it. The system only proceeds once both distinct human keys have signed it.
+CROSS_BORDER_HUMAN_DECISION = (
+    "General Counsel and Head of IR jointly direct: file the SEC Item 1.05 notice "
+    "with the material affected-data scope, and file the UK ICO and DORA notices "
+    "minimized per their own duties; counsel logs the divergence as a deliberate, "
+    "recorded cross-border decision. The Warden surfaced the conflict; the humans, "
+    "not the system, chose.")
+# Fixed timestamps for the cross-border block + human resolution so the trace and
+# any timestamped post stay stable. The block lands after the recruit, the human
+# resolution before signoff.
+TS_CROSS_BORDER_BLOCK = "2026-06-16T04:05:00+00:00"
+TS_CROSS_BORDER_RESOLVED = "2026-06-16T04:15:00+00:00"
+
+
+def _recruit_fact_record(uk_recruit: bool, nydfs_recruit: bool,
+                         cross_border: bool = False) -> dict:
     """Build the fact-record whose blast radius names exactly the jurisdictions
     whose recruit beats are active. With no recruit the default EU-only radius is
     used, so a recruit flag that is off still proves the content-driven negative
@@ -269,7 +303,14 @@ def _recruit_fact_record(uk_recruit: bool, nydfs_recruit: bool) -> dict:
     NYDFS_IN_SCOPE_FACTS verbatim, so the existing tests that monkeypatch those
     fixtures (to force the no-recruit negative) keep their exact seam. Only when
     BOTH recruits run is a merged blast radius built so each phase finds its own
-    jurisdiction."""
+    jurisdiction.
+
+    The cross-border beat (E3.4) uses the CROSS_BORDER_IN_SCOPE_FACTS radius (UK in
+    scope, so the UK ICO is recruited alongside the SEC and DORA regimes that carry
+    the conflicting obligations); it implies the UK recruit, so it takes precedence
+    over the plain uk-only branch below."""
+    if cross_border:
+        return CROSS_BORDER_IN_SCOPE_FACTS
     if uk_recruit and nydfs_recruit:
         radius = list(UK_IN_SCOPE_FACTS.get("blast_radius", []))
         for entry in NYDFS_IN_SCOPE_FACTS.get("blast_radius", []):
@@ -565,6 +606,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            reportability_facts=reportability_facts)
 
 
+# (cross_border has no public-API kwarg: it is selected purely by mode ==
+# "cross_border", which implies the UK recruit and the cross-border fact-record.)
+
+
 # ----------------------------------------------------------------------------
 # Full floor: Triage agent + three drafters + Warden + diff + chaos + replay.
 # ----------------------------------------------------------------------------
@@ -601,7 +646,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     The two-key release gate (Lena AND the GC) is ALWAYS active: every release on
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
-                    "inject_claims", "reportability"):
+                    "inject_claims", "reportability", "cross_border"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
@@ -613,6 +658,14 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # reportability= kwarg path (tests) sets it too.
     if mode == "reportability":
         reportability = True
+    # The cross-border beat (E3.4) is its own scenario: it rides the clean (normal)
+    # base path with the UK regime recruited into scope, then runs the pure
+    # obligation-conflict detector and routes the BLOCK to the human two-key gate.
+    # Like the recruit beats it is content-driven (the blast radius names the UK
+    # subsidiary), so it implies the UK recruit.
+    cross_border = mode == "cross_border"
+    if cross_border:
+        uk_recruit = True
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
@@ -620,14 +673,16 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # authoritative canonical values exactly as in a normal run; the attack
     # changes nothing about the filing, which is the whole point. The
     # reportability beat also rides the clean base.
-    base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability")
+    base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability",
+                                       "cross_border")
                  else mode)
     inject_claims = mode == "inject_claims"
     # When a recruit beat runs, Triage's fact-record carries a blast radius naming
     # that jurisdiction's entity; that content is what drives the recruit. With
     # both recruits the blast radius names both, so each phase finds its own
     # jurisdiction and the no-recruit proof still holds when a flag is off.
-    fact_record = _recruit_fact_record(uk_recruit, nydfs_recruit)
+    fact_record = _recruit_fact_record(uk_recruit, nydfs_recruit,
+                                       cross_border=cross_border)
     release_gate = TwoKeyReleaseGate()
 
     if live:
@@ -946,6 +1001,23 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             claims_by_branch["nydfs"] = nydfs_recruit_record.pop("claims")
             filings.append(nydfs_recruit_record.pop("filing"))
 
+    # ---- Cross-border obligation conflict (E3.4, the international contradiction
+    # beat). The pure no-LLM warden/obligations.py detector reads the DECLARED
+    # obligation data of the regimes actually in scope and reports any mutually
+    # exclusive pair (one jurisdiction mandated to disclose a data element another
+    # forbids disclosing, or two declared-opposite named mandates). When a conflict
+    # is found the Warden posts a BLOCK naming both regulators and the opposed
+    # obligations, HALTS, and routes the decision to the human two-key gate. It
+    # NEVER decides which law wins; the human resolves through the existing gate and
+    # only then does signoff proceed. ----------------------------------------------
+    cross_border_record = None
+    if cross_border:
+        cross_border_record = _cross_border_phase(
+            sm=sm, trace=trace, log=log, warden=warden, release_gate=release_gate,
+            branch_corr=branch_corr,
+            in_scope_branches=list(DRAFTER_BRANCHES_THIS_RUN),
+            drafter_ids=drafter_ids, recruit_record=recruit_record)
+
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
         sm, trace, log, clocks, branch_corr, claims_by_branch, base_mode,
@@ -1120,6 +1192,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         operability=operability,
         attestation=attestation,
         reportability=reportability_record,
+        cross_border=cross_border_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2259,6 +2332,172 @@ def _reportability_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
 
 
 # ----------------------------------------------------------------------------
+# Cross-border obligation conflict phase (E3.4, the international contradiction
+# beat). The cross-filing contradiction veto catches two drafters disagreeing on a
+# FACT; this catches two REGULATORS imposing mutually exclusive OBLIGATIONS on the
+# same true facts. The pure no-LLM warden/obligations.py detector reads the
+# DECLARED obligation data (floor/regimes.yaml) of the regimes actually in scope
+# and reports any conflicting pair. When a conflict is found the Warden posts a
+# BLOCK naming both regulators and the opposed obligations, HALTS, and routes the
+# decision to the human two-key gate; it NEVER decides which law prevails. The
+# human resolves through the existing two-key gate (a recorded, defensible call);
+# only then does the run proceed. Absent a conflict the phase is a clean no-op.
+# ----------------------------------------------------------------------------
+def _regime_obligations_in_scope(in_scope_branches: list[str]) -> list[RegimeObligations]:
+    """Build the typed RegimeObligations the detector reads, from the DECLARED
+    obligation data of the regimes actually in scope this run. Pure: it walks the
+    catalog records for the in-scope branches in their run order and lifts each
+    regime's declared obligation attributes; a branch with no obligations block
+    contributes nothing (no cross-border tension declared)."""
+    out: list[RegimeObligations] = []
+    for branch in in_scope_branches:
+        spec = _REGIME_BY_BRANCH.get(branch)
+        if spec is None or spec.obligations is None:
+            continue
+        ob = spec.obligations
+        out.append(RegimeObligations(
+            regime=spec.regime_label,
+            discloses=frozenset(ob.discloses),
+            forbids_disclosing=frozenset(ob.forbids_disclosing),
+            mandates=frozenset(ob.mandates),
+            basis=ob.basis))
+    return out
+
+
+def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
+                        in_scope_branches, drafter_ids, recruit_record) -> dict:
+    """Detect cross-border obligation conflicts among the in-scope regimes and, on
+    a conflict, post the BLOCK and route the recorded decision to the human two-key
+    gate. Returns the packet-ready record. Makes ZERO LLM calls: the detection is a
+    pure table scan over declared data, and the resolution is the HUMAN's via the
+    existing two-key gate, never the Warden's.
+
+    The conflict event and the human resolution are logged as additive run-log
+    events so they are hash-chained, replayed, and signed. This is the cross-border
+    beat's OWN scenario, so moving the sha for THIS run is expected; the four
+    default sealed captures are untouched (they never run this phase)."""
+    obligations = _regime_obligations_in_scope(in_scope_branches)
+    conflicts = detect_obligation_conflicts(obligations)
+    log.append("cross_border_scan", {
+        "in_scope_regimes": [o.regime for o in obligations],
+        "conflicts": [c.human() for c in conflicts],
+    })
+
+    if not conflicts:
+        # The content-driven negative: in-scope obligations are compatible, so the
+        # Warden surfaces nothing and the run proceeds untouched, exactly like a
+        # clean diff.
+        trace.say(f"[XB] Cross-border obligation scan: GREEN across "
+                  f"{len(obligations)} in-scope regime(s); no conflicting "
+                  f"obligations.")
+        return {
+            "in_scope_regimes": [o.regime for o in obligations],
+            "conflicts": [], "blocked": False, "resolution": None,
+        }
+
+    # A real conflict. The Warden HALTS and posts the BLOCK, naming both regulators
+    # and the opposed obligations for the FIRST conflict (the deterministic head of
+    # the list), and routes it to the human owner. No branch releases until the
+    # human two-key gate records the decision.
+    trace.say(f"[XB] Cross-border obligation conflict caught across "
+              f"{len(obligations)} in-scope regimes. The Warden HALTS and routes "
+              f"to the human two-key gate (it does NOT decide which law wins).")
+    for c in conflicts:
+        trace.say(f"        CONFLICT: {c.human()}")
+    log.append("cross_border_block", {
+        "ts": TS_CROSS_BORDER_BLOCK,
+        "conflicts": [
+            {"kind": c.kind, "regime_a": c.regime_a, "obligation_a": c.obligation_a,
+             "regime_b": c.regime_b, "obligation_b": c.obligation_b,
+             "element": c.element}
+            for c in conflicts],
+    })
+    if warden is not None:
+        c0 = conflicts[0]
+        # @mention the drafters whose regimes are in the first conflict, by id where
+        # the branch has a startup drafter id; recruited branches (UK) have no id in
+        # drafter_ids, so the Warden self-mention fallback in _warden_announce keeps
+        # the post in the room.
+        block_mentions = [
+            drafter_ids[b] for b in drafter_ids
+            if _REGIME_BY_BRANCH.get(b) is not None
+            and _REGIME_BY_BRANCH[b].regime_label in (c0.regime_a, c0.regime_b)]
+        _warden_announce(
+            warden, trace,
+            f"CROSS-BORDER BLOCK. {c0.regime_a} ({c0.obligation_a}) and "
+            f"{c0.regime_b} ({c0.obligation_b}) impose mutually exclusive "
+            f"obligations on the same incident. The Warden HALTS and routes this to "
+            f"the human two-key gate; it does not decide which law prevails. No "
+            f"signoff until a human records the decision.",
+            mentions=block_mentions,
+            dedup_key=f"warden:xborder-block:{INCIDENT_ID}")
+
+    # Route to the human two-key gate. The conflict resolution is its OWN two-key
+    # decision (a distinct gate instance from the release gate), so the recorded
+    # cross-border call is a separate, explicit segregation-of-duties event. The
+    # HUMAN supplies the decision text; the Warden never writes which way it goes.
+    resolution_gate = TwoKeyReleaseGate()
+    resolution_corr = f"{INCIDENT_ID}:cross_border"
+    decision = None
+    for role, actor, ts in RELEASE_SIGNERS:
+        decision = resolution_gate.sign(resolution_corr, role, actor,
+                                        TS_CROSS_BORDER_RESOLVED)
+        log.append("cross_border_signoff", {
+            "correlation_id": resolution_corr, "role": role, "actor": actor,
+            "ts": TS_CROSS_BORDER_RESOLVED,
+            "resolved": decision.released,
+            "have_roles": sorted(decision.have_roles),
+            "missing_roles": sorted(decision.missing_roles),
+        })
+        if not decision.released:
+            trace.say(f"    [XB] {role} ({actor}) signed the cross-border "
+                      f"decision; {decision.reason}")
+        else:
+            trace.say(f"    [XB] {role} ({actor}) signed; two keys present, the "
+                      f"human cross-border decision is recorded.")
+    if decision is None or not decision.released:
+        raise RuntimeError(
+            "cross-border conflict was not resolved by two distinct human keys")
+
+    resolution = ConflictResolution(
+        kind=conflicts[0].kind,
+        regime_a=conflicts[0].regime_a, regime_b=conflicts[0].regime_b,
+        decided_by=tuple(role for role, _actor, _ts in RELEASE_SIGNERS),
+        decision=CROSS_BORDER_HUMAN_DECISION)
+    log.append("cross_border_resolution", {
+        "ts": TS_CROSS_BORDER_RESOLVED,
+        "decided_by": list(resolution.decided_by),
+        "decision": resolution.decision,
+    })
+    if warden is not None:
+        _warden_announce(
+            warden, trace,
+            f"CROSS-BORDER RESOLVED by two human keys "
+            f"({', '.join(resolution.decided_by)}). The humans recorded the "
+            f"decision; the Warden did not choose. Signoff may proceed.",
+            mentions=None,
+            dedup_key=f"warden:xborder-resolved:{INCIDENT_ID}")
+    trace.say("[XB] Cross-border conflict resolved by the human two-key gate; the "
+              "Warden never decided which law wins. Proceeding to signoff.")
+
+    return {
+        "in_scope_regimes": [o.regime for o in obligations],
+        "conflicts": [
+            {"kind": c.kind, "regime_a": c.regime_a, "obligation_a": c.obligation_a,
+             "regime_b": c.regime_b, "obligation_b": c.obligation_b,
+             "element": c.element, "basis_a": c.basis_a, "basis_b": c.basis_b,
+             "human": c.human()}
+            for c in conflicts],
+        "blocked": True,
+        "resolution": {
+            "decided_by": list(resolution.decided_by),
+            "decision": resolution.decision,
+            "ts": TS_CROSS_BORDER_RESOLVED,
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
 # Materiality phase. An LLM judgment role applies the SEC "substantial likelihood"
 # materiality standard to the fact-record. Its typed verdict crosses into the
 # deterministic warden/materiality.py gate as data. If "not material", the Warden
@@ -2849,7 +3088,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      nydfs_recruit=None,
                      release_gate=None, released_branches=None,
                      recovered_retries: int = 0, operability=None,
-                     attestation=None, reportability=None) -> dict:
+                     attestation=None, reportability=None,
+                     cross_border=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -2960,6 +3200,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         packet["materiality"] = materiality
     if reportability is not None:
         packet["reportability"] = reportability
+    if cross_border is not None:
+        packet["cross_border"] = cross_border
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
@@ -3238,6 +3480,18 @@ def main() -> int:
                              "hours from determination) at the recruit moment. Needs a "
                              "seventh Band agent: BAND_API_KEY_NYDFS / "
                              "BAND_AGENT_ID_NYDFS, created by a human in the Band UI")
+    parser.add_argument("--cross-border", action="store_true",
+                        help="run the cross-border obligation-conflict beat (E3.4): "
+                             "three in-scope regimes (SEC, DORA, UK ICO) carry "
+                             "declared mutually exclusive obligations (a public "
+                             "disclosure mandate against a confidentiality hold, a "
+                             "disclosed data element another jurisdiction forbids "
+                             "disclosing). The pure no-LLM detector finds the "
+                             "conflicting pair and the Warden HALTS, routing the "
+                             "decision to the human two-key gate. It NEVER decides "
+                             "which law wins (that is the SKIP-listed resolver). "
+                             "Needs the UK ICO Drafter agent (BAND_API_KEY_UK) "
+                             "since the UK regime is recruited into scope")
     parser.add_argument("--reportability", action="store_true",
                         help="run the per-regime reportability / duty-to-notify "
                              "gate (E3.1): for each regime an LLM applies that "
@@ -3261,12 +3515,15 @@ def main() -> int:
                              "proceed plus human escalation on disagreement)")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
-            args.inject_claims, args.reportability]) > 1:
+            args.inject_claims, args.reportability, args.cross_border]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
-              "--inject-claims, or --reportability.")
+              "--inject-claims, --reportability, or --cross-border.")
         return 1
     if args.reportability and args.materiality:
         print("--reportability and --materiality are separate beats; pick one.")
+        return 1
+    if args.cross_border and args.materiality:
+        print("--cross-border and --materiality are separate beats; pick one.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
@@ -3278,7 +3535,8 @@ def main() -> int:
            "chaos" if args.chaos else \
            "amendment" if args.amendment else \
            "inject_claims" if args.inject_claims else \
-           "reportability" if args.reportability else "normal"
+           "reportability" if args.reportability else \
+           "cross_border" if args.cross_border else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 

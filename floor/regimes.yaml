@@ -55,6 +55,26 @@
 #     rule      a short human-readable rule label rendered in the Examiner Packet
 #               when a regime is suppressed below its threshold (e.g. "not
 #               reportable under NIS2 Art 23 significant-impact").
+#   obligations (E3.4, cross-border obligation conflict):
+#     The typed, declarative obligation attributes a regime imposes that can
+#     GENUINELY conflict across jurisdictions for the same incident. The pure,
+#     no-LLM warden/obligations.py detector reads these for the regimes actually in
+#     scope and reports any mutually exclusive pair, then the Warden HALTS and
+#     routes the decision to the human two-key gate. The detector NEVER decides
+#     which law prevails (that is the SKIP-listed conflict-of-laws resolver); it
+#     only detects + halts + routes. Each attribute is a small list of plain
+#     lowercase tokens, declared honestly with its statutory basis:
+#       discloses           data elements the regime is MANDATED to put in its
+#                           notice.
+#       forbids_disclosing  data elements the regime's law FORBIDS disclosing (a
+#                           data-minimization / purpose-limitation duty).
+#       mandates            named obligation tags the regime asserts; a tag and its
+#                           declared opposite (warden.obligations.MUTUALLY_EXCLUSIVE_MANDATES)
+#                           cannot both be satisfied (e.g. public_disclosure against
+#                           confidentiality_hold).
+#       basis               the cited statutory basis, rendered for the examiner,
+#                           never gated on.
+#     Omitted for a regime that declares no cross-border obligation tension.
 #
 # The behaviour and demo dates produced from this catalog are byte-identical to
 # the prior hardcoded constants: this file is the SOURCE of those constants, not
@@ -136,6 +156,20 @@ regimes:
         duration and service downtime, geographical spread, data losses, the
         criticality of services affected, and economic impact.
       rule: not reportable under DORA major-incident RTS classification
+    obligations:
+      # DORA Art 19 routes the major-incident report to the lead competent
+      # authority under a supervisory confidentiality expectation: operational
+      # detail is shared with the supervisor, not broadcast to the market while the
+      # incident is live. Paired with a law-enforcement / national-security hold,
+      # this is the declared opposite of the SEC public-disclosure mandate below:
+      # one government demands the market be told now, another demands operational
+      # detail stay confidential. The Warden detects the clash and routes it to the
+      # human; it never decides which prevails.
+      mandates: [confidentiality_hold]
+      basis: >-
+        DORA (Regulation 2022/2554) Art 19 supervisory reporting to the lead
+        competent authority, read with a competent-authority / law-enforcement
+        confidentiality expectation on live operational detail.
 
   - key: sec
     authority: U.S. Securities and Exchange Commission
@@ -161,6 +195,20 @@ regimes:
         quantitative scale and qualitative factors. This is the same "material"
         standard the SEC materiality beat applies.
       rule: not reportable under SEC Item 1.05 materiality
+    obligations:
+      # SEC Item 1.05 forces PUBLIC disclosure of a material cybersecurity
+      # incident on a 4-business-day clock, and the disclosure pushes toward fuller
+      # incident detail for the reasonable investor, including the scope of the
+      # data affected. Two cross-border tensions follow: (1) public_disclosure is
+      # the declared opposite of the DORA / law-enforcement confidentiality_hold;
+      # (2) the affected_data_scope element the SEC discloses is one the UK GDPR
+      # data-minimization duty (below) forbids carrying in the supervisory notice.
+      mandates: [public_disclosure]
+      discloses: [affected_data_scope]
+      basis: >-
+        SEC Item 1.05 of Form 8-K (17 CFR 229.105), requiring public disclosure of
+        a material cybersecurity incident's nature, scope, and timing within four
+        business days of the materiality determination.
 
   - key: uk_ico
     authority: UK Information Commissioner's Office
@@ -189,6 +237,19 @@ regimes:
         non-sensitive data with no realistic risk to data subjects need not be
         notified.
       rule: not reportable under UK GDPR Art 33 risk-to-rights-and-freedoms
+    obligations:
+      # UK GDPR data-minimization (Art 5(1)(c)) limits a supervisory breach notice
+      # to the personal data adequate, relevant, and limited to what is necessary
+      # for the notification's purpose. It FORBIDS carrying the fuller
+      # affected_data_scope detail the SEC public disclosure pushes out. Same
+      # incident, opposed content duties on the two notices: the Warden detects the
+      # clash and routes the recorded decision to the human, never choosing a side.
+      forbids_disclosing: [affected_data_scope]
+      basis: >-
+        UK GDPR Art 5(1)(c) data minimization and Art 33(3) (the notification
+        carries the categories and approximate numbers, limited to what is
+        necessary), forbidding fuller affected-data detail in the supervisory
+        notice.
 
   - key: nydfs
     authority: New York State Department of Financial Services (superintendent)
