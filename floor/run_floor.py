@@ -46,12 +46,23 @@ all clocks, not by literal simultaneous inference.
 
 The Warden makes ZERO LLM calls. Only drafter processes draft text.
 
+  reportability        BEFORE any drafting, the per-regime duty-to-notify gate
+                       (E3.1) runs: for each regime an LLM applies that regime's
+                       statutory trigger standard (NIS2 Art 23 significant impact,
+                       DORA major-incident RTS, SEC Item 1.05 materiality) and a
+                       regime BELOW its threshold is driven to the terminal
+                       SUPPRESSED state on camera with the named rule, while a
+                       regime ABOVE its threshold files. The qualitative call is
+                       the LLM's; the gate is deterministic Python, exactly like
+                       the SEC materiality seam this generalizes.
+
 Run live:
   py floor/run_floor.py                       (normal)
   py floor/run_floor.py --inject-contradiction
   py floor/run_floor.py --chaos
   py floor/run_floor.py --amendment
   py floor/run_floor.py --inject-claims
+  py floor/run_floor.py --reportability
 """
 
 from __future__ import annotations
@@ -71,6 +82,8 @@ from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import IdempotencyLedger  # noqa: E402
 from warden.liveness import LivenessWatchdog  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
+from warden.reportability import (  # noqa: E402
+    ReportabilityVerdict, gate as reportability_gate)
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
@@ -91,6 +104,7 @@ from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
 from floor.materiality import (  # noqa: E402
     assess_materiality, assess_materiality_two_opinions)
+from floor.reportability import assess_reportability  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
 from floor.recruit import (  # noqa: E402
@@ -279,6 +293,36 @@ SEC_IMMATERIAL_FACTS = {
     "containment": "contained",
 }
 
+# E3.1: per-regime reportability / duty-to-notify fixtures. The reportability
+# beat assesses, per startup-drafter regime (NIS2, SEC, DORA), whether the
+# incident even crosses that regulator's reporting THRESHOLD before any filing is
+# drafted. To prove the gate is decision-driven (not always-file or
+# always-suppress), the fixture puts SOME regimes ABOVE their threshold (they
+# file) and SOME BELOW (they are suppressed with the named rule). The verdict is
+# the LLM's; these only choose which fact-record each per-regime assessor sees.
+#
+# The catalog-named branches the reportability beat assesses, in drafter order.
+# Each is a startup-drafter regime whose duty-to-notify is decided up front.
+REPORTABILITY_BRANCHES = ("nis2", "sec", "dora")
+
+# The default reportability scenario, per branch. NIS2 is fed a small, contained,
+# non-significant incident so the NIS2 Art 23 significant-impact threshold is NOT
+# crossed and the branch is suppressed on camera; SEC and DORA are fed the real
+# material incident so their thresholds ARE crossed and they file. A test injects
+# its own verdicts through the reportability_fn seam, so this is the live default
+# only; the proof that it is decision-driven lives in the tests.
+REPORTABILITY_SCENARIO_FACTS = {
+    "nis2": {
+        **CANONICAL_FACTS,
+        "records_affected": 3,
+        "systems": ["internal wiki staging mirror"],
+        "data_categories": ["internal_page_titles"],
+        "containment": "contained",
+    },
+    "sec": dict(CANONICAL_FACTS),
+    "dora": dict(CANONICAL_FACTS),
+}
+
 # A1: the hour-6 fact amendment beat. records_affected is revised upward as
 # forensics complete; the SEC and NIS2 branches reopen and reconcile.
 AMENDED_RECORDS = 2_100_000
@@ -312,6 +356,14 @@ AMEND_DATA_BOUNDS = ("name", "address", "account_number")
 # full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
 # records, so adding a regulator is appending a YAML block, not editing code.
 REGIME_CATALOG = regimes.load_catalog()
+
+# Branch -> RegimeSpec, for the reportability beat to read each regime's
+# declarative duty-to-notify standard + rule (and any other per-branch catalog
+# datum) without re-walking the catalog. The catalog carries one record per
+# branch the drafters use (nis2, sec, dora, uk, nydfs); nis2-early shares the
+# nis2 reportability standard, so the drafter branch nis2 resolves to the
+# nis2_full record below.
+_REGIME_BY_BRANCH = {spec.branch: spec for spec in REGIME_CATALOG}
 
 # The fixed timestamp each startup anchor resolves to. The catalog names the
 # anchor; this maps the name to the demo constant, so the clocks produced are
@@ -463,7 +515,9 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               uk_peers: list | None = None, second_opinion: bool = False,
               second_opinion_fn=None, nydfs_recruit: bool = False,
               nydfs_peers: list | None = None,
-              challenge: bool = True, challenge_fns: dict | None = None) -> dict:
+              challenge: bool = True, challenge_fns: dict | None = None,
+              reportability: bool = False, reportability_fn=None,
+              reportability_facts: dict | None = None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -493,7 +547,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            uk_peers=uk_peers, second_opinion=second_opinion,
                            second_opinion_fn=second_opinion_fn,
                            nydfs_recruit=nydfs_recruit, nydfs_peers=nydfs_peers,
-                           challenge=challenge, challenge_fns=challenge_fns)
+                           challenge=challenge, challenge_fns=challenge_fns,
+                           reportability=reportability,
+                           reportability_fn=reportability_fn,
+                           reportability_facts=reportability_facts)
 
 
 # ----------------------------------------------------------------------------
@@ -512,7 +569,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     nydfs_recruit: bool = False,
                     nydfs_peers: list | None = None,
                     challenge: bool = True,
-                    challenge_fns: dict | None = None) -> dict:
+                    challenge_fns: dict | None = None,
+                    reportability: bool = False,
+                    reportability_fn=None,
+                    reportability_facts: dict | None = None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -529,18 +589,27 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     The two-key release gate (Lena AND the GC) is ALWAYS active: every release on
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
-                    "inject_claims"):
+                    "inject_claims", "reportability"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
     live = clients is None
+    # The reportability mode is its OWN scenario (E3.1): it rides the clean
+    # (normal) base path but runs a per-regime duty-to-notify gate before the
+    # drafters, suppressing the regimes that do not cross their threshold. The
+    # --reportability flag implies the reportability beat; the explicit
+    # reportability= kwarg path (tests) sets it too.
+    if mode == "reportability":
+        reportability = True
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
     # neutralized at the sanitize chokepoint, so the Warden gates on the
     # authoritative canonical values exactly as in a normal run; the attack
-    # changes nothing about the filing, which is the whole point.
-    base_mode = "normal" if mode in ("amendment", "inject_claims") else mode
+    # changes nothing about the filing, which is the whole point. The
+    # reportability beat also rides the clean base.
+    base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability")
+                 else mode)
     inject_claims = mode == "inject_claims"
     # When a recruit beat runs, Triage's fact-record carries a blast radius naming
     # that jurisdiction's entity; that content is what drives the recruit. With
@@ -732,6 +801,28 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         if not materiality_record["material"]:
             suppressed_branches.add("sec")
 
+    # ---- Reportability: per regime, decide whether the duty to notify even
+    # attaches (E3.1). For each startup-drafter regime an LLM applies that
+    # regime's statutory trigger standard (NIS2 Art 23 significant impact, DORA
+    # major-incident RTS, SEC Item 1.05 materiality) to the fact-record and
+    # returns a typed reportable yes/no verdict. The verdict crosses into the
+    # deterministic warden/reportability.py gate as data: a regime BELOW its
+    # threshold is driven to the terminal SUPPRESSED state (no filing, clock
+    # stopped, the named rule recorded); a regime ABOVE its threshold files. The
+    # DECISION is the LLM's per regime; the gating is deterministic. The Warden
+    # makes zero LLM calls here.
+    reportability_record = None
+    if reportability:
+        reportability_record = _reportability_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks,
+            branch_corr=branch_corr, provider_set=provider_set,
+            reportability_fn=reportability_fn,
+            reportability_facts=reportability_facts,
+            draft_timeout=draft_timeout)
+        for rec in reportability_record["regimes"]:
+            if not rec["reportable"]:
+                suppressed_branches.add(rec["branch"])
+
     # ---- Drafters run SEQUENTIALLY (Featherless: one big model at a time)
     filings: list[dict] = []
     claims_by_branch: dict[str, object] = {}
@@ -743,8 +834,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         client = drafters[branch]
         if branch in suppressed_branches:
             # A suppressed branch is terminal; it drafts nothing. The Warden does
-            # not drain a draft it will never receive.
-            trace.say(f"[5.{branch}] {r.regime} branch SUPPRESSED (not material); "
+            # not drain a draft it will never receive. The specific reason (SEC
+            # materiality, or the per-regime reportability threshold) was already
+            # narrated by the phase that drove the SUPPRESS.
+            trace.say(f"[5.{branch}] {r.regime} branch SUPPRESSED (terminal); "
                       f"no filing drafted.")
             continue
         # The facts this drafter asserts. In inject_contradiction the SEC drafter
@@ -1014,6 +1107,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         recovered_retries=RETRY_COUNTER.recovered,
         operability=operability,
         attestation=attestation,
+        reportability=reportability_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -1970,6 +2064,120 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
 
 
 # ----------------------------------------------------------------------------
+# Reportability phase (E3.1). The per-regime duty-to-notify gate: the first real
+# incident-commander / breach-counsel decision, generalized from the SEC-only
+# materiality seam to ALL regimes. For each startup-drafter regime an LLM applies
+# that regime's declarative statutory trigger standard (NIS2 Art 23 significant
+# impact, DORA major-incident RTS classification, SEC Item 1.05 materiality) from
+# floor/regimes.yaml to the fact-record and returns a typed reportable yes/no
+# verdict. Each verdict crosses into the deterministic warden/reportability.py
+# gate as data: a regime BELOW its threshold is driven to the terminal SUPPRESSED
+# state (no filing, clock stopped, the named statutory rule recorded); a regime
+# ABOVE its threshold proceeds to file. The DECISION is the LLM's per regime; the
+# gating is deterministic and replay-verifiable. The Warden makes zero LLM calls.
+# ----------------------------------------------------------------------------
+def _reportability_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
+                         reportability_fn, reportability_facts, draft_timeout) -> dict:
+    """Run the per-regime reportability assessment over the startup-drafter
+    regimes, gate each deterministically, and suppress the ones below threshold.
+
+    `reportability_fn(branch, fact_record, spec)` injects the verdict in tests so
+    the suite needs no live LLM, exactly as materiality_fn does for materiality;
+    when None, the live Featherless reportability assessor is called per regime.
+    `reportability_facts` maps branch -> the fact-record that branch's assessor
+    sees on a live run (defaults to the per-regime scenario fixture), so the live
+    default puts some regimes above and some below their threshold.
+
+    Returns a record (one entry per assessed regime) for the Examiner Packet."""
+    regime_records: list[dict] = []
+    facts_by_branch = reportability_facts or REPORTABILITY_SCENARIO_FACTS
+
+    for branch in REPORTABILITY_BRANCHES:
+        spec = _REGIME_BY_BRANCH.get(branch)
+        if spec is None or spec.reportability is None:
+            # A drafter branch with no declarative reportability standard is a
+            # catalog gap, surfaced structurally rather than silently skipped.
+            raise RuntimeError(
+                f"reportability beat: branch {branch!r} has no reportability "
+                f"standard in the regime catalog")
+        regime = spec.regime_label
+        standard = spec.reportability.standard
+        rule = spec.reportability.rule
+        corr = branch_corr[branch]
+        branch_facts = facts_by_branch.get(branch, CANONICAL_FACTS)
+
+        # 1. Obtain the typed verdict (injected in tests, live LLM otherwise). The
+        #    deterministic gate then consumes ONE ReportabilityVerdict per regime.
+        if reportability_fn is not None:
+            verdict = reportability_fn(branch, branch_facts, spec)
+            if not isinstance(verdict, ReportabilityVerdict):
+                raise RuntimeError(
+                    "reportability_fn must return a ReportabilityVerdict")
+        else:
+            provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+            verdict = assess_reportability(
+                branch_facts, regime=regime, branch=branch, standard=standard,
+                rule=rule, model=model, provider=provider, timeout=draft_timeout,
+                max_attempts=LIVE_NET_ATTEMPTS)
+        log.append("reportability", {
+            "branch": branch, "regime": regime,
+            "reportable": verdict.reportable,
+            "disposition": verdict.disposition(),
+            "rule": rule, "source": verdict.source,
+            "rationale": verdict.rationale,
+        })
+
+        # 2. Deterministic gate: file iff reportable.
+        proceed = reportability_gate(verdict)
+        trace.say(
+            f"[4r] Reportability ({regime}): "
+            + (f"REPORTABLE, the duty attaches and the branch files (source "
+               f"{verdict.source})"
+               if proceed else
+               f"NOT REPORTABLE, suppressing ({rule}) (source {verdict.source})"))
+
+        if not proceed:
+            # 3. The Warden drives the branch to the terminal SUPPRESSED state.
+            #    The branch has only had FACT_RECORD_POSTED, so SUPPRESS fires
+            #    legally from FACT_RECORD_READY -> SUPPRESSED.
+            admitted = _proto(sm, trace, corr, Event.SUPPRESS, TS_FACTS,
+                              "reportability", "materiality")
+            if not admitted:
+                raise RuntimeError(
+                    f"reportability SUPPRESS rejected by the state machine for {corr}")
+            clocks.stop(corr, TS_FACTS)
+            log.append("clock_stopped", {
+                "correlation_id": corr, "ts": TS_FACTS,
+                "reason": f"{branch}_suppressed_not_reportable"})
+            trace.say(
+                f"[4r] {regime} branch SUPPRESSED (terminal); clock stopped, no "
+                f"filing. Rule: {rule}.")
+
+        regime_records.append({
+            "branch": branch,
+            "regime": regime,
+            "standard": standard,
+            "rule": rule,
+            "reportable": verdict.reportable,
+            "disposition": verdict.disposition(),
+            "rationale": verdict.rationale,
+            "source": verdict.source,
+        })
+
+    filed = [r["regime"] for r in regime_records if r["reportable"]]
+    suppressed = [r["regime"] for r in regime_records if not r["reportable"]]
+    trace.say(
+        f"[4r] Reportability summary: {len(filed)} regime(s) reportable "
+        f"({', '.join(filed) or 'none'}); {len(suppressed)} suppressed below "
+        f"threshold ({', '.join(suppressed) or 'none'}).")
+    return {
+        "regimes": regime_records,
+        "filed": filed,
+        "suppressed": suppressed,
+    }
+
+
+# ----------------------------------------------------------------------------
 # Materiality phase. An LLM judgment role applies the SEC "substantial likelihood"
 # materiality standard to the fact-record. Its typed verdict crosses into the
 # deterministic warden/materiality.py gate as data. If "not material", the Warden
@@ -2535,7 +2743,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      nydfs_recruit=None,
                      release_gate=None, released_branches=None,
                      recovered_retries: int = 0, operability=None,
-                     attestation=None) -> dict:
+                     attestation=None, reportability=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -2644,6 +2852,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         }
     if materiality is not None:
         packet["materiality"] = materiality
+    if reportability is not None:
+        packet["reportability"] = reportability
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
@@ -2922,6 +3132,15 @@ def main() -> int:
                              "hours from determination) at the recruit moment. Needs a "
                              "seventh Band agent: BAND_API_KEY_NYDFS / "
                              "BAND_AGENT_ID_NYDFS, created by a human in the Band UI")
+    parser.add_argument("--reportability", action="store_true",
+                        help="run the per-regime reportability / duty-to-notify "
+                             "gate (E3.1): for each regime an LLM applies that "
+                             "regime's statutory trigger standard (NIS2 Art 23 "
+                             "significant impact, DORA major-incident RTS, SEC Item "
+                             "1.05 materiality) and a regime below its threshold is "
+                             "SUPPRESSED on camera with the rule stated, a regime "
+                             "above it files. The judgment is the LLM's; the gate is "
+                             "deterministic Python")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -2936,9 +3155,12 @@ def main() -> int:
                              "proceed plus human escalation on disagreement)")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
-            args.inject_claims]) > 1:
+            args.inject_claims, args.reportability]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
-              "or --inject-claims.")
+              "--inject-claims, or --reportability.")
+        return 1
+    if args.reportability and args.materiality:
+        print("--reportability and --materiality are separate beats; pick one.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
@@ -2949,7 +3171,8 @@ def main() -> int:
     mode = "inject_contradiction" if args.inject_contradiction else \
            "chaos" if args.chaos else \
            "amendment" if args.amendment else \
-           "inject_claims" if args.inject_claims else "normal"
+           "inject_claims" if args.inject_claims else \
+           "reportability" if args.reportability else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 
@@ -2972,7 +3195,8 @@ def main() -> int:
     packet = run_floor(mode=mode, provider_set=args.provider,
                        uk_recruit=args.uk_recruit, materiality=args.materiality,
                        sec_facts=sec_facts, second_opinion=args.second_opinion,
-                       nydfs_recruit=args.nydfs_recruit)
+                       nydfs_recruit=args.nydfs_recruit,
+                       reportability=args.reportability)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0

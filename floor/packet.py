@@ -205,6 +205,62 @@ def _render_reconciliation(rec: dict) -> str:
     return "".join(parts)
 
 
+def _render_reportability(r: dict) -> str:
+    """Render the per-regime reportability / duty-to-notify gate (E3.1), if the
+    reportability beat ran. Per regime: the statutory trigger standard, the
+    reportable/not-reportable verdict, the file/suppress disposition, and the
+    named rule for a suppressed regime. The qualitative call per regime is the
+    LLM's; the gating is deterministic Python, exactly like the SEC materiality
+    seam this generalizes."""
+    if not r or not r.get("regimes"):
+        return ""
+    filed = r.get("filed", [])
+    suppressed = r.get("suppressed", [])
+    all_filed = not suppressed
+    top_cls = "ok" if all_filed else "bad"
+    headline = (
+        f"Reportability assessed across {len(r['regimes'])} regime(s): "
+        f"{len(filed)} crossed the threshold and file, {len(suppressed)} did "
+        f"not and were suppressed.")
+    parts = ["<h2>5a. Per-regime reportability (does the duty even attach?)</h2>",
+             f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+             "<p class='sub'>The first real incident-commander / counsel decision: "
+             "per regime, does this incident cross that regulator's reporting "
+             "THRESHOLD? An LLM applies each regime's statutory trigger standard to "
+             "the fact-record and returns a typed reportable yes/no verdict; the "
+             "verdict crosses into the deterministic Warden gate as data. A regime "
+             "BELOW its threshold is driven to the terminal SUPPRESSED state with "
+             "the rule shown, a regime ABOVE it files. The judgment is the LLM's; "
+             "the gating is pure Python, replay-verifiable.</p>"]
+    rows = []
+    for reg in r["regimes"]:
+        reportable = reg.get("reportable")
+        disposition = "FILE" if reportable else "SUPPRESS"
+        cls = "ok" if reportable else "bad"
+        rule = reg.get("rule") if not reportable else ""
+        rows.append(
+            "<tr><td><strong>" + _esc(reg.get("regime")) + "</strong></td>"
+            "<td>" + _esc(reg.get("standard")) + "</td>"
+            f"<td class='{cls}'>" + ("REPORTABLE" if reportable
+                                     else "NOT REPORTABLE") + "</td>"
+            f"<td class='{cls}'>" + disposition + "</td>"
+            "<td>" + _esc(rule) + "</td>"
+            "<td><code>" + _esc(reg.get("source")) + "</code></td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Regime</th><th>Statutory trigger standard</th>"
+        "<th>Verdict</th><th>Decision</th><th>Rule (if suppressed)</th>"
+        "<th>Decision source (LLM)</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    # The per-regime rationale memos (the LLM's basis, never gated on).
+    for reg in r["regimes"]:
+        if reg.get("rationale"):
+            parts.append(
+                f"<p class='sub'>{_esc(reg.get('regime'))} reportability "
+                f"rationale:</p>")
+            parts.append(f"<pre>{_esc(reg.get('rationale'))}</pre>")
+    return "".join(parts)
+
+
 def _render_materiality(m: dict) -> str:
     """Render the SEC materiality assessment and the suppression decision, if the
     materiality beat ran. The verdict is the LLM's; the gating is deterministic."""
@@ -1074,6 +1130,7 @@ def _render_html(p: dict) -> str:
     security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
+    reportability_block = _render_reportability(p.get("reportability", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
@@ -1229,6 +1286,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 
 <h2>5. Statutory clocks</h2>
 {clock_rows}
+
+{reportability_block}
 
 {materiality_block}
 

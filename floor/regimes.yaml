@@ -31,6 +31,19 @@
 #   recruit (recruit-mode regimes only):
 #     jurisdiction  the blast-radius token that triggers the recruit (e.g. "UK")
 #     name_tokens   tokens matched against a peer's name/handle on /agent/peers
+#   reportability:
+#     standard  the statutory trigger STANDARD this regime applies to decide
+#               whether the incident must be reported at all (the "duty to
+#               notify" / reportability test). This is the declarative threshold
+#               the per-regime reportability beat (E3.1) reads. The qualitative
+#               CALL against this standard is an LLM judgment (floor/reportability.py);
+#               the deterministic warden/reportability.py gate then suppresses a
+#               regime BELOW its threshold or files one ABOVE it. SEC reuses the
+#               SEC Item 1.05 "material" standard the SEC materiality beat already
+#               applies, so the two beats stay consistent.
+#     rule      a short human-readable rule label rendered in the Examiner Packet
+#               when a regime is suppressed below its threshold (e.g. "not
+#               reportable under NIS2 Art 23 significant-impact").
 #
 # The behaviour and demo dates produced from this catalog are byte-identical to
 # the prior hardcoded constants: this file is the SOURCE of those constants, not
@@ -52,6 +65,14 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    reportability:
+      standard: >-
+        NIS2 Article 23 significant impact: an incident is reportable when it
+        has caused or is capable of causing severe operational disruption of the
+        service or financial loss to the entity, or has affected or is capable of
+        affecting other natural or legal persons by causing considerable material
+        or non-material damage.
+      rule: not reportable under NIS2 Art 23 significant-impact
 
   - key: nis2_full
     authority: national CSIRT (NIS2)
@@ -68,6 +89,14 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    reportability:
+      standard: >-
+        NIS2 Article 23 significant impact: an incident is reportable when it
+        has caused or is capable of causing severe operational disruption of the
+        service or financial loss to the entity, or has affected or is capable of
+        affecting other natural or legal persons by causing considerable material
+        or non-material damage.
+      rule: not reportable under NIS2 Art 23 significant-impact
 
   - key: dora
     authority: lead competent authority (DORA, via national NCA)
@@ -84,6 +113,15 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    reportability:
+      standard: >-
+        DORA major incident (Regulation 2022/2554 Art 19, classified under the
+        RTS 2024/1772 criteria): an ICT-related incident is reportable when it
+        is MAJOR, that is, it meets the classification thresholds across clients,
+        financial counterparts and transactions affected, reputational impact,
+        duration and service downtime, geographical spread, data losses, the
+        criticality of services affected, and economic impact.
+      rule: not reportable under DORA major-incident RTS classification
 
   - key: sec
     authority: U.S. Securities and Exchange Commission
@@ -100,6 +138,14 @@ regimes:
     start:
       mode: startup
       anchor: materiality_determination
+    reportability:
+      standard: >-
+        SEC Item 1.05 materiality: a cybersecurity incident is reportable when
+        it is MATERIAL, that is, there is a substantial likelihood that a
+        reasonable investor would consider it important, weighing both
+        quantitative scale and qualitative factors. This is the same "material"
+        standard the SEC materiality beat applies.
+      rule: not reportable under SEC Item 1.05 materiality
 
   - key: uk_ico
     authority: UK Information Commissioner's Office
@@ -118,6 +164,15 @@ regimes:
     recruit:
       jurisdiction: UK
       name_tokens: [uk, ico]
+    reportability:
+      standard: >-
+        UK GDPR / GDPR Article 33 risk to the rights and freedoms of natural
+        persons: a personal-data breach is reportable to the supervisory
+        authority unless it is UNLIKELY to result in a risk to the rights and
+        freedoms of natural persons. A contained breach of encrypted or
+        non-sensitive data with no realistic risk to data subjects need not be
+        notified.
+      rule: not reportable under UK GDPR Art 33 risk-to-rights-and-freedoms
 
   - key: nydfs
     authority: New York State Department of Financial Services (superintendent)
@@ -136,3 +191,11 @@ regimes:
     recruit:
       jurisdiction: NY
       name_tokens: [nydfs]
+    reportability:
+      standard: >-
+        NYDFS 23 NYCRR 500.17(a) materiality: a cybersecurity event is reportable
+        to the superintendent when it has a reasonable likelihood of materially
+        harming any material part of the normal operations of the covered entity,
+        or when notice of it is required to be provided to any other government
+        body, self-regulatory agency, or supervisory body.
+      rule: not reportable under NYDFS 23 NYCRR 500.17 material-harm

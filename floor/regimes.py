@@ -52,6 +52,22 @@ class ClockSpec:
 
 
 @dataclass(frozen=True)
+class ReportabilitySpec:
+    """The declarative reportability / duty-to-notify threshold for one regime.
+
+    `standard` is the statutory trigger standard the regime applies to decide
+    whether the incident must be reported at all (NIS2 significant impact, DORA
+    major incident, GDPR Art 33 risk to rights and freedoms, NYDFS material harm,
+    SEC Item 1.05 materiality). The qualitative CALL against this standard is an
+    LLM judgment (floor/reportability.py); the deterministic
+    warden/reportability.py gate then suppresses a regime below the threshold or
+    files one above it. `rule` is the short human-readable rule label rendered in
+    the Examiner Packet when a regime is suppressed."""
+    standard: str
+    rule: str
+
+
+@dataclass(frozen=True)
 class RegimeSpec:
     """One regime record from the catalog, in typed form.
 
@@ -69,6 +85,7 @@ class RegimeSpec:
     start_anchor: str | None = None
     recruit_jurisdiction: str | None = None
     recruit_name_tokens: tuple[str, ...] = ()
+    reportability: ReportabilitySpec | None = None
 
     @property
     def is_startup(self) -> bool:
@@ -90,6 +107,17 @@ def _parse_regime(record: dict) -> RegimeSpec:
         business_days=bool(clock["business_days"]),
         holiday_calendar=clock["holiday_calendar"],
     )
+    reportability = record.get("reportability")
+    reportability_spec = None
+    if reportability is not None:
+        # A reportability block, when present, must carry BOTH the standard and
+        # the rule. A half-specified block is a catalog error, surfaced
+        # structurally rather than silently treated as "no threshold".
+        standard = " ".join(str(reportability["standard"]).split())
+        reportability_spec = ReportabilitySpec(
+            standard=standard,
+            rule=str(reportability["rule"]),
+        )
     return RegimeSpec(
         key=record["key"],
         authority=record["authority"],
@@ -102,6 +130,7 @@ def _parse_regime(record: dict) -> RegimeSpec:
         start_anchor=start.get("anchor"),
         recruit_jurisdiction=recruit.get("jurisdiction"),
         recruit_name_tokens=tuple(recruit.get("name_tokens", ())),
+        reportability=reportability_spec,
     )
 
 
