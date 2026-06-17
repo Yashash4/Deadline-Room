@@ -343,6 +343,68 @@ def _render_affected_party(ap: dict) -> str:
     return "".join(parts)
 
 
+def _render_lead_authority(la: dict | None) -> str:
+    """Render the GDPR Art 56 lead-supervisory-authority (one-stop-shop) routing
+    (E3.6): the controller's main establishment, the single LEAD authority that
+    receives the primary Art 33 notification, and the concerned authorities reached
+    THROUGH the lead rather than filed to independently.
+
+    The win this section makes visible: a sophisticated cross-border filer does NOT
+    send N independent EU notices. Under GDPR Art 56(1) the authority of the
+    controller's main establishment is the single lead; the others are concerned
+    authorities (Art 4(22)) coordinated through it (Art 60). The room resolves this
+    deterministically from declared data, the same no-LLM routing the Warden does.
+    Rendered only when the cross-border beat resolved a routing."""
+    if not la:
+        return ""
+    lead = la.get("lead") or {}
+    concerned = la.get("concerned") or []
+    parts = ["<h3>GDPR Art 56 one-stop-shop routing (lead + concerned authorities)</h3>"]
+    parts.append(
+        "<p class='sub'>Cross-border GDPR is not N independent notices to N "
+        "authorities. Under <strong>GDPR Article 56(1)</strong> the supervisory "
+        "authority of the controller's MAIN ESTABLISHMENT is the single LEAD "
+        "authority; the other in-scope member states' authorities are "
+        "<em>concerned</em> authorities (Art 4(22)) reached THROUGH the lead under "
+        "the Art 60 cooperation procedure. The primary Art 33 notification is filed "
+        "to the lead. This is a pure deterministic ROUTING decision (no LLM, no "
+        "judgment), resolved from declared data.</p>")
+    parts.append(
+        f"<p class='sub'>Controller: <strong>{_esc(la.get('controller'))}</strong>; "
+        f"main establishment: <code>{_esc(la.get('main_establishment'))}</code> "
+        f"({_esc(lead.get('country'))}).</p>")
+    if not la.get("cross_border"):
+        parts.append(
+            f"<p class='ok'>Single EU member state in scope: the "
+            f"<strong>{_esc(lead.get('authority'))}</strong> "
+            f"({_esc(lead.get('country'))}) receives the Art 33 notification "
+            f"directly. No one-stop-shop split (no concerned authorities).</p>")
+        return "".join(parts)
+    rows = [
+        "<tr><td><strong>LEAD</strong></td>"
+        "<td><strong>" + _esc(lead.get("authority")) + "</strong></td>"
+        "<td>" + _esc(lead.get("country")) + "</td>"
+        "<td>primary Art 33 notification (Art 56(1) main-establishment lead)</td></tr>"]
+    for a in concerned:
+        rows.append(
+            "<tr><td>concerned</td>"
+            "<td>" + _esc(a.get("authority")) + "</td>"
+            "<td>" + _esc(a.get("country")) + "</td>"
+            "<td>copied through the lead (Art 4(22) concerned authority, Art 60)</td>"
+            "</tr>")
+    parts.append(
+        "<table><thead><tr><th>Role</th><th>Supervisory authority</th>"
+        "<th>Member state</th><th>How it is reached</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    parts.append(
+        f"<p class='ok'><strong>One lead, "
+        f"{len(concerned)} concerned authorit{'y' if len(concerned) == 1 else 'ies'}: "
+        f"the GDPR notification routes through the "
+        f"{_esc(lead.get('authority'))}, not as {1 + len(concerned)} independent "
+        f"filings.</strong></p>")
+    return "".join(parts)
+
+
 def _render_cross_border(cb: dict) -> str:
     """Render the cross-border obligation-conflict beat (E3.4): the in-scope
     regimes, the mutually exclusive obligations the deterministic detector caught,
@@ -373,6 +435,10 @@ def _render_cross_border(cb: dict) -> str:
     parts.append(
         f"<p class='sub'>Regimes in scope for this incident: "
         f"<code>{_esc(in_scope)}</code>.</p>")
+    # GDPR Art 56 one-stop-shop routing (E3.6): the lead supervisory authority and
+    # the concerned authorities, rendered whenever the cross-border beat resolved a
+    # routing. It is a pure deterministic ROUTING decision, not a judgment.
+    parts.append(_render_lead_authority(cb.get("lead_authority")))
     if not conflicts:
         parts.append(
             "<p class='ok'>No cross-border obligation conflict: the in-scope "

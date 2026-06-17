@@ -108,6 +108,8 @@ from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.determination import build_determination_record  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
+from floor.lead_authority import (  # noqa: E402
+    SupervisoryAuthority, resolve as resolve_lead_authority)
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
 from floor.materiality import (  # noqa: E402
@@ -279,6 +281,13 @@ CROSS_BORDER_IN_SCOPE_FACTS = {
     "blast_radius": ["EU: Meridian Trust Bank N.V.",
                      "UK: Meridian Trust UK Ltd (London subsidiary)",
                      "US: Meridian Trust ADRs (SEC registrant)"],
+    # The EU member states the cross-border breach actually touches (E3.6). These
+    # drive the GDPR Art 56 one-stop-shop routing: the controller's main
+    # establishment (Ireland, from the catalog) is the LEAD supervisory authority,
+    # the others (Germany, France, Netherlands) are "concerned" authorities reached
+    # through the lead. This is the EU-internal scope; the UK (post-Brexit, its own
+    # ICO) and the US (SEC) are separate regimes outside the GDPR one-stop-shop.
+    "eu_member_states_in_scope": ["IE", "DE", "FR", "NL"],
 }
 
 # The human direction recorded at the two-key gate that resolves the cross-border
@@ -435,6 +444,19 @@ AFFECTED_PARTY_FACTS = dict(CANONICAL_FACTS)
 # full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
 # records, so adding a regulator is appending a YAML block, not editing code.
 REGIME_CATALOG = regimes.load_catalog()
+
+# E3.6: the GDPR Art 56 one-stop-shop routing data, loaded once from the catalog.
+# CONTROLLER carries the regulated entity's main establishment (Ireland), the
+# Art 56(1) basis for the lead supervisory authority; EU_SUPERVISORY_AUTHORITIES is
+# the honest, cited member-state -> authority map. Both are pure declarative data
+# the deterministic floor/lead_authority.py routing reads; neither gates anything.
+CONTROLLER = regimes.load_controller()
+EU_SUPERVISORY_AUTHORITIES = {
+    state: SupervisoryAuthority(
+        member_state=spec.member_state, authority=spec.authority,
+        country=spec.country)
+    for state, spec in regimes.load_supervisory_authorities().items()
+}
 
 # Branch -> RegimeSpec, for the reportability beat to read each regime's
 # declarative duty-to-notify standard + rule (and any other per-branch catalog
@@ -1082,7 +1104,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             sm=sm, trace=trace, log=log, warden=warden, release_gate=release_gate,
             branch_corr=branch_corr,
             in_scope_branches=list(DRAFTER_BRANCHES_THIS_RUN),
-            drafter_ids=drafter_ids, recruit_record=recruit_record)
+            drafter_ids=drafter_ids, recruit_record=recruit_record,
+            fact_record=fact_record)
 
     # ---- Cross-filing contradiction diff (the money beat) -------------
     blocked, resolved = _diff_and_gate(
@@ -2763,18 +2786,90 @@ def _regime_obligations_in_scope(in_scope_branches: list[str]) -> list[RegimeObl
     return out
 
 
+def _lead_authority_routing(fact_record: dict):
+    """Resolve the GDPR Art 56 one-stop-shop routing for this incident, from the
+    declared controller main establishment and the EU member states the fact-record
+    puts in scope. Pure: no LLM, no network. Returns None when the fact-record names
+    no EU member state in scope (the routing does not apply)."""
+    in_scope = list(fact_record.get("eu_member_states_in_scope", []) or [])
+    if not in_scope:
+        return None
+    return resolve_lead_authority(
+        CONTROLLER.main_establishment, in_scope, EU_SUPERVISORY_AUTHORITIES)
+
+
+def _lead_routing_record(routing) -> dict | None:
+    """Lift the typed LeadRouting into the packet-ready, JSON-serializable record
+    (lead + concerned + the per-authority routing). None passes through as None."""
+    if routing is None:
+        return None
+    return {
+        "controller": CONTROLLER.name,
+        "main_establishment": routing.main_establishment,
+        "cross_border": routing.cross_border,
+        "lead": {"member_state": routing.lead.member_state,
+                 "authority": routing.lead.authority,
+                 "country": routing.lead.country, "role": routing.lead.role},
+        "concerned": [
+            {"member_state": a.member_state, "authority": a.authority,
+             "country": a.country, "role": a.role}
+            for a in routing.concerned],
+        "summary": routing.human(),
+    }
+
+
 def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
-                        in_scope_branches, drafter_ids, recruit_record) -> dict:
+                        in_scope_branches, drafter_ids, recruit_record,
+                        fact_record) -> dict:
     """Detect cross-border obligation conflicts among the in-scope regimes and, on
     a conflict, post the BLOCK and route the recorded decision to the human two-key
-    gate. Returns the packet-ready record. Makes ZERO LLM calls: the detection is a
-    pure table scan over declared data, and the resolution is the HUMAN's via the
-    existing two-key gate, never the Warden's.
+    gate. ALSO resolve the GDPR Art 56 lead-supervisory-authority (one-stop-shop)
+    routing for the EU member states in scope, so the room routes the GDPR
+    notification through the LEAD authority with the others marked concerned instead
+    of treating every EU authority as independent. Returns the packet-ready record.
+    Makes ZERO LLM calls: the conflict detection is a pure table scan over declared
+    data, the Art 56 routing is a pure data-driven lookup, and the resolution is the
+    HUMAN's via the existing two-key gate, never the Warden's.
 
     The conflict event and the human resolution are logged as additive run-log
     events so they are hash-chained, replayed, and signed. This is the cross-border
     beat's OWN scenario, so moving the sha for THIS run is expected; the four
     default sealed captures are untouched (they never run this phase)."""
+    # GDPR Art 56 one-stop-shop routing: deterministic, data-driven, render-only. It
+    # is resolved here and logged as an additive event (this beat's own scenario);
+    # it gates nothing, the Warden makes no choice, it RENDERS the correct routing.
+    lead_routing = _lead_authority_routing(fact_record)
+    lead_record = _lead_routing_record(lead_routing)
+    if lead_routing is not None:
+        log.append("lead_authority_routing", {
+            "main_establishment": lead_routing.main_establishment,
+            "lead": lead_routing.lead.authority,
+            "concerned": [a.authority for a in lead_routing.concerned],
+            "cross_border": lead_routing.cross_border,
+        })
+        trace.say(
+            f"[XB] GDPR Art 56 one-stop-shop: main establishment "
+            f"{lead_routing.lead.country}, LEAD authority {lead_routing.lead.authority}; "
+            + (f"concerned authorities reached through the lead: "
+               f"{', '.join(a.authority for a in lead_routing.concerned)}."
+               if lead_routing.concerned else
+               "single EU member state in scope, no concerned authorities."))
+        if warden is not None and lead_routing.concerned:
+            # Address the racing drafters (the live Band API rejects a self-mention),
+            # so the routing decision lands in the room visibly. The post is purely a
+            # visibility side-effect; it gates nothing.
+            _warden_announce(
+                warden, trace,
+                f"GDPR ART 56 ROUTING. Main establishment in "
+                f"{lead_routing.lead.country}; the {lead_routing.lead.authority} is "
+                f"the lead supervisory authority. The "
+                f"{', '.join(a.authority for a in lead_routing.concerned)} are "
+                f"concerned authorities, reached THROUGH the lead, not filed to "
+                f"independently. The primary Art 33 notification is routed to the "
+                f"lead.",
+                mentions=list(drafter_ids.values()),
+                dedup_key=f"warden:art56-routing:{INCIDENT_ID}")
+
     obligations = _regime_obligations_in_scope(in_scope_branches)
     conflicts = detect_obligation_conflicts(obligations)
     log.append("cross_border_scan", {
@@ -2792,6 +2887,7 @@ def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
         return {
             "in_scope_regimes": [o.regime for o in obligations],
             "conflicts": [], "blocked": False, "resolution": None,
+            "lead_authority": lead_record,
         }
 
     # A real conflict. The Warden HALTS and posts the BLOCK, naming both regulators
@@ -2869,12 +2965,14 @@ def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
         "decision": resolution.decision,
     })
     if warden is not None:
+        # Address the racing drafters (the live Band API rejects a self-mention), so
+        # the resolution lands in the room visibly. Trace-only; gates nothing.
         _warden_announce(
             warden, trace,
             f"CROSS-BORDER RESOLVED by two human keys "
             f"({', '.join(resolution.decided_by)}). The humans recorded the "
             f"decision; the Warden did not choose. Signoff may proceed.",
-            mentions=None,
+            mentions=list(drafter_ids.values()),
             dedup_key=f"warden:xborder-resolved:{INCIDENT_ID}")
     trace.say("[XB] Cross-border conflict resolved by the human two-key gate; the "
               "Warden never decided which law wins. Proceeding to signoff.")
@@ -2893,6 +2991,7 @@ def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
             "decision": resolution.decision,
             "ts": TS_CROSS_BORDER_RESOLVED,
         },
+        "lead_authority": lead_record,
     }
 
 

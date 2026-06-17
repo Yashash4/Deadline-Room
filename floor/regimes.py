@@ -124,6 +124,32 @@ class ObligationSpec:
 
 
 @dataclass(frozen=True)
+class ControllerSpec:
+    """The regulated entity's GDPR establishment data (E3.6).
+
+    `name` is the controller; `main_establishment` is the member-state token (IE,
+    DE, FR, NL) where it has its main establishment in the EU, which under GDPR
+    Article 56(1) determines the LEAD supervisory authority for cross-border
+    processing. Pure declarative data: the deterministic floor/lead_authority.py
+    routing reads it, it gates nothing."""
+    name: str
+    main_establishment: str
+
+
+@dataclass(frozen=True)
+class SupervisoryAuthoritySpec:
+    """One EU member state's data-protection supervisory authority (E3.6).
+
+    `member_state` is the ISO-style token the Art 56 routing keys on; `authority`
+    is the authority's name (filed to as lead, or copied through the lead as
+    concerned); `country` is the human-readable label rendered for the examiner.
+    Pure declarative data read by floor/lead_authority.py; it gates nothing."""
+    member_state: str
+    authority: str
+    country: str
+
+
+@dataclass(frozen=True)
 class RegimeSpec:
     """One regime record from the catalog, in typed form.
 
@@ -253,6 +279,58 @@ def load_catalog(path: str | Path | None = None) -> list[RegimeSpec]:
 
 def by_key(specs: list[RegimeSpec]) -> dict[str, RegimeSpec]:
     return {s.key: s for s in specs}
+
+
+def load_controller(path: str | Path | None = None) -> ControllerSpec:
+    """Read the regulated entity's GDPR establishment data from the catalog (E3.6).
+
+    Returns the typed ControllerSpec the Art 56 routing reads. Raises if the
+    `controller` block, or either required field, is missing: a half-specified
+    controller is a catalog error surfaced structurally, never silently treated as
+    "no main establishment"."""
+    p = Path(path) if path is not None else _CATALOG_PATH
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    controller = data.get("controller") if isinstance(data, dict) else None
+    if not controller:
+        raise ValueError(f"regime catalog {p} has no 'controller' block")
+    name = str(controller["name"]).strip()
+    main = str(controller["main_establishment"]).strip().upper()
+    if not name or not main:
+        raise ValueError(
+            f"controller in {p} must declare both name and main_establishment")
+    return ControllerSpec(name=name, main_establishment=main)
+
+
+def load_supervisory_authorities(
+        path: str | Path | None = None) -> dict[str, SupervisoryAuthoritySpec]:
+    """Read the EU supervisory-authority map from the catalog (E3.6).
+
+    Returns a member-state-token -> SupervisoryAuthoritySpec dict the Art 56 routing
+    keys on. Raises if the block is missing, a record is half-specified, or a
+    member-state token is declared twice (a duplicate is an ambiguous catalog error,
+    surfaced structurally rather than silently overwriting)."""
+    p = Path(path) if path is not None else _CATALOG_PATH
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    records = data.get("eu_supervisory_authorities") if isinstance(data, dict) else None
+    if not records:
+        raise ValueError(
+            f"regime catalog {p} has no 'eu_supervisory_authorities' list")
+    out: dict[str, SupervisoryAuthoritySpec] = {}
+    for record in records:
+        state = str(record["member_state"]).strip().upper()
+        authority = str(record["authority"]).strip()
+        country = str(record["country"]).strip()
+        if not state or not authority or not country:
+            raise ValueError(
+                f"supervisory authority record in {p} must declare member_state, "
+                f"authority, and country")
+        if state in out:
+            raise ValueError(
+                f"member state {state!r} declared twice in "
+                f"eu_supervisory_authorities")
+        out[state] = SupervisoryAuthoritySpec(
+            member_state=state, authority=authority, country=country)
+    return out
 
 
 def startup_regimes(specs: list[RegimeSpec]) -> list[RegimeSpec]:

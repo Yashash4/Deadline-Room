@@ -95,6 +95,53 @@
 # The behaviour and demo dates produced from this catalog are byte-identical to
 # the prior hardcoded constants: this file is the SOURCE of those constants, not
 # a change to them.
+#
+# controller (E3.6, GDPR Art 56 one-stop-shop routing):
+#   The regulated entity's GDPR establishment data, declared honestly as DATA so
+#   the pure no-LLM floor/lead_authority.py routing reads it rather than hardcoding
+#   a lead authority. `main_establishment` is the member-state token (ISO-style)
+#   where the controller has its main establishment in the EU, which under GDPR
+#   Article 56(1) determines the LEAD supervisory authority. `name` is the
+#   controller for the examiner. This NEVER gates, clocks, or blocks anything; it
+#   is the input to a deterministic routing decision the packet renders.
+#
+# eu_supervisory_authorities (E3.6):
+#   The honest, cited map of EU member state -> its data-protection supervisory
+#   authority, a small set covering the controller's main establishment and the
+#   member states the cross-border incident can put in scope. Each record carries:
+#     member_state  the ISO-style member-state token the routing keys on (IE, DE,
+#                   FR, NL).
+#     authority     the supervisory authority's name (the one Art 33 notification
+#                   is filed to when it is the lead, or copied through the lead when
+#                   it is concerned).
+#     country       the human-readable country label rendered for the examiner.
+#   Under GDPR Art 56(1) the authority of the main establishment is the single LEAD
+#   supervisory authority; under Art 4(22) every other in-scope member state's
+#   authority is a "concerned" authority, reached THROUGH the lead under the Art 60
+#   cooperation procedure, not filed to independently. The routing is a pure
+#   data-driven lookup (floor/lead_authority.py); this catalog is its only source.
+
+controller:
+  name: Meridian Trust Bank N.V.
+  # Main establishment in Ireland: GDPR Art 56(1) makes the Irish Data Protection
+  # Commission (DPC) the lead supervisory authority for this controller's
+  # cross-border processing. (A common real one-stop-shop lead for cross-border
+  # financial controllers with an Irish main establishment.)
+  main_establishment: IE
+
+eu_supervisory_authorities:
+  - member_state: IE
+    authority: Irish Data Protection Commission (DPC)
+    country: Ireland
+  - member_state: DE
+    authority: German Federal Commissioner for Data Protection (BfDI)
+    country: Germany
+  - member_state: FR
+    authority: Commission Nationale de l'Informatique et des Libertes (CNIL)
+    country: France
+  - member_state: NL
+    authority: Dutch Data Protection Authority (Autoriteit Persoonsgegevens)
+    country: Netherlands
 
 regimes:
   - key: nis2_early
