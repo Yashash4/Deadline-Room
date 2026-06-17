@@ -1,0 +1,26 @@
+{
+  "standard": "RFC 3161 (Time-Stamp Protocol)",
+  "tsa": "Deadline Room demo TSA",
+  "demo_tsa": true,
+  "pki_status": 0,
+  "pki_status_string": "granted",
+  "policy_oid": "1.3.6.1.4.1.99999.3161.1",
+  "serial_number": 1,
+  "gen_time": "2026-06-17T00:00:00+00:00",
+  "hash_algorithm": "sha256",
+  "hash_oid": "2.16.840.1.101.3.4.2.1",
+  "timestamped_digest": "cca411b2c6954807c35faed7c3160876f51b2e259dee54f55e64dedcf7741a77",
+  "tst_info_der": "3057020101060b2b06010401868d1f9859013031300d060960864801650304020105000420cca411b2c6954807c35faed7c3160876f51b2e259dee54f55e64dedcf7741a77020101180f32303236303631373030303030305a",
+  "signature_algorithm": "ed25519",
+  "token_signature": "fc6197133218f9c29df2c6c96e5f125c68831e9c9aa2ebd49a5cdbbc1322d0b1a6f6dfa0b10d39efd718a504b19ccf59c07eece95282ab1741812e13cab49208",
+  "tsa_public_key": "56deda215deb0b6bd2ff53099364c338b8d3c94a7932c3759c6eefbf410b4bbe",
+  "tsa_pubkey_fingerprint": "81c450e2d62432d9",
+  "caveat": "Demo TSA: the RFC 3161 mechanism is fully real (the messageImprint is a real sha256 of the signed artifact, the TSTInfo is real DER, the token is a real Ed25519 signature over it, and one flipped byte fails verification), but this timestamp is issued by a LOCAL demo Time-Stamping Authority whose key ships with the repo, not by a qualified third-party TSA (DigiCert, freeTSA). It proves 'this digest was bound to this genTime and signed by the demo TSA key', not that an independent, trusted authority witnessed it. Pointing the same interface at a real RFC 3161 TSA is a deployment configuration (Phase 2).",
+  "bound": {
+    "sha256": "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3",
+    "chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
+    "attestation_sha": "e95b0420feed3ebf3e3e6196710d8035f40e700ca7d73e538bf1e84f33364e71",
+    "fact_record_hash": "235727614ebe1cf388bdba7722f4d818ca7163e8198284c3b4052bab65dde06f"
+  },
+  "artifact_digest": "cca411b2c6954807c35faed7c3160876f51b2e259dee54f55e64dedcf7741a77"
+}

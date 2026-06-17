@@ -41,6 +41,13 @@ from warden.chain import head_for_log  # noqa: E402
 from warden.intoto import attestation_for_capture, sidecar_path_for  # noqa: E402
 from warden.replay import RunLog  # noqa: E402
 from warden.signing import sign_run_log_jsonl, verify_run_log_jsonl  # noqa: E402
+from warden.timestamp import (  # noqa: E402
+    sidecar_path_for as tst_sidecar_path_for,
+)
+from warden.timestamp import (  # noqa: E402
+    timestamp_signature_record,
+    verify_timestamp_token,
+)
 
 DATA = REPO_ROOT / "web" / "data"
 SCENARIOS = ("normal", "inject_contradiction", "chaos", "amendment")
@@ -98,6 +105,16 @@ def _resign(mode: str) -> str:
     envelope = attestation_for_capture(jsonl, packet, subject_name=log_path.name)
     intoto_path.write_text(json.dumps(envelope, indent=2) + "\n", encoding="utf-8")
 
+    # Regenerate the RFC 3161 timestamp sidecar over the freshly sealed signature.
+    # The demo TSA stamps a FIXED genTime (never now()), so the token is byte-stable
+    # and reproducible. It is an additive sidecar derived read-only from the
+    # signature record; the run-log/packet/sig.json/intoto bytes are never touched.
+    tst_path = tst_sidecar_path_for(log_path)
+    token = timestamp_signature_record(signature)
+    if not verify_timestamp_token(token, signature).valid:
+        raise SystemExit(f"{mode}: freshly issued RFC 3161 timestamp does not verify")
+    tst_path.write_text(json.dumps(token, indent=2) + "\n", encoding="utf-8")
+
     # The run-log bytes must be untouched: this script is derived/read-only.
     if log_path.read_bytes() != before_bytes:
         raise SystemExit(f"{mode}: run-log bytes changed; that must never happen")
@@ -111,7 +128,8 @@ def main() -> int:
         print(f"  {mode:22s} re-signed over sha256 + chain_head + attestation_sha + "
               f"fact_record_hash (head {head[:16]}...)")
     print("Re-signed every captured scenario over the 4-field bound payload and "
-          "regenerated the in-toto sidecars. Run-log bytes unchanged.")
+          "regenerated the in-toto and RFC 3161 timestamp sidecars. Run-log bytes "
+          "unchanged.")
     return 0
 
 

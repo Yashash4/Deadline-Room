@@ -656,6 +656,46 @@ def _render_attestation(att: dict) -> str:
     return "".join(parts)
 
 
+def _render_timestamp(ts: dict) -> str:
+    """Render the RFC 3161 trusted-timestamp line: WHEN the signed artifact was
+    sealed, derived read-only from the timestamp token sidecar.
+
+    The detached signature proves WHO signed the run; this line adds WHEN. A
+    Time-Stamping Authority bound the signed artifact's digest (the sha256 of the
+    bound payload the Ed25519 signature covers) to a genTime and signed that
+    binding under RFC 3161. The line is purely DERIVED from the token and never
+    enters the hashed run log; a packet without a timestamp token renders nothing,
+    so a sealed capture's bytes are unaffected.
+
+    The honest demo-TSA caveat travels with the line: the RFC 3161 mechanism is
+    real, but the authority is a local demo, not a qualified third-party TSA, which
+    is a deployment configuration."""
+    if not ts or not ts.get("gen_time"):
+        return ""
+    gen = ts.get("gen_time", "")
+    standard = ts.get("standard", "RFC 3161 (Time-Stamp Protocol)")
+    serial = ts.get("serial_number", "")
+    policy = ts.get("policy_oid", "")
+    tsa = ts.get("tsa", "demo TSA")
+    digest = ts.get("artifact_digest", "")
+    caveat = ts.get("caveat", "")
+    parts = ["<h2>8f. Trusted timestamp (RFC 3161)</h2>",
+             f"<p class='ok'><strong>This signed artifact was timestamped at "
+             f"{_esc(gen)}.</strong></p>",
+             "<p class='sub'>A Time-Stamping Authority bound the signed artifact's "
+             "digest (sha256 of the bound payload the Warden signature was taken "
+             "over) to a point in time and signed that binding under "
+             f"<code>{_esc(standard)}</code>. The detached signature proves WHO "
+             "signed the run; this proves WHEN. A flipped digest byte or a tampered "
+             "token makes the timestamp fail to verify.</p>",
+             _rows(["Standard", "TSA", "Timestamp (genTime)", "Serial", "Policy OID",
+                    "Artifact digest"],
+                   [[standard, tsa, gen, serial, policy, digest]])]
+    if caveat:
+        parts.append(f"<p class='sub'><em>{_esc(caveat)}</em></p>")
+    return "".join(parts)
+
+
 def _render_release(rel: dict) -> str:
     """Render the two-key release gate: both human sign-offs (Lena and the GC) per
     released branch, proving segregation of duties (one key alone never releases)."""
@@ -1039,6 +1079,7 @@ def _render_html(p: dict) -> str:
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
     attestation_block = _render_attestation(p.get("attestation", {}))
+    timestamp_block = _render_timestamp(p.get("timestamp", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
     operability_block = _render_operability(p.get("operability", {}))
     pending = p.get("pending", [])
@@ -1214,6 +1255,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {release_block}
 
 {attestation_block}
+
+{timestamp_block}
 
 {reliability_block}
 
