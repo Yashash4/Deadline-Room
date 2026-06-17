@@ -84,6 +84,7 @@ from warden.liveness import LivenessWatchdog  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
 from warden.reportability import (  # noqa: E402
     ReportabilityVerdict, gate as reportability_gate)
+from warden.determination import validate_determination  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
@@ -99,6 +100,7 @@ from floor.challenger import challenge_filing  # noqa: E402
 from floor.fact_record import fact_record_hash  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
+from floor.determination import build_determination_record  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing)
@@ -2064,6 +2066,64 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
 
 
 # ----------------------------------------------------------------------------
+# Reasonable-basis determination record (E3.2). When the materiality /
+# reportability role makes a file/suppress call, the room emits the structured,
+# contemporaneous record that documents WHY: the named legal standard, and a
+# factor table where each factor the standard weighs is bound to the EXACT
+# canonical fact-record field it rests on. The factor->fact binding and the record
+# shape are deterministic Python (floor/determination.py); the pure
+# warden/determination.py validator confirms every cited field exists; the record
+# is logged as ONE additive run-log event so it is hash-chained, replayed, and
+# signed exactly like the materiality / reportability event beside it. It GATES
+# NOTHING: the file/suppress decision stays the typed boolean from the verdict the
+# deterministic gate already consumed. This rides ONLY the materiality /
+# reportability beat, never the four default sealed captures.
+# ----------------------------------------------------------------------------
+def _emit_determination_record(*, log, branch, regime, standard, disposition,
+                               fact_record, source, trace) -> dict:
+    """Build, validate, and log ONE reasonable-basis determination record for a
+    file/suppress call, returning the packet-ready dict (the record plus its
+    reasonable-basis validation).
+
+    The record is built deterministically (factor->fact binding + the named
+    standard + the disposition copied verbatim from the verdict), validated by the
+    pure warden validator (every cited fact-record field must exist), and appended
+    as a single `determination_record` event so it is sealed in the run exactly
+    like the materiality / reportability event it documents. Nothing here gates:
+    the disposition is the verdict's, not recomputed."""
+    record = build_determination_record(
+        branch=branch, regime=regime, standard=standard,
+        disposition=disposition, fact_record=fact_record, source=source)
+    basis = validate_determination(record, fact_record)
+    log.append("determination_record", {
+        "branch": branch,
+        "regime": regime,
+        "standard": standard,
+        "disposition": disposition,
+        "source": source,
+        "factors": [
+            {"name": f.name, "value": f.value, "fact_field": f.fact_field,
+             "qualitative": f.qualitative}
+            for f in record.factors
+        ],
+        "reasonable_basis_complete": basis.complete,
+        "missing_factors": [
+            {"factor": name, "fact_field": fieldname}
+            for name, fieldname in basis.missing_factors
+        ],
+    })
+    trace.say(
+        f"[RB] Reasonable-basis determination ({regime}): {len(record.factors)} "
+        f"factor(s) weighed under '{record.standard.split(':')[0]}', each bound to "
+        f"a canonical fact-record field; basis "
+        + ("COMPLETE (every cited field exists)." if basis.complete
+           else f"INCOMPLETE (missing {', '.join(f for _, f in basis.missing_factors)})."))
+    out = record.as_dict()
+    out["reasonable_basis"] = basis.as_dict()
+    return out
+
+
+# ----------------------------------------------------------------------------
 # Reportability phase (E3.1). The per-regime duty-to-notify gate: the first real
 # incident-commander / breach-counsel decision, generalized from the SEC-only
 # materiality seam to ALL regimes. For each startup-drafter regime an LLM applies
@@ -2127,6 +2187,16 @@ def _reportability_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
             "rationale": verdict.rationale,
         })
 
+        # 1b. Emit the reasonable-basis determination record (E3.2): the named
+        #     standard + the factor table (each factor bound to a canonical
+        #     fact-record field) + the disposition, logged as ONE additive event so
+        #     it is hash-chained, replayed, and signed. It documents the basis; it
+        #     gates nothing (the disposition is the verdict's).
+        determination = _emit_determination_record(
+            log=log, branch=branch, regime=regime, standard=standard,
+            disposition=verdict.disposition(), fact_record=branch_facts,
+            source=verdict.source, trace=trace)
+
         # 2. Deterministic gate: file iff reportable.
         proceed = reportability_gate(verdict)
         trace.say(
@@ -2162,6 +2232,7 @@ def _reportability_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
             "disposition": verdict.disposition(),
             "rationale": verdict.rationale,
             "source": verdict.source,
+            "determination": determination,
         })
 
     filed = [r["regime"] for r in regime_records if r["reportable"]]
@@ -2259,6 +2330,19 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
         "memo": verdict.memo,
     })
 
+    # 1b. Emit the reasonable-basis determination record (E3.2) for the SEC
+    #     materiality call: the named SEC Item 1.05 standard (from the catalog, the
+    #     same "material" standard this beat applies) + the factor table (each
+    #     factor bound to a canonical fact-record field) + the disposition, logged
+    #     as ONE additive event so it is hash-chained, replayed, and signed. It
+    #     documents the basis; it gates nothing (the disposition is the verdict's).
+    sec_spec = _REGIME_BY_BRANCH["sec"]
+    determination_record = _emit_determination_record(
+        log=log, branch="sec", regime=sec_spec.regime_label,
+        standard=sec_spec.reportability.standard,
+        disposition=verdict.disposition(), fact_record=sec_facts,
+        source=verdict.source, trace=trace)
+
     # 2. Deterministic gate: proceed iff material.
     proceed = materiality_gate(verdict)
     trace.say(f"[4m] Materiality assessment (SEC): "
@@ -2285,6 +2369,7 @@ def _materiality_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
         "disposition": verdict.disposition(),
         "memo": verdict.memo,
         "source": verdict.source,
+        "determination": determination_record,
     }
     if second_opinion_record is not None:
         record["second_opinion"] = second_opinion_record

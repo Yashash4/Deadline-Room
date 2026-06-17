@@ -251,13 +251,68 @@ def _render_reportability(r: dict) -> str:
         "<th>Verdict</th><th>Decision</th><th>Rule (if suppressed)</th>"
         "<th>Decision source (LLM)</th></tr></thead><tbody>"
         + "".join(rows) + "</tbody></table>")
-    # The per-regime rationale memos (the LLM's basis, never gated on).
+    # The per-regime rationale memos (the LLM's basis, never gated on) followed by
+    # that regime's reasonable-basis determination record (the factor table, each
+    # factor bound to a canonical fact-record field): the artifact a litigator
+    # subpoenas, documented and signed per reportable judgment.
     for reg in r["regimes"]:
         if reg.get("rationale"):
             parts.append(
                 f"<p class='sub'>{_esc(reg.get('regime'))} reportability "
                 f"rationale:</p>")
             parts.append(f"<pre>{_esc(reg.get('rationale'))}</pre>")
+        parts.append(_render_determination(reg.get("determination", {})))
+    return "".join(parts)
+
+
+def _render_determination(d: dict) -> str:
+    """Render the reasonable-basis determination record (E3.2): the named legal
+    standard, the factor table where each factor is bound to the exact canonical
+    fact-record FIELD it rests on, the disposition, and the reasonable-basis
+    validation (every cited field exists). This is the artifact a litigator
+    subpoenas: a documented, signed, replayable reasonable basis, not "an AI said
+    no". The factor->fact binding and the record are deterministic Python; the
+    validator gates nothing."""
+    if not d or not d.get("factors"):
+        return ""
+    standard = d.get("standard", "")
+    disposition = (d.get("disposition") or "").upper()
+    basis = d.get("reasonable_basis") or {}
+    complete = basis.get("complete", True)
+    basis_cls = "ok" if complete else "bad"
+    basis_line = (
+        "Reasonable basis COMPLETE: every weighed factor is bound to a field the "
+        "canonical fact-record carries." if complete else
+        "Reasonable basis INCOMPLETE: a weighed factor cites a field not present "
+        "in the fact-record (flagged below).")
+    parts = [
+        "<h3>Reasonable-basis determination record</h3>",
+        f"<p class='sub'>Standard applied: <strong>{_esc(standard)}</strong></p>",
+        f"<p class='sub'>Disposition: <strong>{_esc(disposition)}</strong> "
+        f"(carried verbatim from the verdict the deterministic gate consumed; the "
+        f"record documents the basis, it does not re-decide). Decision source: "
+        f"<code>{_esc(d.get('source'))}</code>.</p>",
+        f"<p class='{basis_cls}'><strong>{_esc(basis_line)}</strong></p>",
+    ]
+    rows = []
+    for f in d["factors"]:
+        kind = "qualitative" if f.get("qualitative") else "quantitative"
+        rows.append(
+            "<tr><td>" + _esc(f.get("name")) + "</td>"
+            "<td>" + _esc(kind) + "</td>"
+            "<td>" + _esc(f.get("value")) + "</td>"
+            "<td><code>" + _esc(f.get("fact_field")) + "</code></td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Factor weighed by the standard</th><th>Kind</th>"
+        "<th>Value</th><th>Bound to fact-record field</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    missing = basis.get("missing_factors") or []
+    if missing:
+        items = "".join(
+            f"<li>{_esc(m.get('factor'))} cites missing field "
+            f"<code>{_esc(m.get('fact_field'))}</code></li>" for m in missing)
+        parts.append(f"<p class='bad'>Factors citing a nonexistent fact-record "
+                     f"field:</p><ul>{items}</ul>")
     return "".join(parts)
 
 
@@ -285,6 +340,7 @@ def _render_materiality(m: dict) -> str:
     if m.get("memo"):
         parts.append("<p class='sub'>Materiality memo:</p>")
         parts.append(f"<pre>{_esc(m.get('memo'))}</pre>")
+    parts.append(_render_determination(m.get("determination", {})))
     return "".join(parts)
 
 
