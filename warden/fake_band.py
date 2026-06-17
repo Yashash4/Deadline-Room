@@ -19,6 +19,15 @@ Chaos hooks:
   kill_after_post(agent): crash position B. The draft WAS posted, but the
       message never reached `processed`; on reconnect it is re-delivered
       and the agent will naively re-post (the ledger must catch it).
+  kill_after_ack_lost(agent): the asymmetric lost-ack partition. The work
+      SUCCEEDED and the post landed, but the processing->processed mark (the
+      ack) never came back. /next re-serves the SAME message WITHOUT
+      incrementing attempt: a true at-least-once redelivery, identical to the
+      first, not a fresh attempt. This stresses the read-then-act dedup path,
+      not just the ledger key against a bumped attempt counter. It is distinct
+      from position B precisely because the attempt counter does NOT change, so
+      a guard that leaned on attempt to tell crash-retry from new work would be
+      caught here.
 
 Day-1 spike items 1-3 validate these assumptions against the real API;
 this fake encodes our current best understanding so the deterministic
@@ -90,5 +99,24 @@ class FakeBand:
             if msg.state == Lifecycle.PROCESSING:
                 msg.state = Lifecycle.DELIVERED
                 msg.attempt += 1
+                reverted += 1
+        return reverted
+
+    def kill_after_ack_lost(self, agent: str) -> int:
+        """The asymmetric lost-ack partition. The post landed and the work
+        SUCCEEDED, but the processing->processed ack was lost on the way back.
+        Every PROCESSING message reverts to DELIVERED with the attempt counter
+        UNCHANGED, so /next re-serves the SAME message (identical attempt), a
+        true at-least-once redelivery rather than a fresh attempt.
+
+        This differs from kill_in_flight on exactly one axis: the attempt
+        counter does not move. That is the honest distributed failure the SRE
+        review flagged, and it is what proves the read-then-act dedup (and the
+        ledger key, which is the attempt-independent natural key of the work)
+        catches the redelivery, not a coincidence of a bumped attempt number."""
+        reverted = 0
+        for msg in self._inbox.get(agent, []):
+            if msg.state == Lifecycle.PROCESSING:
+                msg.state = Lifecycle.DELIVERED
                 reverted += 1
         return reverted
