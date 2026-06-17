@@ -42,6 +42,16 @@ class FakeRoom:
         self.directory: list[dict] = []
 
     def post(self, sender: str, content: str, mentions: list[str]) -> str:
+        # Mirror the live Band constraint the spikes verified, so the offline suite
+        # catches the same posting bug a live run would: a sender may NOT mention
+        # itself (live Band returns HTTP 422 cannot_mention_self). A Warden
+        # visibility post that resolves to a self-only mention is a real live-path
+        # crash; making the fake reject it keeps that class of bug from passing the
+        # green suite.
+        if mentions and sender in mentions:
+            raise ValueError(
+                f"Band rejects a self-mention (cannot_mention_self): sender "
+                f"{sender} is in its own mentions {list(mentions)}")
         self._seq += 1
         mid = f"m{self._seq}"
         self.messages.append({

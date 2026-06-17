@@ -127,6 +127,45 @@ from floor.telemetry import RunTelemetry  # noqa: E402
 INCIDENT_ID = "inc-8842"
 INCIDENT_T0 = "2026-06-16T02:14:00+00:00"
 
+
+class _RoomAddressing:
+    """Run-scoped registry of the non-Warden participants the Warden can address
+    in its room posts, plus the Warden's own id so it is never addressed.
+
+    Live Band rejects a self-mention (HTTP 422 cannot_mention_self) and requires
+    every message to mention at least one participant. So a Warden visibility post
+    must ALWAYS address a non-Warden participant. This registry is the safe
+    fallback _warden_announce uses when a specific call site has no addressee of
+    its own (e.g. an affected-party announce, or a conflict whose drafters were
+    runtime-recruited and carry no startup id): instead of mentioning itself, the
+    Warden addresses the active drafters in the room.
+
+    It is reset at the start of every run, populated with the startup drafter ids,
+    and extended as branches are recruited (UK, NYDFS, affected-party). It is pure
+    visibility addressing: it gates nothing, is never written to the hashed
+    run-log, and so never touches byte-identical replay or any sealed sha."""
+
+    def __init__(self) -> None:
+        self._warden_id: str = ""
+        self._participants: list[str] = []
+
+    def reset(self, warden_id: str = "") -> None:
+        self._warden_id = warden_id or ""
+        self._participants = []
+
+    def register(self, *ids: str) -> None:
+        for i in ids:
+            if i and i != self._warden_id and i not in self._participants:
+                self._participants.append(i)
+
+    def fallback(self) -> list[str]:
+        """The non-Warden participants to address when a call site supplies none.
+        Excludes the Warden's own id by construction."""
+        return [i for i in self._participants if i and i != self._warden_id]
+
+
+ROOM_ADDRESSING = _RoomAddressing()
+
 # Bounded-retry attempts for the LIVE network paths (Band HTTP and the LLM
 # providers). Three total attempts (the first plus two retries) with jittered
 # exponential backoff turns a single transient Band 429/5xx or a transient
@@ -596,13 +635,25 @@ def _warden_announce(warden, trace: StepTrace, text: str,
     sealed run-log sha are untouched. The decision is made first and unchanged; the
     post only narrates it."""
     # Live Band requires every message to mention at least one participant
-    # (minItems: 1). Every caller addresses the relevant drafters; if a caller
-    # has no specific addressee, the Warden mentions itself so the decision still
-    # lands in the room. This is purely an addressing detail of the visibility
-    # post; it gates nothing.
-    addressees = [m for m in (mentions or []) if m]
+    # (minItems: 1) and REJECTS a self-mention (HTTP 422 cannot_mention_self). So
+    # the Warden must address a NON-WARDEN participant. Every caller addresses the
+    # relevant drafters; if a caller resolves no addressee (e.g. the conflicting
+    # drafters were runtime-recruited and carry no startup id), the Warden falls
+    # back to the active drafters in the room, NEVER itself. The Warden's own id is
+    # stripped defensively in case a caller ever passes it. This is purely an
+    # addressing detail of the visibility post; it gates nothing and never enters
+    # the hashed run-log.
+    warden_id = warden.whoami()
+    addressees = [m for m in (mentions or []) if m and m != warden_id]
     if not addressees:
-        addressees = [warden.whoami()]
+        addressees = [m for m in ROOM_ADDRESSING.fallback() if m != warden_id]
+    if not addressees:
+        # No non-Warden participant exists to address. A Warden room post with no
+        # valid recipient would be rejected by live Band, so surface it
+        # structurally rather than emit a self-mention that crashes the live run.
+        raise RuntimeError(
+            "Warden announce has no non-Warden addressee; refusing a self-mention "
+            f"that live Band rejects (text: {text.splitlines()[0] if text else ''!r})")
     res = warden.post(text, mentions=addressees, dedup_key=dedup_key)
     mid = _msg_id(res)
     # Record who the Warden addressed for the handoff trace and Examiner Packet.
@@ -857,6 +908,15 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     triage_id = triage.whoami()
     drafter_ids = {b: d.whoami() for b, d in drafters.items()}
     challenger_id = challenger.whoami() if challenger is not None else ""
+    # Register the run's addressees so any Warden visibility post that resolves no
+    # specific addressee falls back to the active drafters, never a self-mention
+    # (live Band rejects cannot_mention_self). Triage and the Challenger are real
+    # non-Warden participants too, so they are valid fallback recipients. Recruited
+    # branches (UK, NYDFS, affected-party) register their ids as they join below.
+    ROOM_ADDRESSING.reset(warden_id)
+    ROOM_ADDRESSING.register(triage_id, *drafter_ids.values())
+    if challenger_id:
+        ROOM_ADDRESSING.register(challenger_id)
     trace.say(f"[1] Warden identity:  {warden_id}")
     trace.say(f"    Triage identity:  {triage_id}")
     for r in DRAFTER_ROLES:
@@ -2598,12 +2658,15 @@ def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
             f"[AP] No affected-party communication required under GDPR Art 34; "
             f"recorded not-required. Rule: {rule}.")
         if warden is not None:
+            # No affected-party drafter is recruited on the not-required path, so
+            # this addresses the active regulator drafters in the room (the helper
+            # fallback), never a self-mention (live Band rejects it).
             _warden_announce(
                 warden, trace,
                 f"AFFECTED-PARTY (GDPR Art 34): NOT high risk to data subjects. No "
                 f"communication to the affected individuals is required; recorded "
                 f"with the rule. {rule}.",
-                mentions=None,
+                mentions=ROOM_ADDRESSING.fallback(),
                 dedup_key=f"warden:art34-not-required:{INCIDENT_ID}")
         return base_record
 
@@ -2629,6 +2692,9 @@ def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
         f"{release_anchor_ts} (without undue delay runs from release, NOT incident "
         f"T0).")
     if warden is not None:
+        # The affected-party drafter has not joined the room yet at this point, so
+        # this addresses the active regulator drafters in the room (the helper
+        # fallback), never a self-mention (live Band rejects it).
         _warden_announce(
             warden, trace,
             f"AFFECTED-PARTY (GDPR Art 34): HIGH RISK to data subjects. A "
@@ -2636,7 +2702,7 @@ def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
             f"REQUIRED, gated on the regulator release. Its without-undue-delay "
             f"clock starts now at the release moment {release_anchor_ts}, separate "
             f"from the regulator clocks.",
-            mentions=None,
+            mentions=ROOM_ADDRESSING.fallback(),
             dedup_key=f"warden:art34-required:{INCIDENT_ID}")
 
     # The branch opens its protocol: Triage @mentions the affected-party drafter
@@ -2664,8 +2730,13 @@ def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
     log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
                           "disposition": entry.disposition.value})
     client = _affected_party_client(clients)
+    affected_party_id = ""
     if client is not None:
         client.join(room_id)
+        # The affected-party drafter is now a room participant: register it so the
+        # Warden's release narration addresses it (and never a self-mention).
+        affected_party_id = client.whoami()
+        ROOM_ADDRESSING.register(affected_party_id)
         client.post(
             f"GDPR Art 34 communication to data subjects (draft attached).\n\n{body}",
             mentions=[warden_id], dedup_key=dedup_key)
@@ -2693,8 +2764,13 @@ def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
         ("general_counsel", "gc", ts_sign_gc),
         ("head_of_ir", "lena", ts_release),
     )
+    # Address the affected-party drafter on the release narration when its live
+    # client exists; otherwise the helper falls back to the active drafters in the
+    # room. Either way the Warden never mentions itself (live Band rejects it).
+    ap_mentions = [affected_party_id] if affected_party_id else None
     released = _two_key_release(sm, trace, log, release_gate, corr,
-                                signers=signers, warden=warden, mentions=None)
+                                signers=signers, warden=warden,
+                                mentions=ap_mentions)
     if not released:
         raise RuntimeError(
             "affected-party communication did not obtain two keys")
@@ -2911,8 +2987,9 @@ def _cross_border_phase(*, sm, trace, log, warden, release_gate, branch_corr,
         c0 = conflicts[0]
         # @mention the drafters whose regimes are in the first conflict, by id where
         # the branch has a startup drafter id; recruited branches (UK) have no id in
-        # drafter_ids, so the Warden self-mention fallback in _warden_announce keeps
-        # the post in the room.
+        # drafter_ids, so when this list resolves empty _warden_announce addresses
+        # the active drafters in the room, never a self-mention (live Band rejects
+        # cannot_mention_self).
         block_mentions = [
             drafter_ids[b] for b in drafter_ids
             if _REGIME_BY_BRANCH.get(b) is not None
@@ -3180,6 +3257,9 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
     agent_id = peer_id(peer)
     if not agent_id:
         raise RuntimeError(f"discovered {target.regime} peer has no id: {peer}")
+    # The recruited drafter is now a room participant: register it as a valid
+    # fallback addressee for Warden visibility posts (never a self-mention).
+    ROOM_ADDRESSING.register(agent_id)
     log.append("recruit", {"jurisdiction": target.jurisdiction, "branch": target.branch,
                            "peer_id": agent_id, "ts": ts_recruit,
                            "matched_tokens": list(target.name_tokens)})
