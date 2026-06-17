@@ -33,6 +33,13 @@ Sources for the field sets:
     of data subjects and records; likely consequences; measures taken or proposed.
   NYDFS 23 NYCRR 500.17(a)(1): the electronic notice fields (covered entity,
     nature of the cybersecurity event, determination time, systems affected).
+  GDPR Article 34(2): the communication TO THE DATA SUBJECT (the affected
+    individuals, not the regulator) when the breach is likely to result in a high
+    risk. Art 34(2) requires the communication to describe in clear and plain
+    language the nature of the breach and to carry at least the same information
+    Art 33(3)(b)-(d) requires: the contact point, the likely consequences, and the
+    measures taken or proposed (including measures the individual can take to
+    protect themselves).
 """
 
 from __future__ import annotations
@@ -189,9 +196,36 @@ NYDFS_50017 = FormatProfile(
     ),
 )
 
+GDPR_ART34 = FormatProfile(
+    profile_id="gdpr_art34",
+    form_title="GDPR Article 34 communication of a personal data breach to the data subject",
+    cover_tag="Article 34(2) communication to the data subject",
+    fields=(
+        FormatField(
+            "Nature of the breach in clear and plain language",
+            "Describe, in clear and plain language addressed to the affected "
+            "individual, the nature of the personal data breach from the "
+            "fact-record."),
+        FormatField(
+            "Contact point for more information",
+            "State the name and contact details of the data protection officer or "
+            "other contact point where the individual can obtain more information."),
+        FormatField(
+            "Likely consequences for the individual",
+            "Describe the likely consequences of the personal data breach for the "
+            "affected individual, confined to what the fact-record supports."),
+        FormatField(
+            "Measures taken and steps the individual can take",
+            "Describe the measures taken or proposed to address the breach and "
+            "mitigate its adverse effects, and the steps the individual can take to "
+            "protect themselves."),
+    ),
+)
+
 _PROFILES = {
     p.profile_id: p
-    for p in (SEC_8K, NIS2_EARLY, NIS2_FULL, DORA, ICO_ART33, NYDFS_50017)
+    for p in (SEC_8K, NIS2_EARLY, NIS2_FULL, DORA, ICO_ART33, NYDFS_50017,
+              GDPR_ART34)
 }
 
 

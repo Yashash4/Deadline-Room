@@ -34,14 +34,30 @@
 #                       computed instant is byte-identical with or without it.
 #   format_profile   the per-regime filing field skeleton id (floor/formats.py)
 #   start:
-#     mode    "startup"  the clock starts when the floor opens (anchor below)
-#             "recruit"  the clock starts at the runtime-recruit moment
+#     mode    "startup"       the clock starts when the floor opens (anchor below)
+#             "recruit"       the clock starts at the runtime-recruit moment
+#             "post_release"  the clock starts at the regulator RELEASE moment (the
+#                             affected-party / Art 34 communication to data
+#                             subjects, owed only on a high-risk breach). It is
+#                             neither a startup nor a recruit regime.
 #     anchor  for startup clocks, which timestamp anchors the clock:
 #               "incident_t0"             NIS2 + DORA
 #               "materiality_determination" SEC
+#             for the post_release clock:
+#               "release_moment"          the affected-party clock (anchored at the
+#                                         regulator release, "without undue delay")
 #   recruit (recruit-mode regimes only):
 #     jurisdiction  the blast-radius token that triggers the recruit (e.g. "UK")
 #     name_tokens   tokens matched against a peer's name/handle on /agent/peers
+#   high_risk (the affected-party / data-subject track only, E3.4):
+#     The GDPR Article 34 threshold for COMMUNICATING the breach to the affected
+#     INDIVIDUALS (not the supervisory authority). It attaches only when the breach
+#     is "likely to result in a HIGH RISK to the rights and freedoms of natural
+#     persons", a higher bar than the Art 33 reportability trigger above. The
+#     qualitative CALL against this standard is an LLM judgment (floor/high_risk.py);
+#     the deterministic warden/high_risk.py gate then requires the communication or
+#     records it not-required. Carries the same {standard, rule} shape as
+#     reportability and is present ONLY on the data_subject regime.
 #   reportability:
 #     standard  the statutory trigger STANDARD this regime applies to decide
 #               whether the incident must be reported at all (the "duty to
@@ -277,3 +293,33 @@ regimes:
         or when notice of it is required to be provided to any other government
         body, self-regulatory agency, or supervisory body.
       rule: not reportable under NYDFS 23 NYCRR 500.17 material-harm
+
+  - key: data_subject
+    authority: affected individuals (data subjects)
+    branch: data_subject
+    regime_label: Affected-party (GDPR Art 34)
+    trigger_event: regulator release (without undue delay)
+    clock:
+      name: GDPR Art 34 communication to data subjects (without undue delay)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: Europe/London
+    format_profile: gdpr_art34
+    start:
+      mode: post_release
+      anchor: release_moment
+    high_risk:
+      standard: >-
+        GDPR Article 34: a personal-data breach must be communicated to the
+        affected data subjects (the individuals), without undue delay, when it is
+        LIKELY TO RESULT IN A HIGH RISK to the rights and freedoms of natural
+        persons. This is a HIGHER bar than the Article 33 duty to notify the
+        supervisory authority: a breach can be reportable to the authority yet not
+        owe a communication to data subjects. High risk turns on the sensitivity
+        and volume of the personal data, the ease of identifying individuals, the
+        severity of the likely consequences (identity theft, fraud on exposed
+        account numbers, financial loss), and whether protective measures
+        (encryption, prompt containment) reduce the realistic risk to individuals.
+      rule: no communication to data subjects required under GDPR Art 34 (not high risk)

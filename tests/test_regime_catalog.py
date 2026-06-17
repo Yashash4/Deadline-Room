@@ -1,19 +1,29 @@
 """The declarative regime catalog (floor/regimes.yaml) and its loader (PART A).
 
-The six live regimes are produced FROM the catalog. These tests pin the catalog
-shape and the refactor's load-bearing equivalence: the recruit targets and the
-startup clocks produced from data are EXACTLY the prior constants, which is why
-the demo run stays byte-identical.
+The six live REGULATOR regimes are produced FROM the catalog, alongside the
+affected-party / GDPR Art 34 communication-to-data-subject obligation (a
+non-regulator, post-release obligation, E3.4). These tests pin the catalog shape
+and the refactor's load-bearing equivalence: the recruit targets and the startup
+clocks produced from data are EXACTLY the prior constants, which is why the demo
+run stays byte-identical.
 """
 
 from floor import regimes
 from floor.recruit import NYDFS_TARGET, UK_ICO_TARGET, target_from_spec
 
 
-def test_catalog_has_the_six_live_regimes():
+def test_catalog_has_the_six_live_regulator_regimes():
     specs = regimes.load_catalog()
     keys = {s.key for s in specs}
-    assert keys == {"nis2_early", "nis2_full", "dora", "sec", "uk_ico", "nydfs"}
+    # The six regulator regimes are all present.
+    assert {"nis2_early", "nis2_full", "dora", "sec", "uk_ico", "nydfs"} <= keys
+    # Plus the affected-party / Art 34 communication-to-data-subject obligation: a
+    # non-regulator, post-release obligation, not a startup or recruit clock.
+    assert "data_subject" in keys
+    ds = regimes.by_key(specs)["data_subject"]
+    assert ds.is_post_release
+    assert not ds.is_startup and not ds.is_recruit
+    assert ds.high_risk is not None
 
 
 def test_startup_and_recruit_partition():

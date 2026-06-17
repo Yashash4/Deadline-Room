@@ -77,13 +77,17 @@ if str(_CODE) not in sys.path:
     sys.path.insert(0, str(_CODE))
 sys.path.insert(0, str(_CODE / "spikes"))
 
-from warden.clocks import ClockEngine  # noqa: E402
+from datetime import timedelta  # noqa: E402
+
+from warden.clocks import ClockEngine, parse_ts  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import IdempotencyLedger  # noqa: E402
 from warden.liveness import LivenessWatchdog  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
 from warden.reportability import (  # noqa: E402
     ReportabilityVerdict, gate as reportability_gate)
+from warden.high_risk import (  # noqa: E402
+    HighRiskVerdict, gate as high_risk_gate)
 from warden.determination import validate_determination  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
@@ -109,6 +113,7 @@ from floor.drafter import (  # noqa: E402
 from floor.materiality import (  # noqa: E402
     assess_materiality, assess_materiality_two_opinions)
 from floor.reportability import assess_reportability  # noqa: E402
+from floor.high_risk import assess_high_risk  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
 from floor.recruit import (  # noqa: E402
@@ -394,6 +399,37 @@ AMEND_RELEASE_SIGNERS = (
 AMEND_CONTAINMENT_FRAMING = "contained as of 2026-06-16T07:00:00+00:00"
 AMEND_DATA_BOUNDS = ("name", "address", "account_number")
 
+# E3.4: the affected-party (GDPR Art 34) communication-to-data-subject track. This
+# is a NON-regulator obligation owed to the affected INDIVIDUALS, GATED ON the
+# regulator release (you tell the regulator, and you separately must communicate to
+# the people whose data leaked), and it attaches only on a HIGH RISK to the rights
+# and freedoms of natural persons (a higher bar than the Art 33 regulator trigger).
+# Its branch correlation id is inc-NNNN:data_subject. The clock anchors at the
+# RELEASE moment ("without undue delay" runs from then), independent of the four /
+# six regulator clocks. The SCOPE of the obligation (the number of individuals owed
+# a communication) is the records_affected figure: on the amendment cascade it
+# grows 48,211 -> 2,100,000 along with the regulator filings, which is the CISO's
+# point (the amendment does not just change a filing, it expands the customer
+# notification scope). All of these timestamps fall after the regulator release
+# (TS_RELEASE / TS_AMEND_RELEASE) so the affected-party clock starts only once the
+# regulator obligations are out the door.
+AFFECTED_PARTY_BRANCH = "data_subject"
+# The affected-party clock and its handoffs anchor at, and run AFTER, the regulator
+# RELEASE moment (the phase is handed the actual release timestamp: TS_AMEND_RELEASE
+# on the amendment cascade, else TS_RELEASE). The handoff timestamps are fixed
+# minute offsets PAST that anchor so they always fall after the regulator release no
+# matter which release moment anchors them, and so replay is byte-stable. The clock
+# itself anchors AT the release moment (without-undue-delay runs from then); the
+# draft, diff, and two-key sign-off follow it in order.
+_AFFECTED_PARTY_OFFSETS_MIN = {
+    "facts": 1, "draft": 15, "diff": 30, "sign_gc": 40, "release": 50,
+}
+# The default affected-party scenario fact-record: the real material breach, whose
+# exposed account numbers make it high-risk to the individuals. A test injects its
+# own high-risk verdict through the high_risk_fn seam, so this is the live default
+# only; the proof that the track is decision-driven lives in the tests.
+AFFECTED_PARTY_FACTS = dict(CANONICAL_FACTS)
+
 
 # The declarative regime catalog, loaded once. The startup clocks (NIS2 early +
 # full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
@@ -570,7 +606,9 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               nydfs_peers: list | None = None,
               challenge: bool = True, challenge_fns: dict | None = None,
               reportability: bool = False, reportability_fn=None,
-              reportability_facts: dict | None = None) -> dict:
+              reportability_facts: dict | None = None,
+              affected_party: bool = False, high_risk_fn=None,
+              affected_party_facts: dict | None = None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -603,7 +641,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            challenge=challenge, challenge_fns=challenge_fns,
                            reportability=reportability,
                            reportability_fn=reportability_fn,
-                           reportability_facts=reportability_facts)
+                           reportability_facts=reportability_facts,
+                           affected_party=affected_party,
+                           high_risk_fn=high_risk_fn,
+                           affected_party_facts=affected_party_facts)
 
 
 # (cross_border has no public-API kwarg: it is selected purely by mode ==
@@ -629,7 +670,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     challenge_fns: dict | None = None,
                     reportability: bool = False,
                     reportability_fn=None,
-                    reportability_facts: dict | None = None) -> dict:
+                    reportability_facts: dict | None = None,
+                    affected_party: bool = False,
+                    high_risk_fn=None,
+                    affected_party_facts: dict | None = None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -646,7 +690,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     The two-key release gate (Lena AND the GC) is ALWAYS active: every release on
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
-                    "inject_claims", "reportability", "cross_border"):
+                    "inject_claims", "reportability", "cross_border",
+                    "affected_party"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
@@ -666,16 +711,33 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     cross_border = mode == "cross_border"
     if cross_border:
         uk_recruit = True
+    # The affected-party beat (E3.4) is its OWN scenario: it rides the AMENDMENT
+    # base path (so the forensic revision raises records 48,211 -> 2,100,000) and
+    # then, AFTER the regulator branches release and re-release, runs the
+    # affected-party / GDPR Art 34 communication-to-data-subject track. Gating it on
+    # the amendment is the load-bearing point: the count jump cascades into the
+    # affected-party SCOPE (the number of individuals owed a communication grows
+    # with the filing). The --affected-party flag implies it; the explicit
+    # affected_party= kwarg path (tests) sets it too and can ride the clean release
+    # base when a test wants the trigger without the cascade.
+    if mode == "affected_party":
+        affected_party = True
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
     # neutralized at the sanitize chokepoint, so the Warden gates on the
     # authoritative canonical values exactly as in a normal run; the attack
     # changes nothing about the filing, which is the whole point. The
-    # reportability beat also rides the clean base.
+    # reportability beat also rides the clean base. The affected_party beat rides
+    # the clean base too: it runs the amendment phase (so the scope cascade is on
+    # camera) and then the affected-party phase, both layered on the clean release
+    # path, so its drafting/diff base is normal.
     base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability",
-                                       "cross_border")
+                                       "cross_border", "affected_party")
                  else mode)
+    # The affected_party scenario runs the amendment beat first so the forensic
+    # revision raises the record count before the affected-party scope is computed.
+    run_amendment = mode in ("amendment", "affected_party")
     inject_claims = mode == "inject_claims"
     # When a recruit beat runs, Triage's fact-record carries a blast radius naming
     # that jurisdiction's entity; that content is what drives the recruit. With
@@ -810,6 +872,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     branch_corr = {r.branch: f"{INCIDENT_ID}:{r.branch}" for r in DRAFTER_ROLES}
     branch_corr["uk"] = f"{INCIDENT_ID}:uk"
     branch_corr["nydfs"] = f"{INCIDENT_ID}:nydfs"
+    # The affected-party (GDPR Art 34) branch only materializes after release when
+    # the high-risk gate requires a communication to data subjects; its correlation
+    # id is registered here so the release iteration and packet can address it.
+    branch_corr[AFFECTED_PARTY_BRANCH] = f"{INCIDENT_ID}:{AFFECTED_PARTY_BRANCH}"
     DRAFTER_BRANCHES_THIS_RUN = [r.branch for r in DRAFTER_ROLES]
     # Regulation-as-config: the startup clocks are produced FROM the declarative
     # regime catalog (floor/regimes.yaml), not from hardcoded constants. Each
@@ -1070,7 +1136,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
 
     # ---- A1: the amendment beat (agent-to-agent reconciliation) --------
     amendment = None
-    if mode == "amendment":
+    if run_amendment:
         amendment = _amendment_phase(
             sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
             triage=triage, warden=warden, drafters=drafters,
@@ -1083,8 +1149,56 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         for b in AMENDMENT_BRANCHES:
             claims_by_branch[b] = amendment["amended_claims"][b]
 
-    breached = [c.name for c in clocks.breaches(TS_AMEND_RELEASE if mode == "amendment"
-                                               else TS_RELEASE)]
+    # ---- E3.4: the affected-party (GDPR Art 34) communication-to-data-subject
+    # track. This runs AFTER the regulator branches release (and re-release on the
+    # amendment), because the duty to communicate to the affected individuals is
+    # GATED ON the regulator release. A high-risk LLM judgment (Art 34 standard)
+    # crosses into the deterministic warden/high_risk.py gate as a typed boolean: if
+    # high risk, the affected-party communication is REQUIRED, the branch is
+    # recruited with its own "without undue delay" clock anchored at the RELEASE
+    # moment, the Art 34 notice is drafted, and it passes the SAME two-key gate; if
+    # not high risk, the obligation is RECORDED not-required with the Art 34 rule.
+    # The SCOPE (the number of individuals owed a communication) is the
+    # records_affected figure read AFTER any amendment, so on the amendment cascade
+    # it grows 48,211 -> 2,100,000 along with the regulator filing. The Warden makes
+    # ZERO LLM calls here: the high-risk gate is deterministic Python. -------------
+    affected_party_record = None
+    if affected_party:
+        # The release timestamp the affected-party clock anchors at: the amendment
+        # re-release moment when the cascade ran, else the initial release moment.
+        release_anchor_ts = (TS_AMEND_RELEASE if run_amendment else TS_RELEASE)
+        # The records count the scope is computed from: the amended figure when the
+        # cascade ran (so the customer-notice scope grows with the filing), else the
+        # canonical figure.
+        scope_records = (AMENDED_RECORDS if run_amendment
+                         else CANONICAL_FACTS["records_affected"])
+        affected_party_record = _affected_party_phase(
+            sm=sm, trace=trace, log=log, clocks=clocks, ledger=ledger,
+            warden=warden, triage=triage, clients=clients,
+            warden_id=warden_id, triage_id=triage_id, room_id=room_id,
+            branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
+            release_gate=release_gate, provider_set=provider_set, live=live,
+            high_risk_fn=high_risk_fn,
+            affected_party_facts=(affected_party_facts
+                                  if affected_party_facts is not None
+                                  else AFFECTED_PARTY_FACTS),
+            release_anchor_ts=release_anchor_ts, scope_records=scope_records,
+            amended=run_amendment)
+        if affected_party_record.get("recruited"):
+            DRAFTER_BRANCHES_THIS_RUN.append(AFFECTED_PARTY_BRANCH)
+            claims_by_branch[AFFECTED_PARTY_BRANCH] = affected_party_record.pop("claims")
+            filings.append(affected_party_record.pop("filing"))
+
+    # The "now" the breach check reads is the last moment the run reached: the
+    # affected-party release (after the amendment) when that beat ran, else the
+    # amendment re-release, else the regulator release.
+    breach_now = (
+        _offset_ts(TS_AMEND_RELEASE if run_amendment else TS_RELEASE,
+                   _AFFECTED_PARTY_OFFSETS_MIN["release"])
+        if (affected_party and affected_party_record
+            and affected_party_record.get("recruited"))
+        else TS_AMEND_RELEASE if run_amendment else TS_RELEASE)
+    breached = [c.name for c in clocks.breaches(breach_now)]
 
     # ---- Byte-identical replay ----------------------------------------
     original_sha = log.sha256()
@@ -1141,7 +1255,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # logger. Every number here is read from in-process state or the clock math;
     # NONE of it is written into the hashed run-log, so original_sha and the
     # byte-identical replay above are untouched (this runs AFTER the sha is sealed).
-    release_phase_end = TS_AMEND_RELEASE if mode == "amendment" else TS_RELEASE
+    release_phase_end = TS_AMEND_RELEASE if run_amendment else TS_RELEASE
     telemetry.clock_set = ", ".join(c.name for c in clocks.all())
     telemetry.record_phase("drafting", TS_FACTS, TS_DRAFT)
     telemetry.record_phase("contradiction_round_trip", TS_DRAFT, TS_DIFF)
@@ -1193,6 +1307,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         attestation=attestation,
         reportability=reportability_record,
         cross_border=cross_border_record,
+        affected_party=affected_party_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2332,6 +2447,290 @@ def _reportability_phase(*, sm, trace, log, clocks, branch_corr, provider_set,
 
 
 # ----------------------------------------------------------------------------
+# Affected-party (GDPR Art 34) communication-to-data-subject phase (E3.4). The
+# regulator clocks point at a GOVERNMENT recipient; this track points at the
+# affected INDIVIDUALS whose data leaked. It is a SEPARATE obligation, NOT a
+# regulator filing, and it is GATED ON the regulator release (you tell the
+# regulator, and you separately must communicate to the people). It attaches only
+# when the breach is "likely to result in a HIGH RISK to the rights and freedoms of
+# natural persons" (GDPR Art 34), a HIGHER bar than the Art 33 regulator trigger.
+#
+# A high-risk LLM judgment (floor/high_risk.py) crosses into the deterministic
+# warden/high_risk.py gate as a typed boolean:
+#   high risk      -> the communication is REQUIRED. The affected-party branch is
+#                     recruited, its own "without undue delay" clock anchored at the
+#                     RELEASE moment (independent of the regulator clocks), the Art
+#                     34 notice drafted, and it flows through the SAME typed handoff
+#                     and the SAME two-key release gate (legal sign-off on customer
+#                     comms is real).
+#   not high risk  -> NO communication is required. The obligation is RECORDED
+#                     not-required with the named Art 34 rule, never silently absent.
+#
+# The SCOPE of the obligation (the number of individuals owed a communication) is
+# the records_affected figure read AFTER any amendment: on the cascade it grows
+# 48,211 -> 2,100,000 along with the regulator filing, the CISO's point that an
+# amendment expands the customer-notification scope, not just a filing. The Warden
+# makes ZERO LLM calls here; the high-risk gate is deterministic Python.
+# ----------------------------------------------------------------------------
+def _offset_ts(anchor_ts: str, minutes: int) -> str:
+    """A fixed-minute offset past an anchor timestamp, in UTC ISO-8601. Used so the
+    affected-party handoffs always fall AFTER the regulator release that anchors
+    them (whichever release moment that is), deterministically and replay-stably."""
+    return (parse_ts(anchor_ts) + timedelta(minutes=minutes)).isoformat()
+
+
+def _affected_party_phase(*, sm, trace, log, clocks, ledger, warden, triage,
+                          clients, warden_id, triage_id, room_id, branch_corr,
+                          draft_fns, draft_timeout, release_gate, provider_set,
+                          live, high_risk_fn, affected_party_facts,
+                          release_anchor_ts, scope_records, amended) -> dict:
+    """Run the GDPR Art 34 high-risk assessment, gate it deterministically, and
+    either drive the affected-party communication branch through to a two-key
+    release or record the obligation not-required.
+
+    `high_risk_fn(fact_record, spec)` injects the verdict in tests so the suite
+    needs no live LLM, exactly the seam reportability_fn / materiality_fn use; when
+    None, the live Featherless high-risk assessor is called. `affected_party_facts`
+    is the fact-record the assessor sees. `release_anchor_ts` is the regulator
+    release moment the affected-party clock anchors at (without undue delay runs
+    from then). `scope_records` is the number of individuals owed a communication,
+    read AFTER any amendment so the cascade is reflected. `amended` records whether
+    the count cascaded.
+
+    Returns a packet-ready record. On a required communication it carries the
+    recruited branch's claims + filing for the caller to fold into the diff / packet
+    (popped by the caller); on a not-required obligation it carries no branch."""
+    spec = _REGIME_BY_BRANCH.get(AFFECTED_PARTY_BRANCH)
+    if spec is None or spec.high_risk is None:
+        raise RuntimeError(
+            "affected-party beat: the data_subject regime has no high_risk standard "
+            "in the regime catalog")
+    standard = spec.high_risk.standard
+    rule = spec.high_risk.rule
+    regime = spec.regime_label
+    corr = branch_corr[AFFECTED_PARTY_BRANCH]
+    facts = dict(affected_party_facts)
+    # The scope (number of individuals owed a communication) is the post-amendment
+    # records count. Reflect it on the fact-record the assessor and the notice see,
+    # so the cascade visibly drives the customer-notice scope.
+    facts["records_affected"] = scope_records
+    old_scope = CANONICAL_FACTS["records_affected"]
+
+    # 1. The high-risk LLM judgment (injected in tests, live LLM otherwise). The
+    #    deterministic gate then consumes ONE HighRiskVerdict.
+    if high_risk_fn is not None:
+        verdict = high_risk_fn(facts, spec)
+        if not isinstance(verdict, HighRiskVerdict):
+            raise RuntimeError("high_risk_fn must return a HighRiskVerdict")
+    else:
+        provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+        verdict = assess_high_risk(
+            facts, standard=standard, rule=rule, model=model, provider=provider,
+            timeout=draft_timeout, max_attempts=LIVE_NET_ATTEMPTS)
+    required = high_risk_gate(verdict)
+    log.append("affected_party_high_risk", {
+        "regime": regime, "high_risk": verdict.high_risk,
+        "disposition": verdict.disposition(), "rule": rule,
+        "source": verdict.source, "rationale": verdict.rationale,
+        "scope_individuals": scope_records,
+        "scope_grew_from_amendment": amended,
+        "scope_old": old_scope if amended else scope_records,
+    })
+    trace.say(
+        "[AP] Affected-party high-risk assessment (GDPR Art 34): "
+        + (f"HIGH RISK to data subjects, a communication to the {scope_records:,} "
+           f"affected individuals is REQUIRED (source {verdict.source})"
+           if required else
+           f"NOT high risk, no communication to data subjects required ({rule}) "
+           f"(source {verdict.source})"))
+    if amended:
+        trace.say(
+            f"[AP] Affected-party SCOPE grew with the amendment: "
+            f"{old_scope:,} -> {scope_records:,} individuals owed a communication. "
+            f"The forensic revision did not just change a filing, it expanded the "
+            f"customer-notification scope.")
+
+    base_record = {
+        "regime": regime,
+        "standard": standard,
+        "rule": rule,
+        "high_risk": verdict.high_risk,
+        "required": required,
+        "disposition": verdict.disposition(),
+        "rationale": verdict.rationale,
+        "source": verdict.source,
+        "gated_on_release": True,
+        "release_anchor_ts": release_anchor_ts,
+        "scope_individuals": scope_records,
+        "scope_old": old_scope,
+        "scope_grew_from_amendment": amended,
+        "recruited": False,
+    }
+
+    if not required:
+        # Not high risk: the obligation is documented as NOT REQUIRED with the named
+        # Art 34 rule. No branch, no clock, no notice. A real Art 34 decision is "we
+        # assessed and concluded the high-risk bar is not met", never silence.
+        trace.say(
+            f"[AP] No affected-party communication required under GDPR Art 34; "
+            f"recorded not-required. Rule: {rule}.")
+        if warden is not None:
+            _warden_announce(
+                warden, trace,
+                f"AFFECTED-PARTY (GDPR Art 34): NOT high risk to data subjects. No "
+                f"communication to the affected individuals is required; recorded "
+                f"with the rule. {rule}.",
+                mentions=None,
+                dedup_key=f"warden:art34-not-required:{INCIDENT_ID}")
+        return base_record
+
+    # High risk: the communication is required. Recruit the affected-party branch.
+    # The clock anchors AT the regulator release moment (without undue delay runs
+    # from then), independent of the regulator clocks.
+    ts_facts = _offset_ts(release_anchor_ts, _AFFECTED_PARTY_OFFSETS_MIN["facts"])
+    ts_draft = _offset_ts(release_anchor_ts, _AFFECTED_PARTY_OFFSETS_MIN["draft"])
+    ts_diff = _offset_ts(release_anchor_ts, _AFFECTED_PARTY_OFFSETS_MIN["diff"])
+    ts_sign_gc = _offset_ts(release_anchor_ts, _AFFECTED_PARTY_OFFSETS_MIN["sign_gc"])
+    ts_release = _offset_ts(release_anchor_ts, _AFFECTED_PARTY_OFFSETS_MIN["release"])
+
+    clocks.start_hours(spec.clock.name, corr, release_anchor_ts, spec.clock.length,
+                       trigger_event=spec.trigger_event,
+                       display_tz=spec.clock.display_timezone)
+    log.append("clock_started", {
+        "clock": spec.clock.name, "correlation_id": corr,
+        "started_at": release_anchor_ts,
+        "deadline": clocks.get(corr).deadline.isoformat(),
+        "anchored_at_release": True})
+    trace.say(
+        f"[AP] {spec.clock.name} started at the regulator release moment "
+        f"{release_anchor_ts} (without undue delay runs from release, NOT incident "
+        f"T0).")
+    if warden is not None:
+        _warden_announce(
+            warden, trace,
+            f"AFFECTED-PARTY (GDPR Art 34): HIGH RISK to data subjects. A "
+            f"communication to the {scope_records:,} affected individuals is "
+            f"REQUIRED, gated on the regulator release. Its without-undue-delay "
+            f"clock starts now at the release moment {release_anchor_ts}, separate "
+            f"from the regulator clocks.",
+            mentions=None,
+            dedup_key=f"warden:art34-required:{INCIDENT_ID}")
+
+    # The branch opens its protocol: Triage @mentions the affected-party drafter
+    # with the fact-record (scope reflected). FACT_RECORD_POSTED on the branch.
+    _proto(sm, trace, corr, Event.FACT_RECORD_POSTED, ts_facts, "triage", "triage")
+    trace.record_handoff("Triage", "Affected-party Drafter", "fact_record", "")
+
+    # The affected-party drafter writes the Art 34 data-subject notice. On the
+    # injected (test) path the draft fn is supplied; live runs draft on Featherless
+    # with the GDPR Art 34 format profile. The notice is NOT a regulator filing; it
+    # is the customer-facing communication.
+    notice_facts = {
+        "incident_start_utc": facts["incident_start_utc"],
+        "records_affected": scope_records,
+        "attacker": facts["attacker"],
+        "containment": facts["containment"],
+    }
+    fn = _affected_party_draft_fn(draft_fns, draft_timeout, provider_set)
+    _proto(sm, trace, corr, Event.DRAFT_STARTED, ts_draft, "data_subject_drafter",
+           "drafter")
+    prose = fn(notice_facts)
+    body = build_draft_body(prose, AFFECTED_PARTY_BRANCH, notice_facts)
+    dedup_key = f"draft:{AFFECTED_PARTY_BRANCH}:{INCIDENT_ID}:round-1"
+    entry = ledger.record(dedup_key, 1, ts_draft)
+    log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
+                          "disposition": entry.disposition.value})
+    client = _affected_party_client(clients)
+    if client is not None:
+        client.join(room_id)
+        client.post(
+            f"GDPR Art 34 communication to data subjects (draft attached).\n\n{body}",
+            mentions=[warden_id], dedup_key=dedup_key)
+    _proto(sm, trace, corr, Event.DRAFT_POSTED, ts_draft, "data_subject_drafter",
+           "drafter")
+    trace.record_handoff("Affected-party Drafter", "Warden", "draft", "")
+    claims = parse_claims(body)
+    provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+    trace.say(
+        f"[AP] Affected-party Drafter wrote the Art 34 data-subject notice for "
+        f"{scope_records:,} individuals.")
+
+    # The affected-party notice carries no rival figure to contradict (it is a
+    # single non-regulator branch), so its diff passes clean. It then flows through
+    # the SAME deterministic signoff + two-key release gate as every regulator
+    # filing: legal sign-off on customer comms is real, so both distinct human keys
+    # (GC then Lena) must sign. One key alone never releases it. Reset the branch
+    # lock so the keys recorded on the regulator release do not carry over.
+    _proto(sm, trace, corr, Event.DIFF_PASSED, ts_diff, "warden", "warden")
+    log.append("diff", {"phase": "affected_party",
+                        "branch": AFFECTED_PARTY_BRANCH, "conflicts": []})
+    _proto(sm, trace, corr, Event.SIGNOFF_OPENED, ts_diff, "warden", "warden")
+    release_gate.reset(corr)
+    signers = (
+        ("general_counsel", "gc", ts_sign_gc),
+        ("head_of_ir", "lena", ts_release),
+    )
+    released = _two_key_release(sm, trace, log, release_gate, corr,
+                                signers=signers, warden=warden, mentions=None)
+    if not released:
+        raise RuntimeError(
+            "affected-party communication did not obtain two keys")
+    clocks.stop(corr, ts_release)
+    log.append("clock_stopped", {"correlation_id": corr, "ts": ts_release})
+    trace.say(
+        "[AP] Affected-party communication passed the same two-key gate (GC + "
+        "Lena) and released; its without-undue-delay clock stopped.")
+
+    record = dict(base_record)
+    record.update({
+        "recruited": True,
+        "branch": AFFECTED_PARTY_BRANCH,
+        "clock_name": spec.clock.name,
+        "clock_started_at": release_anchor_ts,
+        "released": True,
+        "claims": claims,
+        "filing": {
+            "regime": regime, "by": "Affected-party Drafter",
+            "model": model, "provider": provider,
+            "rationale": (
+                "The affected-party (GDPR Art 34) communication to data subjects is "
+                "a non-regulator obligation owed to the affected individuals, gated "
+                "on the regulator release and carried on its own without-undue-delay "
+                "clock."),
+            "text": body, "non_regulator": True},
+    })
+    return record
+
+
+def _affected_party_client(clients):
+    """Resolve the affected-party drafter's Band client. Tests inject it under
+    clients['data_subject']; a live run uses the materiality role's key if present,
+    else posts via no dedicated client (the branch still drives its typed protocol).
+    Returns None when no client is available so the phase still drives the state
+    machine and the packet without a live post."""
+    if clients is not None and AFFECTED_PARTY_BRANCH in clients:
+        return clients[AFFECTED_PARTY_BRANCH]
+    return None
+
+
+def _affected_party_draft_fn(draft_fns, timeout, provider_set):
+    """Resolve the Art 34 data-subject notice drafter. Tests inject draft_fns
+    keyed by 'data_subject'; live runs draft on the materiality role's open model
+    with the GDPR Art 34 format profile."""
+    if draft_fns is not None and AFFECTED_PARTY_BRANCH in draft_fns:
+        return draft_fns[AFFECTED_PARTY_BRANCH]
+    provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+    from floor.formats import format_profile_for
+    profile = format_profile_for("gdpr_art34")
+
+    def fn(notice_facts):
+        return draft_filing(dict(notice_facts), model=model, provider=provider,
+                            regime="GDPR Art 34", format_profile=profile,
+                            timeout=timeout, max_tokens=2000)
+    return fn
+
+
+# ----------------------------------------------------------------------------
 # Cross-border obligation conflict phase (E3.4, the international contradiction
 # beat). The cross-filing contradiction veto catches two drafters disagreeing on a
 # FACT; this catches two REGULATORS imposing mutually exclusive OBLIGATIONS on the
@@ -3089,7 +3488,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      release_gate=None, released_branches=None,
                      recovered_retries: int = 0, operability=None,
                      attestation=None, reportability=None,
-                     cross_border=None) -> dict:
+                     cross_border=None, affected_party=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -3108,7 +3507,19 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # transition, no clock, no release. The Warden never reads it.
     base_filings = all_filings[:len(all_filings) - amended_count] if amended_count \
         else all_filings
-    grounding = score_filings(base_filings, CANONICAL_FACTS)
+    # The affected-party (Art 34) notice is a non-regulator communication whose
+    # scope (records_affected) reflects the POST-amendment count; score it against
+    # the record carrying that scope so the cascade does not read as a hallucination.
+    ap_scope = (affected_party.get("scope_individuals")
+                if affected_party is not None else None)
+    base_regulator = [f for f in base_filings if not f.get("non_regulator")]
+    ap_filings = [f for f in base_filings if f.get("non_regulator")]
+    grounding = score_filings(base_regulator, CANONICAL_FACTS)
+    if ap_filings:
+        ap_record = dict(CANONICAL_FACTS)
+        if ap_scope is not None:
+            ap_record["records_affected"] = ap_scope
+        grounding += score_filings(ap_filings, ap_record)
     if amended_count:
         amended_record = dict(CANONICAL_FACTS)
         amended_record["records_affected"] = AMENDED_RECORDS
@@ -3202,6 +3613,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         packet["reportability"] = reportability
     if cross_border is not None:
         packet["cross_border"] = cross_border
+    if affected_party is not None:
+        packet["affected_party"] = affected_party
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
@@ -3501,6 +3914,18 @@ def main() -> int:
                              "SUPPRESSED on camera with the rule stated, a regime "
                              "above it files. The judgment is the LLM's; the gate is "
                              "deterministic Python")
+    parser.add_argument("--affected-party", action="store_true",
+                        help="run the affected-party / GDPR Art 34 "
+                             "communication-to-data-subject track (E3.4): after the "
+                             "regulator filings release (with the forensic amendment "
+                             "raising records 48,211 -> 2,100,000), an LLM applies the "
+                             "Art 34 HIGH-RISK standard. If high risk, a communication "
+                             "to the affected INDIVIDUALS is REQUIRED, gated on the "
+                             "release, on its own without-undue-delay clock, through "
+                             "the same two-key gate; if not, it is recorded "
+                             "not-required with the rule. The amendment cascade grows "
+                             "the affected-party SCOPE. The high-risk judgment is the "
+                             "LLM's; the gate is deterministic Python")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -3515,15 +3940,20 @@ def main() -> int:
                              "proceed plus human escalation on disagreement)")
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
-            args.inject_claims, args.reportability, args.cross_border]) > 1:
+            args.inject_claims, args.reportability, args.cross_border,
+            args.affected_party]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
-              "--inject-claims, --reportability, or --cross-border.")
+              "--inject-claims, --reportability, --cross-border, or "
+              "--affected-party.")
         return 1
     if args.reportability and args.materiality:
         print("--reportability and --materiality are separate beats; pick one.")
         return 1
     if args.cross_border and args.materiality:
         print("--cross-border and --materiality are separate beats; pick one.")
+        return 1
+    if args.affected_party and args.materiality:
+        print("--affected-party and --materiality are separate beats; pick one.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
@@ -3536,7 +3966,8 @@ def main() -> int:
            "amendment" if args.amendment else \
            "inject_claims" if args.inject_claims else \
            "reportability" if args.reportability else \
-           "cross_border" if args.cross_border else "normal"
+           "cross_border" if args.cross_border else \
+           "affected_party" if args.affected_party else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 
@@ -3560,7 +3991,8 @@ def main() -> int:
                        uk_recruit=args.uk_recruit, materiality=args.materiality,
                        sec_facts=sec_facts, second_opinion=args.second_opinion,
                        nydfs_recruit=args.nydfs_recruit,
-                       reportability=args.reportability)
+                       reportability=args.reportability,
+                       affected_party=args.affected_party)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0

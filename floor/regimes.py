@@ -31,10 +31,22 @@ _CATALOG_PATH = Path(__file__).resolve().parent / "regimes.yaml"
 # Clock start modes.
 START_STARTUP = "startup"
 START_RECRUIT = "recruit"
+# A post-release obligation (the affected-party / GDPR Art 34 communication to
+# data subjects). It is NOT a regulator filing and its clock does NOT start when
+# the floor opens or at a jurisdiction recruit: it starts at the regulator RELEASE
+# moment ("without undue delay" runs from then), and only if the high-risk gate
+# requires a communication to the affected individuals. So it is neither a startup
+# nor a recruit regime; startup_regimes / recruit_regimes both exclude it, and the
+# affected-party phase starts its clock explicitly at the release timestamp.
+START_POST_RELEASE = "post_release"
 
 # Startup-clock anchors (which fixed timestamp a startup clock counts from).
 ANCHOR_INCIDENT_T0 = "incident_t0"
 ANCHOR_MATERIALITY_DETERMINATION = "materiality_determination"
+# The affected-party (Art 34) clock anchors at the regulator RELEASE moment, not
+# at occurrence or determination: the "without undue delay" communication to data
+# subjects runs from when the regulator filings are released.
+ANCHOR_RELEASE_MOMENT = "release_moment"
 
 # Clock units.
 UNIT_HOURS = "hours"
@@ -70,6 +82,24 @@ class ReportabilitySpec:
     warden/reportability.py gate then suppresses a regime below the threshold or
     files one above it. `rule` is the short human-readable rule label rendered in
     the Examiner Packet when a regime is suppressed."""
+    standard: str
+    rule: str
+
+
+@dataclass(frozen=True)
+class HighRiskSpec:
+    """The declarative GDPR Art 34 high-risk threshold for the affected-party
+    (data-subject) communication track.
+
+    `standard` is the statutory standard applied to decide whether the breach is
+    "likely to result in a HIGH RISK to the rights and freedoms of natural persons"
+    (the Art 34 trigger to communicate the breach to the affected individuals,
+    which is a higher bar than the Art 33 duty owed to the supervisory authority).
+    The qualitative CALL against this standard is an LLM judgment
+    (floor/high_risk.py); the deterministic warden/high_risk.py gate then requires
+    a communication when high risk attaches or records it not-required otherwise.
+    `rule` is the short human-readable rule label rendered in the Examiner Packet
+    when no communication to data subjects is required."""
     standard: str
     rule: str
 
@@ -113,6 +143,7 @@ class RegimeSpec:
     recruit_name_tokens: tuple[str, ...] = ()
     reportability: ReportabilitySpec | None = None
     obligations: ObligationSpec | None = None
+    high_risk: HighRiskSpec | None = None
 
     @property
     def is_startup(self) -> bool:
@@ -121,6 +152,10 @@ class RegimeSpec:
     @property
     def is_recruit(self) -> bool:
         return self.start_mode == START_RECRUIT
+
+    @property
+    def is_post_release(self) -> bool:
+        return self.start_mode == START_POST_RELEASE
 
 
 def _parse_regime(record: dict) -> RegimeSpec:
@@ -145,6 +180,18 @@ def _parse_regime(record: dict) -> RegimeSpec:
         reportability_spec = ReportabilitySpec(
             standard=standard,
             rule=str(reportability["rule"]),
+        )
+    high_risk = record.get("high_risk")
+    high_risk_spec = None
+    if high_risk is not None:
+        # A high_risk block, when present, must carry BOTH the standard and the
+        # rule (the affected-party / Art 34 track). A half-specified block is a
+        # catalog error, surfaced structurally rather than silently treated as
+        # "no threshold".
+        high_risk_standard = " ".join(str(high_risk["standard"]).split())
+        high_risk_spec = HighRiskSpec(
+            standard=high_risk_standard,
+            rule=str(high_risk["rule"]),
         )
     obligations = record.get("obligations")
     obligations_spec = None
@@ -180,6 +227,7 @@ def _parse_regime(record: dict) -> RegimeSpec:
         recruit_name_tokens=tuple(recruit.get("name_tokens", ())),
         reportability=reportability_spec,
         obligations=obligations_spec,
+        high_risk=high_risk_spec,
     )
 
 

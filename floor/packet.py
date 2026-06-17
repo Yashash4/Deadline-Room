@@ -265,6 +265,84 @@ def _render_reportability(r: dict) -> str:
     return "".join(parts)
 
 
+def _render_affected_party(ap: dict) -> str:
+    """Render the affected-party / GDPR Art 34 communication-to-data-subject track
+    (E3.4), if the affected-party beat ran. The regulator clocks point at a
+    government recipient; this track points at the affected INDIVIDUALS whose data
+    leaked. It is a SEPARATE obligation, NOT a regulator filing, gated on the
+    regulator release, and it attaches only on a HIGH RISK to the rights and
+    freedoms of natural persons (a higher bar than the Art 33 regulator trigger).
+    The high-risk judgment is the LLM's; whether the communication is required is a
+    deterministic Python gate. When required, the count jump cascades into the
+    affected-party SCOPE (the number of individuals owed a communication)."""
+    if not ap:
+        return ""
+    required = ap.get("required")
+    scope = ap.get("scope_individuals")
+    grew = ap.get("scope_grew_from_amendment")
+    old_scope = ap.get("scope_old")
+    cls = "ok" if required else "bad"
+    decision = ("COMMUNICATION TO DATA SUBJECTS REQUIRED" if required
+                else "NO COMMUNICATION REQUIRED")
+    parts = ["<h2>5f. Affected-party notification (GDPR Art 34 communication to "
+             "data subjects)</h2>",
+             "<p class='sub'>The regulator clocks point at a government recipient; "
+             "this track points at the affected INDIVIDUALS whose data leaked. It "
+             "is a separate obligation, NOT a regulator filing, GATED ON the "
+             "regulator release (you tell the regulator, and you separately must "
+             "communicate to the people). It attaches only when the breach is "
+             "likely to result in a HIGH RISK to the rights and freedoms of natural "
+             "persons (GDPR Art 34), a higher bar than the Art 33 regulator "
+             "trigger. An LLM applies the Art 34 high-risk standard and returns a "
+             "typed verdict; the verdict crosses into the deterministic Warden gate "
+             "as data. The judgment is the LLM's; whether the communication is "
+             "required is pure Python.</p>"]
+    parts.append(
+        f"<p class='{cls}'><strong>High-risk assessment: "
+        f"{'HIGH RISK' if required else 'NOT high risk'} to data subjects. "
+        f"{decision}.</strong></p>")
+    rows = [
+        ["Standard applied", ap.get("standard")],
+        ["Verdict", "HIGH RISK" if required else "NOT high risk"],
+        ["Disposition",
+         "notify data subjects" if required else "no communication required"],
+        ["Gated on regulator release",
+         "yes (clock anchors at the release moment)" if required
+         else "yes (assessed after release)"],
+        ["Decision source (LLM)", ap.get("source")],
+    ]
+    if not required and ap.get("rule"):
+        rows.append(["Rule", ap.get("rule")])
+    if required:
+        rows.append(["Without-undue-delay clock", ap.get("clock_name")])
+        rows.append(["Clock anchored at (regulator release)",
+                     ap.get("release_anchor_ts")])
+    parts.append(_rows(["Field", "Value"], rows))
+    # The SCOPE: the number of individuals owed a communication, and how the
+    # amendment cascade grew it. This is the CISO's point made on camera.
+    if grew and isinstance(scope, int) and isinstance(old_scope, int):
+        parts.append(
+            f"<p class='bad'><strong>Affected-party scope grew with the "
+            f"amendment: {old_scope:,} -> {scope:,} individuals owed a "
+            f"communication.</strong> The forensic revision did not just change a "
+            f"regulator filing, it expanded the customer-notification scope by "
+            f"{scope - old_scope:,} people.</p>")
+    elif isinstance(scope, int):
+        parts.append(
+            f"<p class='sub'>Affected-party scope: {scope:,} individuals "
+            f"{'owed a communication' if required else 'assessed'}.</p>")
+    if ap.get("rationale"):
+        parts.append("<p class='sub'>Art 34 high-risk rationale:</p>")
+        parts.append(f"<pre>{_esc(ap.get('rationale'))}</pre>")
+    if required and ap.get("released"):
+        parts.append(
+            "<p class='ok'>The Art 34 communication passed the SAME two-key release "
+            "gate (GC + Lena) as every regulator filing, on its own "
+            "without-undue-delay clock anchored at the release moment, then "
+            "released. Legal sign-off on customer comms is real.</p>")
+    return "".join(parts)
+
+
 def _render_cross_border(cb: dict) -> str:
     """Render the cross-border obligation-conflict beat (E3.4): the in-scope
     regimes, the mutually exclusive obligations the deterministic detector caught,
@@ -1270,6 +1348,7 @@ def _render_html(p: dict) -> str:
     grounding_block = _render_grounding(p.get("grounding", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
+    affected_party_block = _render_affected_party(p.get("affected_party", {}))
     cross_border_block = _render_cross_border(p.get("cross_border", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
@@ -1435,6 +1514,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {clock_rows}
 
 {reportability_block}
+
+{affected_party_block}
 
 {cross_border_block}
 
