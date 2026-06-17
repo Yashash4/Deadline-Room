@@ -69,6 +69,7 @@ sys.path.insert(0, str(_CODE / "spikes"))
 from warden.clocks import ClockEngine  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
 from warden.ledger import IdempotencyLedger  # noqa: E402
+from warden.liveness import LivenessWatchdog  # noqa: E402
 from warden.materiality import MaterialityVerdict, gate as materiality_gate  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
@@ -591,6 +592,17 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     sm = ProtocolStateMachine()
     clocks = ClockEngine()
     ledger = IdempotencyLedger()
+    # Deterministic liveness watchdog (heartbeat -> declared-dead -> recovery).
+    # It is a pure DETECTOR layered over the recovery that already works: it
+    # observes per-agent progress in LOGICAL drain ticks (never wall-clock), and
+    # when a killed agent goes silent past the threshold the Warden narrates the
+    # declaration and the dedup-confirmed recovery as additive room posts. Its
+    # events feed the out-of-log operability block; nothing here is ever appended
+    # to the hashed run-log, so the run-log sha and byte-identical replay are
+    # untouched (the proven Warden-speaks / telemetry out-of-log pattern). It
+    # gates, counts, and clocks NOTHING: exactly-once is upheld by the ledger and
+    # the read-then-act guard exactly as before, with or without the watchdog.
+    watchdog = LivenessWatchdog()
 
     # Structured run telemetry, derived OUT-OF-LOG. Every phase boundary, count,
     # and per-clock margin recorded below lives in this in-process collector and
@@ -739,6 +751,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         fn = _draft_fn_for(branch, r, draft_fns, draft_timeout, provider_set)
         _provider, _model = roster.resolve(r, provider_set)
 
+        # Begin liveness tracking for this drafter at its first heartbeat (the
+        # moment it is driven). The watchdog ticks per drain cycle inside the
+        # drive; on the chaos branch the kill makes it miss its heartbeat.
+        watchdog.register(branch, r.regime)
         trace.say(f"[5.{branch}] {r.regime} Drafter draining /next for the mention ...")
         landed = _drive_drafter(
             client=client, warden_id=warden_id, branch=branch, regime=r.regime,
@@ -746,6 +762,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             chaos=(branch == chaos_branch), warden=warden,
             drafter_id=drafter_ids[branch],
             inject_claims=(inject_claims and branch == INJECT_CLAIMS_BRANCH),
+            watchdog=watchdog,
         )
         if not landed.get("text"):
             raise RuntimeError(f"{r.regime} Drafter did not produce a draft")
@@ -940,6 +957,12 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     telemetry.recovered_retries = RETRY_COUNTER.recovered
     telemetry.duplicates_dropped = ledger.duplicates_dropped()
     telemetry.chaos_events = len(trace.chaos_events)
+    # Liveness summary (out-of-log): which agents the watchdog declared dead, the
+    # detection latency in logical drain cycles, and that every declared-dead
+    # agent recovered with 0 double-files. None when nothing was declared dead, so
+    # a clean run carries no liveness section. Derived purely from the logical-tick
+    # watchdog; never written to the hashed run-log.
+    telemetry.liveness = watchdog.summary() if watchdog.declared_dead() else None
     telemetry.finalize(clocks, trace.transitions)
     telemetry.emit_log_lines()
     operability = telemetry.operability_block()
@@ -983,7 +1006,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
 
 def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
                    ledger: IdempotencyLedger, trace: StepTrace, chaos: bool,
-                   warden=None, drafter_id=None, inject_claims: bool = False) -> dict:
+                   warden=None, drafter_id=None, inject_claims: bool = False,
+                   watchdog: LivenessWatchdog | None = None) -> dict:
     """Run one drafter through the live handoff by driving the message lifecycle
     by hand (drain /next, mark processing, draft via Featherless, post back with
     a dedup key, mark processed). Driving it manually lets the chaos beat model a
@@ -991,6 +1015,14 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
     marks the fact-record processed, so the live /next cursor has not advanced
     and re-serves the same message. On recovery the dedup ledger drops the
     re-post, so the filing lands exactly once with no double draft.
+
+    The liveness watchdog (when supplied) is driven alongside the lifecycle in
+    LOGICAL ticks: one tick per drain cycle, a heartbeat (progress) on every
+    lifecycle advance. On the chaos branch the kill makes the agent miss its
+    heartbeat; the watchdog crosses its logical threshold on the recovery
+    re-drain and the Warden narrates declared-dead then recovered. The watchdog
+    DETECTS and NARRATES only; the exactly-once outcome is upheld by the dedup
+    ledger and the read-then-act guard exactly as it is without the watchdog.
 
     Returns {"text": <draft prose+claims>, "message_id": <band id>}."""
     result = {"text": None, "message_id": ""}
@@ -1047,6 +1079,8 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
 
     poll = 0.0 if _is_fake(client) else 2.0
     # ---- Attempt 1: drain the fact-record mention, draft, post --------
+    if watchdog is not None:
+        watchdog.tick()  # one drain cycle
     msg = _drain(client, regime, trace, poll=poll)
     if not msg:
         raise RuntimeError(f"{regime} Drafter never saw the fact-record mention")
@@ -1054,10 +1088,18 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
     client.mark(mid, "processing")
     trace.record_lifecycle(mid, "processing")
     draft_and_post(mid, attempt=1)
+    if watchdog is not None:
+        # The drafter advanced its lifecycle: a heartbeat. A healthy (non-chaos)
+        # agent records progress every drain cycle, so it never crosses the
+        # stall threshold, which is the no-false-positive guarantee.
+        watchdog.progress(branch)
 
     if chaos:
         # Crash position B: kill the process here, AFTER the draft is in the room
         # but BEFORE marking the fact-record processed. The cursor does not move.
+        # From the watchdog's seat the agent now goes SILENT: it records no
+        # further heartbeat across the kill and the recovery re-drain, so its
+        # logical-tick stall counter climbs past the threshold.
         trace.record_chaos({
             "branch": branch, "phase": "kill", "attempt": 1,
             "disposition": "killed_position_B",
@@ -1067,11 +1109,39 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
         })
         trace.say(f"    [CHAOS] {regime} Drafter killed at position B "
                   f"(posted, not yet acked); /next will re-serve the mention")
+        if watchdog is not None:
+            # The kill cycle: the orchestrator polled, the agent owed a heartbeat
+            # (mark the fact-record processed) and never delivered one. Tick the
+            # logical clock with NO progress recorded, so the stall counter starts
+            # to climb from here.
+            watchdog.tick()
         # A fresh container has no in-memory handled set; model the restart.
         _forget_handled(client)
 
         # ---- Recovery: re-drain (same message re-served), dedup drops it -
+        # The restart is one more drain cycle: the watchdog ticks, the agent
+        # still has not advanced since the kill, and the stall now exceeds the
+        # logical threshold. The Warden DECLARES the agent dead (detection) and
+        # narrates it in the room, then on the dedup-confirmed re-post records
+        # the recovery. This is the heartbeat -> declared-dead -> recovery loop
+        # made visible over the exactly-once recovery that already worked.
         trace.say(f"    {regime} Drafter restarting, re-draining /next ...")
+        if watchdog is not None:
+            watchdog.tick()  # the recovery drain cycle
+            dead = watchdog.check(branch, regime)
+            if dead is not None and warden is not None:
+                _warden_announce(
+                    warden, trace,
+                    f"@{regime} Drafter missed its heartbeat "
+                    f"(no progress for {dead.detection_latency_ticks} logical "
+                    f"drain cycle(s), past the {watchdog.threshold_ticks}-cycle "
+                    f"liveness threshold). Declaring it offline; awaiting "
+                    f"redelivery and recovery.",
+                    mentions=[drafter_id] if drafter_id else None,
+                    dedup_key=f"warden:liveness-dead:{branch}:{INCIDENT_ID}")
+                trace.say(f"    [LIVENESS] Warden declared {regime} Drafter dead "
+                          f"(stalled {dead.detection_latency_ticks} logical "
+                          f"cycle(s) past the threshold)")
         msg2 = _drain(client, regime, trace, poll=poll)
         if not msg2:
             raise RuntimeError(f"{regime} Drafter recovery saw no re-served message")
@@ -1081,6 +1151,21 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
         draft_and_post(mid2, attempt=2)
         client.mark(mid2, "processed")
         trace.record_lifecycle(mid2, "processed")
+        if watchdog is not None:
+            # The redelivered work was handled exactly once (the dedup ledger
+            # dropped the duplicate inside draft_and_post). Record the recovery
+            # and narrate it: the declared-dead agent is back, no double-file.
+            recovered = watchdog.recover(branch, regime)
+            if recovered is not None and warden is not None:
+                _warden_announce(
+                    warden, trace,
+                    f"@{regime} Drafter recovered: its work was already recorded, "
+                    f"the redelivered duplicate was dropped, no double-file. "
+                    f"Exactly-once held across the declared-dead window.",
+                    mentions=[drafter_id] if drafter_id else None,
+                    dedup_key=f"warden:liveness-recovered:{branch}:{INCIDENT_ID}")
+                trace.say(f"    [LIVENESS] Warden recovered {regime} Drafter "
+                          f"(filing landed exactly once)")
     else:
         client.mark(mid, "processing")  # idempotent; no-op if already processing
         client.mark(mid, "processed")

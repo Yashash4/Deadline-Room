@@ -191,6 +191,101 @@ def test_chaos_packet_shows_exactly_once_evidence(tmp_path):
     assert "Duplicates dropped" in html
 
 
+# ---- liveness loop (heartbeat -> declared-dead -> recovery) ----------------
+
+def test_chaos_declares_dead_then_recovers_exactly_once(tmp_path):
+    # The killed SEC drafter is detected (declared dead past the liveness
+    # threshold) AND recovered, with the filing landing exactly once: 0 double
+    # files. This is the detection -> declaration -> recovery loop made visible
+    # over the exactly-once recovery that already worked.
+    packet = _run("chaos", tmp_path)
+    lv = packet["operability"]["liveness"]
+    assert lv is not None
+    assert lv["declared_dead_count"] == 1
+    assert lv["recovered_count"] == 1
+    assert lv["all_recovered"] is True
+    assert lv["double_files"] == 0
+    assert lv["declared_dead"][0]["branch"] == "sec"
+    # the filing still landed exactly once (the existing exactly-once guarantee)
+    assert packet["chaos"]["duplicates_dropped"] == 1
+    accepted = [e for e in packet["chaos"]["ledger"]
+                if e["key"] == "draft:sec:inc-8842:round-1"
+                and e["disposition"] == "accepted"]
+    assert len(accepted) == 1
+
+
+def test_chaos_liveness_threshold_is_logical_and_deterministic(tmp_path):
+    # The detection threshold is a LOGICAL (drain-cycle) bound, not wall-clock:
+    # two runs of the same chaos beat declare the agent dead at the same logical
+    # tick with the same detection latency, and replay stays byte-identical.
+    import time
+    p_a = _run("chaos", tmp_path / "a")
+    time.sleep(0.05)  # real time passes; a wall-clock threshold would drift
+    p_b = _run("chaos", tmp_path / "b")
+    dead_a = p_a["operability"]["liveness"]["declared_dead"][0]
+    dead_b = p_b["operability"]["liveness"]["declared_dead"][0]
+    assert dead_a["tick"] == dead_b["tick"]
+    assert dead_a["detection_latency_ticks"] == dead_b["detection_latency_ticks"]
+    # the run-log sha and replay are unmoved by the liveness layer
+    assert p_a["replay"]["original_sha256"] == p_b["replay"]["original_sha256"]
+    assert p_a["replay"]["byte_identical"] is True
+    assert p_b["replay"]["byte_identical"] is True
+
+
+def test_healthy_run_declares_no_one_dead(tmp_path):
+    # A normal run advances every drafter every cycle: no agent is ever declared
+    # dead, so the operability liveness section is absent (no false positive).
+    packet = _run("normal", tmp_path)
+    assert packet["operability"]["liveness"] is None
+
+
+def test_warden_narrates_declared_dead_and_recovery_in_room(tmp_path):
+    # The Warden posts the declared-dead and recovered narration into the Band
+    # room (additive visibility), @mentioning the killed drafter.
+    room, clients = _build_clients()
+    run_floor(out_dir=str(tmp_path), mode="chaos", clients=clients,
+              draft_fns=_stub_draft_fns())
+    warden_msgs = _warden_messages(room)
+    dead = [m for m in warden_msgs if "missed its heartbeat" in m["content"]]
+    recovered = [m for m in warden_msgs
+                 if "recovered" in m["content"]
+                 and "Exactly-once held across the declared-dead window"
+                 in m["content"]]
+    assert len(dead) == 1, "the Warden must declare the killed drafter dead"
+    assert len(recovered) == 1, "the Warden must narrate the recovery"
+    assert "sec-id" in dead[0]["mentions"]
+    assert "sec-id" in recovered[0]["mentions"]
+
+
+def test_liveness_posts_do_not_change_sha_or_replay(tmp_path):
+    # The liveness narration is additive (room posts + out-of-log operability),
+    # never in the hashed run-log: the chaos run-log sha is identical run to run
+    # and replay holds. This is the same sha-neutral guarantee the other Warden
+    # room posts carry.
+    room_a, clients_a = _build_clients()
+    p_a = run_floor(out_dir=str(tmp_path / "a"), mode="chaos", clients=clients_a,
+                    draft_fns=_stub_draft_fns())
+    room_b, clients_b = _build_clients()
+    p_b = run_floor(out_dir=str(tmp_path / "b"), mode="chaos", clients=clients_b,
+                    draft_fns=_stub_draft_fns())
+    # the Warden DID narrate liveness in both rooms
+    assert any("missed its heartbeat" in m["content"]
+               for m in _warden_messages(room_a))
+    assert any("missed its heartbeat" in m["content"]
+               for m in _warden_messages(room_b))
+    assert p_a["replay"]["original_sha256"] == p_b["replay"]["original_sha256"]
+    assert p_a["replay"]["byte_identical"] is True
+    assert p_b["replay"]["byte_identical"] is True
+
+
+def test_liveness_section_renders_in_packet_html(tmp_path):
+    packet = _run("chaos", tmp_path)
+    html = Path(packet["_paths"]["html"]).read_text(encoding="utf-8")
+    assert "Liveness loop" in html
+    assert "declared-dead" in html
+    assert "logical" in html.lower()
+
+
 # ---- claims envelope -------------------------------------------------------
 
 def test_drafters_emit_parsable_structured_claims(tmp_path):

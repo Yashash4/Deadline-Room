@@ -562,6 +562,51 @@ def _render_operability(op: dict) -> str:
           tp.get("diff_conflicts", 0), rel.get("recovered_retries", 0),
           rel.get("duplicates_dropped", 0), rel.get("chaos_events", 0),
           rel.get("rejected_transitions", 0)]]))
+
+    # Liveness loop: heartbeat -> declared-dead -> recovery. Rendered only when an
+    # agent was actually declared dead (a clean run carries no liveness section).
+    parts.append(_render_liveness(op.get("liveness")))
+    return "".join(parts)
+
+
+def _render_liveness(lv: dict | None) -> str:
+    """Render the liveness loop: which agents the watchdog declared dead, the
+    detection latency in LOGICAL drain cycles (never wall-clock, so the same run
+    declares at the same point on every replay), and that every declared-dead
+    agent recovered with 0 double-files. Pure out-of-log data from the logical-tick
+    watchdog; render-only, so the run-log sha and byte-identical replay are
+    untouched. Empty when nothing was declared dead."""
+    if not lv or not lv.get("declared_dead"):
+        return ""
+    dead = lv.get("declared_dead", [])
+    recovered = lv.get("recovered", [])
+    all_recovered = lv.get("all_recovered", False)
+    cls = "ok" if all_recovered else "bad"
+    parts = ["<h3>Liveness loop (heartbeat &rarr; declared-dead &rarr; recovery)</h3>"]
+    parts.append(
+        "<p class='sub'>The watchdog tracks each drafter's progress in LOGICAL "
+        f"drain cycles (threshold {lv.get('threshold_ticks')} cycles), never in "
+        "wall-clock seconds, so the same run declares an agent dead at the same "
+        "point on every byte-identical replay. Detection latency is measured in "
+        "those logical cycles.</p>")
+    rows = []
+    rec_branches = {r.get("branch") for r in recovered}
+    for d in dead:
+        rows.append([
+            d.get("agent"), d.get("branch"),
+            f"cycle {d.get('tick')}",
+            f"{d.get('detection_latency_ticks')} cycle(s)",
+            "recovered, no double-file" if d.get("branch") in rec_branches
+            else "not recovered"])
+    parts.append(_rows(
+        ["Agent", "Branch", "Declared dead at", "Detection latency", "Outcome"],
+        rows))
+    dbl = lv.get("double_files")
+    parts.append(
+        f"<p class='{cls}'><strong>{lv.get('recovered_count', 0)}/"
+        f"{lv.get('declared_dead_count', 0)} declared-dead agent(s) recovered; "
+        f"{0 if dbl is None and all_recovered else dbl} double-file(s). "
+        f"Exactly-once held across every declared-dead window.</strong></p>")
     return "".join(parts)
 
 

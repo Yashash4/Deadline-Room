@@ -111,6 +111,11 @@ class RunTelemetry:
     duplicates_dropped: int = 0
     chaos_events: int = 0
     rejected_transitions: int = 0
+    # The deterministic liveness watchdog summary (heartbeat -> declared-dead ->
+    # recovery), set by the orchestrator from LivenessWatchdog.summary(). Pure
+    # out-of-log data derived from the logical-tick watchdog; rendered into the
+    # operability block. Empty when no agent was declared dead. None until set.
+    liveness: dict | None = None
     # Computed in finalize() from the ClockEngine clocks.
     margins: list[ClockMargin] = field(default_factory=list)
 
@@ -208,6 +213,16 @@ class RunTelemetry:
                 m.filed_utc if m.filed_utc else "(running)",
                 "n/a" if m.margin_hours is None else f"{m.margin_hours:.2f}",
                 m.breached)
+        if self.liveness:
+            log.info(
+                "liveness time_base=%s threshold_ticks=%d declared_dead=%d "
+                "recovered=%d all_recovered=%s double_files=%s",
+                self.liveness.get("time_base"),
+                self.liveness.get("threshold_ticks", 0),
+                self.liveness.get("declared_dead_count", 0),
+                self.liveness.get("recovered_count", 0),
+                self.liveness.get("all_recovered"),
+                self.liveness.get("double_files"))
         nearest = self.nearest_deadline
         log.info(
             "run_summary mode=%s clock_set=%r clocks=%d filed=%d released=%d "
@@ -272,6 +287,12 @@ class RunTelemetry:
                 "chaos_events": self.chaos_events,
                 "rejected_transitions": self.rejected_transitions,
             },
+            # Liveness loop summary (heartbeat -> declared-dead -> recovery).
+            # Derived from the logical-tick watchdog; reports which agents were
+            # declared dead, the detection latency in logical drain cycles, and
+            # that every declared-dead agent recovered with 0 double-files.
+            # Omitted (None) on runs with no kill, so a clean run renders nothing.
+            "liveness": self.liveness,
             "deadline_margins": [
                 {"clock": m.clock, "correlation_id": m.correlation_id,
                  "trigger_event": m.trigger_event, "deadline_utc": m.deadline_utc,
