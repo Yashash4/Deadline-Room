@@ -18,9 +18,20 @@
 #     length         the statutory window, an integer
 #     unit           "hours" (calendar) or "business_days"
 #     business_days  true when the count is in business days (SEC), false otherwise
-#     holiday_calendar  the named calendar a business-day clock consults
-#                       (only "US_FEDERAL_2026" is wired today; calendar clocks
-#                       name "none")
+#     holiday_calendar  the named holiday-calendar id a business-day clock counts
+#                       against (warden.clocks.HOLIDAY_CALENDARS): "US_FEDERAL"
+#                       (SEC), "UK_BANK", "DE_FEDERAL", "EU_TARGET". A calendar
+#                       (flat-hour) clock names "none". A business-day count skips
+#                       THAT jurisdiction's public holidays, not US ones.
+#     display_timezone  the IANA zone the regulator reads this deadline in
+#                       (America/New_York for the SEC, Europe/Brussels for
+#                       NIS2/DORA, Europe/London for the UK ICO). RENDER-ONLY: the
+#                       stored/compared deadline stays a UTC instant; the packet
+#                       derives the local wall-clock face from it at render time,
+#                       so the same 72h window reads differently in Berlin than in
+#                       London while remaining one true UTC instant. It NEVER
+#                       enters the deadline math or the hashed run-log, so the SEC
+#                       computed instant is byte-identical with or without it.
 #   format_profile   the per-regime filing field skeleton id (floor/formats.py)
 #   start:
 #     mode    "startup"  the clock starts when the floor opens (anchor below)
@@ -61,6 +72,7 @@ regimes:
       unit: hours
       business_days: false
       holiday_calendar: none
+      display_timezone: Europe/Brussels
     format_profile: nis2_early
     start:
       mode: startup
@@ -85,6 +97,7 @@ regimes:
       unit: hours
       business_days: false
       holiday_calendar: none
+      display_timezone: Europe/Brussels
     format_profile: nis2_full
     start:
       mode: startup
@@ -109,6 +122,7 @@ regimes:
       unit: hours
       business_days: false
       holiday_calendar: none
+      display_timezone: Europe/Brussels
     format_profile: dora
     start:
       mode: startup
@@ -133,7 +147,8 @@ regimes:
       length: 4
       unit: business_days
       business_days: true
-      holiday_calendar: US_FEDERAL_2026
+      holiday_calendar: US_FEDERAL
+      display_timezone: America/New_York
     format_profile: sec_8k
     start:
       mode: startup
@@ -158,6 +173,7 @@ regimes:
       unit: hours
       business_days: false
       holiday_calendar: none
+      display_timezone: Europe/London
     format_profile: ico_art33
     start:
       mode: recruit
@@ -185,6 +201,7 @@ regimes:
       unit: hours
       business_days: false
       holiday_calendar: none
+      display_timezone: America/New_York
     format_profile: nydfs_50017
     start:
       mode: recruit

@@ -45,6 +45,11 @@ class RecruitTarget:
     # The real filing field skeleton (floor/formats.py id) the recruited drafter
     # fills. Defaulted so any future target that omits it still constructs.
     format_profile: str = ""
+    # The IANA zone the recruited regulator reads its deadline in (Europe/London
+    # for the UK ICO, America/New_York for NYDFS). RENDER-ONLY: the stored deadline
+    # stays a UTC instant and the packet derives the local wall-clock from it.
+    # Defaulted so any future target that omits it still constructs.
+    display_timezone: str = ""
 
 
 def target_from_spec(spec: "regimes.RegimeSpec") -> RecruitTarget:
@@ -63,6 +68,7 @@ def target_from_spec(spec: "regimes.RegimeSpec") -> RecruitTarget:
         clock_hours=spec.clock.length,
         trigger_event=spec.trigger_event,
         format_profile=spec.format_profile,
+        display_timezone=spec.clock.display_timezone,
     )
 
 

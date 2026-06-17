@@ -391,12 +391,22 @@ def _start_clocks_from_catalog(clocks: ClockEngine, branches=None) -> None:
         corr = f"{INCIDENT_ID}:{spec.branch}"
         anchor_ts = _STARTUP_ANCHOR_TS[spec.start_anchor]
         if spec.clock.business_days:
+            # The business-day count skips the regime's OWN jurisdiction's
+            # holidays via spec.clock.holiday_calendar. SEC names US_FEDERAL (the
+            # default), so its computed deadline is byte-identical to before this
+            # registry existed; a non-US business-day regime would name its own
+            # calendar id and the count would skip THAT jurisdiction's holidays.
+            # display_tz is render-only metadata; it never enters the deadline
+            # math or the hashed run-log.
             clocks.start_sec_business_days(
                 corr, anchor_ts, days=spec.clock.length,
-                trigger_event=spec.trigger_event)
+                trigger_event=spec.trigger_event,
+                calendar=spec.clock.holiday_calendar,
+                display_tz=spec.clock.display_timezone)
         else:
             clocks.start_hours(spec.clock.name, corr, anchor_ts,
-                               spec.clock.length, trigger_event=spec.trigger_event)
+                               spec.clock.length, trigger_event=spec.trigger_event,
+                               display_tz=spec.clock.display_timezone)
 
 
 class StepTrace:
@@ -2448,7 +2458,8 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
     #    unchanged: target.clock_hours flat hours from the recruit timestamp.
     corr = branch_corr[target.branch]
     clocks.start_hours(target.clock_name, corr, ts_recruit, target.clock_hours,
-                       trigger_event=target.trigger_event)
+                       trigger_event=target.trigger_event,
+                       display_tz=target.display_timezone)
     log.append("clock_started", {"clock": target.clock_name, "correlation_id": corr,
                                  "started_at": ts_recruit,
                                  "deadline": clocks.get(corr).deadline.isoformat(),
@@ -2815,6 +2826,16 @@ def _clock_rows(clocks) -> list[dict]:
             "name": c.name, "correlation_id": c.correlation_id,
             "trigger_event": c.trigger_event,
             "started": c.started_at.isoformat(), "deadline": c.deadline.isoformat(),
+            # The deadline rendered in the regulator's local wall-clock, derived
+            # at this packet-assembly step from the stored UTC instant via
+            # render_local. RENDER-ONLY: it is NOT the canonical value, it is NOT
+            # what the contradiction diff compares, and it is NOT written into the
+            # hashed run-log. Empty when the regime configured no display zone.
+            "deadline_local": c.local_deadline(),
+            # Which jurisdiction's holiday calendar a business-day count skipped
+            # (US_FEDERAL for the SEC); empty for a calendar-hour clock. Render
+            # provenance only.
+            "holiday_calendar": c.holiday_calendar,
             "stopped": c.stopped_at.isoformat() if c.stopped_at else "",
             "breached": c.breached(c.stopped_at or c.deadline) if c.stopped_at else False,
         })

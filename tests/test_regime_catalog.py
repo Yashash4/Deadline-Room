@@ -30,7 +30,11 @@ def test_sec_regime_is_four_business_days_from_determination():
     assert spec.clock.length == 4
     assert spec.clock.unit == regimes.UNIT_BUSINESS_DAYS
     assert spec.clock.business_days is True
-    assert spec.clock.holiday_calendar == "US_FEDERAL_2026"
+    # The catalog names a registry calendar id (warden.clocks.HOLIDAY_CALENDARS)
+    # the business-day count actually consults; the SEC count skips US federal
+    # holidays. The deterministic display zone is America/New_York.
+    assert spec.clock.holiday_calendar == "US_FEDERAL"
+    assert spec.clock.display_timezone == "America/New_York"
     assert spec.trigger_event == "materiality determination"
     assert spec.start_anchor == regimes.ANCHOR_MATERIALITY_DETERMINATION
 

@@ -43,12 +43,19 @@ UNIT_BUSINESS_DAYS = "business_days"
 
 @dataclass(frozen=True)
 class ClockSpec:
-    """The statutory clock rule for one regime, lifted from the catalog."""
+    """The statutory clock rule for one regime, lifted from the catalog.
+
+    `holiday_calendar` is the named holiday-calendar id a business-day clock counts
+    against (warden.clocks.HOLIDAY_CALENDARS: US_FEDERAL, UK_BANK, DE_FEDERAL,
+    EU_TARGET); a calendar-hour clock names "none". `display_timezone` is the IANA
+    zone the regulator reads the deadline in (render-only; the stored deadline
+    stays a UTC instant)."""
     name: str
     length: int
     unit: str
     business_days: bool
     holiday_calendar: str
+    display_timezone: str = ""
 
 
 @dataclass(frozen=True)
@@ -106,6 +113,7 @@ def _parse_regime(record: dict) -> RegimeSpec:
         unit=clock["unit"],
         business_days=bool(clock["business_days"]),
         holiday_calendar=clock["holiday_calendar"],
+        display_timezone=str(clock.get("display_timezone", "")),
     )
     reportability = record.get("reportability")
     reportability_spec = None

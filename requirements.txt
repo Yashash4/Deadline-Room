@@ -1,13 +1,17 @@
 # Deadline Room runtime and test dependencies, pinned to the exact versions this
 # repo is tested against so a clean clone resolves the same set every time.
-# The deterministic Warden core (warden/) and the offline web-viewer capture
-# need nothing but the standard library. These are for the live floor run, the
-# test suite, the lint gate, and the optional cover-image script.
+# The deterministic Warden core (warden/) runs on the standard library plus the
+# IANA tz database (tzdata, for local-time deadline rendering via zoneinfo); the
+# offline web-viewer capture needs nothing but the standard library. These are for
+# the live floor run, the test suite, the lint gate, and the optional cover script.
 
 requests==2.32.5    # live Band REST + Featherless / AI-ML API calls (floor/)
 pytest==9.0.3       # the 282-test property suite (tests/)
 hypothesis==6.155.3 # property-based tests over generated inputs (tests/test_properties_hypothesis.py)
 ruff==0.15.15       # lint gate (scripts/hygiene_gate.py + make lint)
+tzdata==2026.2      # IANA tz database for zoneinfo (warden/clocks.py local-time
+                    # deadline rendering); required where there is no system tz
+                    # database (Windows), harmless where one already exists.
 
 # The cover-image script (scripts/make_cover.py) additionally needs Pillow.
 # It is optional and not imported by the product, so it is listed separately.

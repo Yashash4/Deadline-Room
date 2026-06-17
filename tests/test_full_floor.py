@@ -79,6 +79,35 @@ def test_normal_replay_byte_identical(tmp_path):
     assert replay(loaded).sha256() == packet["replay"]["original_sha256"]
 
 
+def test_sec_clock_renders_local_time_and_us_federal_calendar(tmp_path):
+    # E3.3: the SEC clock row carries the UTC deadline (unchanged), the regulator's
+    # local wall-clock derived at render time, and the holiday calendar the count
+    # consulted. The local string is additive provenance, never the canonical value.
+    packet = _run("normal", tmp_path)
+    sec = next(c for c in packet["clocks"] if "SEC" in c["name"])
+    assert sec["deadline"] == "2026-06-23T23:59:59+00:00"
+    assert sec["holiday_calendar"] == "US_FEDERAL"
+    assert "EDT (America/New_York)" in sec["deadline_local"]
+    assert sec["deadline_local"].startswith("2026-06-23 19:59:59")
+    # The calendar-hour EU clocks render in Europe/Brussels but carry no holiday
+    # calendar (no business-day math), proving the two columns are independent.
+    nis2 = next(c for c in packet["clocks"] if c["name"].startswith("NIS2 full"))
+    assert nis2["holiday_calendar"] == ""
+    assert "Europe/Brussels" in nis2["deadline_local"]
+
+
+def test_e33_render_did_not_move_the_sealed_normal_sha(tmp_path):
+    # The byte-identical guard: a fresh full-floor normal run must produce the
+    # EXACT sha the sealed normal capture carries. The local-time rendering is
+    # additive (packet-render only), so the hashed run-log, and therefore the SEC
+    # computed deadline inside it, is unchanged by E3.3.
+    sealed = json.loads(
+        (Path(__file__).resolve().parent.parent
+         / "web" / "data" / "packet-normal.json").read_text(encoding="utf-8"))
+    packet = _run("normal", tmp_path)
+    assert packet["replay"]["original_sha256"] == sealed["replay"]["original_sha256"]
+
+
 def test_packet_written_with_chaos_and_diff_sections(tmp_path):
     packet = _run("normal", tmp_path)
     html = Path(packet["_paths"]["html"]).read_text(encoding="utf-8")

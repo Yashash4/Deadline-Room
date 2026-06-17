@@ -1014,11 +1014,15 @@ def _render_cover(p: dict) -> str:
         trigger = c.get("trigger_event", "")
         trigger_html = (f'<div class="jtrigger">trigger: {_esc(trigger)}</div>'
                         if trigger else "")
+        local = c.get("deadline_local", "")
+        local_html = (f'<div class="jlocal">local: {_esc(local)}</div>'
+                      if local else "")
         chips.append(
             f'<div class="jchip {cls}">'
             f'<div class="jname">{_esc(c.get("name", ""))}</div>'
             f'{trigger_html}'
             f'<div class="jdeadline">deadline {_esc(c.get("deadline", ""))}</div>'
+            f'{local_html}'
             f'<div class="jstatus">{_esc(label)}</div></div>')
     chips_html = "".join(chips) or '<div class="jchip st-warn">no clocks</div>'
 
@@ -1162,11 +1166,13 @@ def _render_html(p: dict) -> str:
         [[m.get("message_id"), " -> ".join(m.get("states", []))] for m in lifecycle],
     )
     clock_rows = _rows(
-        ["Clock", "Branch", "Trigger event", "Started", "Deadline", "Stopped",
-         "Breached"],
+        ["Clock", "Branch", "Trigger event", "Started", "Deadline (UTC)",
+         "Deadline (regulator local)", "Holiday calendar", "Stopped", "Breached"],
         [[c.get("name"), c.get("correlation_id"), c.get("trigger_event"),
-          c.get("started"), c.get("deadline"), c.get("stopped") or "(running)",
-          c.get("breached")]
+          c.get("started"), c.get("deadline"),
+          c.get("deadline_local") or "(UTC only)",
+          c.get("holiday_calendar") or "(calendar-hour, no holiday math)",
+          c.get("stopped") or "(running)", c.get("breached")]
          for c in clocks],
     )
     filing_blocks = "".join(
@@ -1257,6 +1263,7 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
           min-width: 150px; border-left-width: 5px; }}
 .jname {{ font-weight: 600; font-size: 13px; }}
 .jdeadline {{ font-size: 11px; color: #5b6473; font-family: ui-monospace, monospace; }}
+.jlocal {{ font-size: 11px; color: #5b6473; font-family: ui-monospace, monospace; }}
 .jtrigger {{ font-size: 11px; color: #5b6473; font-style: italic; margin-top: 1px; }}
 .jstatus {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
             font-weight: 700; margin-top: 2px; }}
@@ -1341,6 +1348,12 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {transition_rows}
 
 <h2>5. Statutory clocks</h2>
+<p class="sub">Each deadline is stored and compared as a single UTC instant; the
+"regulator local" column derives that same instant in the regulator's own IANA
+time zone at render time (the same 72-hour window is a different wall-clock in
+Brussels than in London). A business-day clock counts against its OWN
+jurisdiction's public-holiday calendar: the SEC 4-business-day count skips US
+federal holidays (Juneteenth, etc.), not another country's.</p>
 {clock_rows}
 
 {reportability_block}
