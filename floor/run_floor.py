@@ -94,6 +94,7 @@ from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
+from floor.telemetry import RunTelemetry  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
 INCIDENT_T0 = "2026-06-16T02:14:00+00:00"
@@ -591,6 +592,13 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     clocks = ClockEngine()
     ledger = IdempotencyLedger()
 
+    # Structured run telemetry, derived OUT-OF-LOG. Every phase boundary, count,
+    # and per-clock margin recorded below lives in this in-process collector and
+    # is read at packet time into the additive operability block; nothing here is
+    # ever appended to the hashed run-log JSONL, so the run-log sha and
+    # byte-identical replay are untouched (the proven floor.retry counter pattern).
+    telemetry = RunTelemetry(mode=mode)
+
     # ---- Provider set: state plainly which LLM configuration is active --------
     provider_validation = _announce_provider_set(trace, log, provider_set, live)
 
@@ -911,6 +919,39 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
               f"{signature['pubkey_fingerprint']}) over sha256 + chain_head; the "
               f"signature is detached, the run-log sha is unchanged.")
 
+    # ---- Structured run telemetry (derived OUT-OF-LOG) ----------------
+    # Record the per-phase wall clock from the deterministic demo timestamps, the
+    # throughput and reliability counts gathered through the run, then finalize the
+    # per-clock deadline margins from the deterministic ClockEngine math (deadline
+    # minus filed-at). Emit the structured lines on the quiet deadline_room.net
+    # logger. Every number here is read from in-process state or the clock math;
+    # NONE of it is written into the hashed run-log, so original_sha and the
+    # byte-identical replay above are untouched (this runs AFTER the sha is sealed).
+    release_phase_end = TS_AMEND_RELEASE if mode == "amendment" else TS_RELEASE
+    telemetry.clock_set = ", ".join(c.name for c in clocks.all())
+    telemetry.record_phase("drafting", TS_FACTS, TS_DRAFT)
+    telemetry.record_phase("contradiction_round_trip", TS_DRAFT, TS_DIFF)
+    telemetry.record_phase("two_key_release", TS_DIFF, release_phase_end)
+    telemetry.drafted = len(filings)
+    telemetry.filings = len(filings)
+    telemetry.diff_conflicts = len(blocked)
+    telemetry.released = len(released_branches_in_order)
+    telemetry.suppressed = len(suppressed_branches)
+    telemetry.recovered_retries = RETRY_COUNTER.recovered
+    telemetry.duplicates_dropped = ledger.duplicates_dropped()
+    telemetry.chaos_events = len(trace.chaos_events)
+    telemetry.finalize(clocks, trace.transitions)
+    telemetry.emit_log_lines()
+    operability = telemetry.operability_block()
+    nearest = telemetry.nearest_deadline
+    trace.say(
+        "    Operability: "
+        + (f"{telemetry.filings} filing(s), nearest deadline "
+           f"{nearest.deadline_utc if nearest else '(none)'}, min statutory margin "
+           + ("n/a" if telemetry.min_filed_margin_hours is None
+              else f"{telemetry.min_filed_margin_hours:.2f}h")
+           + f", {sum(1 for m in telemetry.margins if m.breached)} breach(es)."))
+
     # ---- Assemble + write the Examiner Packet -------------------------
     packet = _assemble_packet(
         room_id, trace, clocks, claims_by_branch, blocked, resolved,
@@ -926,6 +967,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         released_branches=[b for b in DRAFTER_BRANCHES_THIS_RUN
                            if sm.state(branch_corr[b]).value == "released"],
         recovered_retries=RETRY_COUNTER.recovered,
+        operability=operability,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2364,7 +2406,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      provider_validation=None, materiality=None, recruit=None,
                      nydfs_recruit=None,
                      release_gate=None, released_branches=None,
-                     recovered_retries: int = 0) -> dict:
+                     recovered_retries: int = 0, operability=None) -> dict:
     clock_rows = []
     for c in clocks.all():
         clock_rows.append({
@@ -2503,6 +2545,14 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # hashed run-log JSONL and replay stays byte-identical.
     if recovered_retries:
         packet["reliability"] = {"recovered_retries": recovered_retries}
+    # Operability / SLO block. Additive, derived OUT-OF-LOG from the in-process
+    # telemetry collector and the deterministic clock math (per-clock deadline
+    # margin = deadline - filed-at), assembled AFTER the run-log sha was sealed.
+    # It is render-only and never enters the hashed JSONL, so the run-log sha and
+    # byte-identical replay are untouched. Always present (a trivial run renders a
+    # clean, zeroed block); the renderer omits empty sub-sections gracefully.
+    if operability is not None:
+        packet["operability"] = operability
     return packet
 
 

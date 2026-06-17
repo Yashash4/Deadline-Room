@@ -485,6 +485,86 @@ def _render_reliability(rel: dict) -> str:
         "than an aborted filing.</p>")
 
 
+def _render_operability(op: dict) -> str:
+    """Render the operability / SLO block: the operations numbers an enterprise
+    judge and a CISO watch. Per regime the deadline MARGIN (how much statutory time
+    remained when the filing landed), the nearest deadline, the per-phase
+    throughput timings, the retry/dedup counts, and one plain SLO line.
+
+    Every number is derived OUT-OF-LOG from the in-process telemetry collector and
+    the deterministic clock math; it is render-only and never enters the hashed
+    run-log, so the run-log sha and byte-identical replay are untouched. Sub-tables
+    are omitted cleanly when empty (a trivial run renders the SLO line and a clean,
+    zeroed throughput row, nothing fabricated)."""
+    if not op:
+        return ""
+    parts = ["<h2>8d. Operability and statutory-margin SLO</h2>"]
+    slo = op.get("slo_line", "")
+    breached = op.get("any_breached", False)
+    slo_cls = "bad" if breached else "ok"
+    parts.append(
+        f"<p class='{slo_cls}'><strong>SLO: {_esc(slo)}</strong></p>")
+
+    # Deadline margins: the operations number per regime (deadline - filed-at).
+    margins = op.get("deadline_margins", [])
+    if margins:
+        rows = []
+        for m in margins:
+            mh = m.get("margin_hours")
+            if not m.get("filed"):
+                margin_label = "(running, not filed)"
+            elif mh is None:
+                margin_label = "n/a"
+            else:
+                margin_label = f"{mh:.2f} h"
+            status = ("BREACHED" if m.get("breached")
+                      else "filed" if m.get("filed") else "running")
+            rows.append([m.get("clock"), m.get("trigger_event"),
+                         m.get("deadline_utc"), m.get("filed_utc") or "(running)",
+                         margin_label, status])
+        parts.append(
+            "<p class='sub'>Per-regime deadline margin: how much statutory time "
+            "remained when each filing landed (deadline minus filed-at, from the "
+            "deterministic clock math). This is the single number an examiner and a "
+            "CISO write down.</p>")
+        parts.append(_rows(
+            ["Clock", "Trigger event", "Deadline (UTC)", "Filed (UTC)",
+             "Margin", "Status"], rows))
+        nearest = op.get("nearest_deadline")
+        if nearest:
+            nm = nearest.get("margin_hours")
+            margin_txt = ("not filed" if not nearest.get("filed")
+                          else "n/a" if nm is None else f"{nm:.2f} h of margin")
+            parts.append(
+                f"<p class='sub'>Nearest deadline: "
+                f"<code>{_esc(nearest.get('clock'))}</code> at "
+                f"<code>{_esc(nearest.get('deadline_utc'))}</code> "
+                f"({_esc(margin_txt)}).</p>")
+
+    # Throughput and phase timings.
+    phases = op.get("phase_timings", [])
+    if phases:
+        prows = [[p.get("phase"), f"{p.get('duration_hours', 0):.2f} h",
+                  p.get("start"), p.get("end")] for p in phases]
+        prows.append(["TOTAL (end to end)",
+                      f"{op.get('total_duration_hours', 0):.2f} h", "", ""])
+        parts.append("<p class='sub'>Per-phase wall clock (from the deterministic "
+                     "protocol timestamps):</p>")
+        parts.append(_rows(["Phase", "Duration", "Start", "End"], prows))
+
+    tp = op.get("throughput", {})
+    rel = op.get("reliability", {})
+    parts.append(_rows(
+        ["Filings", "Released", "Suppressed", "Diff conflicts",
+         "Recovered retries", "Duplicates dropped", "Chaos events",
+         "Rejected transitions"],
+        [[tp.get("filings", 0), tp.get("released", 0), tp.get("suppressed", 0),
+          tp.get("diff_conflicts", 0), rel.get("recovered_retries", 0),
+          rel.get("duplicates_dropped", 0), rel.get("chaos_events", 0),
+          rel.get("rejected_transitions", 0)]]))
+    return "".join(parts)
+
+
 def _render_release(rel: dict) -> str:
     """Render the two-key release gate: both human sign-offs (Lena and the GC) per
     released branch, proving segregation of duties (one key alone never releases)."""
@@ -738,6 +818,21 @@ def _render_cover(p: dict) -> str:
     # Signature row: the detached Ed25519 attestation over the run-log bytes. The
     # signature is metadata beside the log, not in the hashed JSONL, so the seal
     # hash above is unchanged by it. The demo-key caveat travels with it.
+    # SLO line on the cover: the operations attainment a CISO recognizes, derived
+    # from the out-of-log operability telemetry. Rendered only when an operability
+    # block is present (every full-floor run carries one); omitted cleanly when it
+    # is not, so the legacy cover is unchanged.
+    op = p.get("operability") or {}
+    slo_line = op.get("slo_line", "")
+    slo_block = ""
+    if slo_line:
+        slo_cls = "seal-bad" if op.get("any_breached") else "seal-ok"
+        slo_block = f"""
+  <div class="cover-seal {slo_cls}">
+    <span class="seal-tag">OPERABILITY SLO</span>
+    <span class="seal-state">{_esc(slo_line)}</span>
+  </div>"""
+
     sig = replay.get("signature") or {}
     sig_hex = sig.get("signature", "")
     sig_block = ""
@@ -774,7 +869,7 @@ def _render_cover(p: dict) -> str:
     <span class="seal-tag">RUN-LOG SEAL</span>
     <span class="seal-hash">{_esc(short_sha)}</span>
     <span class="seal-state">{_esc(seal_text)}</span>
-  </div>{sig_block}
+  </div>{sig_block}{slo_block}
 </section>"""
 
 
@@ -833,6 +928,7 @@ def _render_html(p: dict) -> str:
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
+    operability_block = _render_operability(p.get("operability", {}))
     pending = p.get("pending", [])
     pending_section = (
         "<h2>9. Pending (more Band agent keys required)</h2><ul>"
@@ -1006,6 +1102,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {release_block}
 
 {reliability_block}
+
+{operability_block}
 
 <h2>8. Byte-identical replay</h2>
 <p>Run-log SHA-256: <span class="hash">{_esc(replay.get('original_sha256', ''))}</span></p>
