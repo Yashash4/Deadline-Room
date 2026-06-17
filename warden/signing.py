@@ -79,22 +79,41 @@ def canonical_signing_bytes(run_log_jsonl: str) -> bytes:
     return run_log_jsonl.encode("utf-8")
 
 
-def bound_payload_bytes(sha256_hex: str, chain_head_hex: str) -> bytes:
+def bound_payload_bytes(sha256_hex: str, chain_head_hex: str,
+                        attestation_sha_hex: str,
+                        fact_record_hash_hex: str) -> bytes:
     """The exact bytes the SIGNATURE is taken over: a small canonical JSON object
-    that BINDS the run-log sha256 to the per-entry hash chain head.
+    that BINDS four values into one attested fact.
+
+      * sha256          : the run-log integrity hash (the bytes are intact).
+      * chain_head      : the per-entry hash chain head (the run is in the proven
+                          order with nothing dropped).
+      * attestation_sha : the digest of the deadline-compliance attestation (the
+                          per-regime met/margin verdict), so the timeliness verdict
+                          is itself signed.
+      * fact_record_hash: the digest of the canonical input fact-record, so the
+                          signature attests the INPUT the run was driven from, not
+                          just the output.
 
     The encoding mirrors the run log's own canonicalization
     (`json.dumps(..., sort_keys=True, separators=(",",":"))`), so sorted keys
-    render as `{"chain_head":"...","sha256":"..."}` with no whitespace. Pinning
-    the recipe lets the browser (web/app.js) rebuild the identical bytes and
-    verify the same signature client-side.
+    render as `{"attestation_sha":"...","chain_head":"...","fact_record_hash":"...",
+    "sha256":"..."}` with no whitespace. Pinning the recipe lets the browser
+    (web/app.js) rebuild the identical bytes and verify the same signature
+    client-side.
 
-    Signing this object instead of the bare sha means a valid signature attests
-    BOTH that the bytes are intact (sha256) AND that the run is in the proven
-    order with nothing dropped (chain_head): reorder or omit an entry and the
-    chain head moves, so the bound payload changes and the signature no longer
-    verifies."""
-    obj = {"sha256": sha256_hex, "chain_head": chain_head_hex}
+    A valid signature over this object reads as "this exact ordered, complete run,
+    driven from this exact fact-record, met these statutory deadlines, attested by
+    this key": reorder or omit an entry and the chain head moves; edit a field and
+    the sha moves; tamper a margin and the attestation digest moves; change the
+    input and the fact-record hash moves. Any of those changes the bound payload
+    and the signature no longer verifies."""
+    obj = {
+        "sha256": sha256_hex,
+        "chain_head": chain_head_hex,
+        "attestation_sha": attestation_sha_hex,
+        "fact_record_hash": fact_record_hash_hex,
+    }
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -191,30 +210,47 @@ def _chain_head_of_jsonl(run_log_jsonl: str) -> str:
 
 
 def sign_run_log_jsonl(run_log_jsonl: str,
+                       attestation_sha_hex: str,
+                       fact_record_hash_hex: str,
                        private_key: Ed25519PrivateKey | None = None) -> dict:
     """Sign a run log and return the detached signature record that lands in the
     packet sidecar / replay_info.
 
     The signature is taken over the BOUND payload (`bound_payload_bytes`): the
-    run-log sha256 AND the chain head together, so a valid signature attests the
-    exact ordered, complete run, not just a byte stream. The record carries
-    everything a verifier needs and nothing the hashed log covers: the algorithm,
-    the detached signature, both attested values (sha256 + chain_head), the public
-    key, its fingerprint, and the honest demo-key caveat. It is metadata stored
-    BESIDE the log; it never enters the hashed JSONL, so the run-log sha and
-    replay are untouched (the chain head is derived read-only)."""
+    run-log sha256 AND the chain head AND the deadline-compliance attestation
+    digest AND the input fact-record hash, so a valid signature attests the exact
+    ordered, complete run, driven from this exact fact-record, that met these
+    statutory deadlines, not just a byte stream.
+
+    `attestation_sha_hex` and `fact_record_hash_hex` are DERIVED values the caller
+    computes from data outside the hashed JSONL (the deadline-compliance
+    attestation in `floor/attestation.py`, the input fact-record in
+    `floor/fact_record.py`). They are bound into the signature and recorded in the
+    returned dict; a verifier recomputes the sha and chain head from the bytes and
+    reads these two digests from the record, so editing either digest in the record
+    changes the bound payload and breaks the signature.
+
+    The record carries everything a verifier needs and nothing the hashed log
+    covers: the algorithm, the detached signature, all four attested values, the
+    public key, its fingerprint, and the honest demo-key caveat. It is metadata
+    stored BESIDE the log; it never enters the hashed JSONL, so the run-log sha and
+    replay are untouched (the chain head, the attestation digest, and the
+    fact-record hash are all derived read-only)."""
     if private_key is None:
         private_key = load_demo_private_key()
     sha256_hex = _sha256_of_jsonl(run_log_jsonl)
     chain_head_hex = _chain_head_of_jsonl(run_log_jsonl)
-    payload = bound_payload_bytes(sha256_hex, chain_head_hex)
+    payload = bound_payload_bytes(
+        sha256_hex, chain_head_hex, attestation_sha_hex, fact_record_hash_hex)
     pub_hex = public_key_hex_of(private_key)
     return {
         "algorithm": "ed25519",
         "detached": True,
-        "signed_payload": "canonical_json{sha256,chain_head}",
+        "signed_payload": "canonical_json{sha256,chain_head,attestation_sha,fact_record_hash}",
         "sha256": sha256_hex,
         "chain_head": chain_head_hex,
+        "attestation_sha": attestation_sha_hex,
+        "fact_record_hash": fact_record_hash_hex,
         "signature": sign_bytes(payload, private_key),
         "public_key": pub_hex,
         "pubkey_fingerprint": fingerprint(pub_hex),
@@ -227,16 +263,24 @@ def sign_run_log_jsonl(run_log_jsonl: str,
 def verify_run_log_jsonl(run_log_jsonl: str, signature_record: dict) -> bool:
     """Verify a signature record (as produced by `sign_run_log_jsonl`) against a
     run log's canonical JSONL. True only when the detached signature is valid over
-    the BOUND payload (sha256 + chain head) recomputed from these exact bytes.
+    the BOUND payload (sha256 + chain head + attestation digest + fact-record hash)
+    rebuilt from these exact bytes and the record's derived digests.
 
     The sha256 and chain head are recomputed from the run log handed in, NOT read
-    from the record, so a tamper that edits a field (sha moves), reorders, or
-    omits an entry (chain head moves) changes the bound payload and the signature
-    fails. Binding the head is what makes a REORDER, which leaves the byte sha of
-    a re-sealed log free to be forged, break the signature too."""
+    from the record, so a tamper that edits a field (sha moves), reorders, or omits
+    an entry (chain head moves) changes the bound payload and the signature fails.
+    The attestation digest and the fact-record hash are DERIVED from data outside
+    the hashed JSONL, so they are read from the record; because they are part of the
+    signed payload, editing either one in the record also changes the bound payload
+    and the signature fails. Binding the head is what makes a REORDER, which leaves
+    the byte sha of a re-sealed log free to be forged, break the signature too."""
     sha256_hex = _sha256_of_jsonl(run_log_jsonl)
     chain_head_hex = _chain_head_of_jsonl(run_log_jsonl)
-    payload = bound_payload_bytes(sha256_hex, chain_head_hex)
+    payload = bound_payload_bytes(
+        sha256_hex, chain_head_hex,
+        signature_record.get("attestation_sha", ""),
+        signature_record.get("fact_record_hash", ""),
+    )
     return verify_bytes(
         payload,
         signature_record.get("signature", ""),

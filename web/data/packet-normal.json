@@ -44,19 +44,19 @@
     "[4] Triage posted the fact-record, @mentioned all drafters (msg m1)",
     "[5.nis2] NIS2 Drafter draining /next for the mention ...",
     "    NIS2 Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    NIS2 Drafter drafted 1314 chars, posted back @mention Warden (msg m2)",
+    "    NIS2 Drafter drafted 1467 chars, posted back @mention Warden (msg m2)",
     "[6.nis2] Warden draining /next for the NIS2 draft ...",
     "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg m2)",
     "    [Warden -> room] @NIS2 Drafter: recorded NIS2 filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m3)",
     "[5.sec] SEC Drafter draining /next for the mention ...",
     "    SEC Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    SEC Drafter drafted 1132 chars, posted back @mention Warden (msg m4)",
+    "    SEC Drafter drafted 1284 chars, posted back @mention Warden (msg m4)",
     "[6.sec] Warden draining /next for the SEC draft ...",
     "    Warden parsed sec claims, recorded DRAFT_POSTED (msg m4)",
     "    [Warden -> room] @SEC Drafter: recorded SEC filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m5)",
     "[5.dora] DORA Drafter draining /next for the mention ...",
     "    DORA Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    DORA Drafter drafted 1395 chars, posted back @mention Warden (msg m6)",
+    "    DORA Drafter drafted 1548 chars, posted back @mention Warden (msg m6)",
     "[6.dora] Warden draining /next for the DORA draft ...",
     "    Warden parsed dora claims, recorded DRAFT_POSTED (msg m6)",
     "    [Warden -> room] @DORA Drafter: recorded DORA filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m7)",
@@ -72,7 +72,8 @@
     "    [Warden -> room] LENA (head_of_ir) signed NIS2, SEC, DORA. Both keys present on all 3. RELEASED, clocks stopped. (msg m10)",
     "[8] Warden opened signoff; two-key release (GC + Lena); clocks stopped",
     "[9] Replay byte-identical: True (sha 89dae1455e37...)",
-    "    Signed by Deadline Warden (ed25519, key fp 46e30f5bff8c221d) over sha256 + chain_head; the signature is detached, the run-log sha is unchanged."
+    "    Signed by Deadline Warden (ed25519, key fp 46e30f5bff8c221d) over sha256 + chain_head + attestation_sha + fact_record_hash; the signature is detached, the run-log sha is unchanged.",
+    "    Operability: 3 filing(s), nearest deadline 2026-06-17T02:14:00+00:00, min statutory margin 69.23h, 0 breach(es)."
   ],
   "handoff_trace": [
     {
@@ -434,7 +435,7 @@
       "model": "deepseek-ai/DeepSeek-V3.2",
       "provider": "featherless",
       "rationale": "DeepSeek-V3.2 holds NIS2 in dev because it is a strong open reasoning model that handles structured statutory prose at flat rate, so the day-to-day build burns no metered credit.",
-      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank's incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank's incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "SEC",
@@ -442,7 +443,7 @@
       "model": "deepseek-ai/DeepSeek-V3-0324",
       "provider": "featherless",
       "rationale": "DeepSeek-V3-0324 holds SEC in dev as a separate open checkpoint from the NIS2 drafter, so two branches draft from genuinely different model state even before the prod split.",
-      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "DORA",
@@ -450,7 +451,7 @@
       "model": "Qwen/Qwen2.5-72B-Instruct",
       "provider": "featherless",
       "rationale": "Qwen2.5-72B-Instruct holds DORA in dev because its long instruction-following is a good fit for DORA's incident-report field skeleton, and it is a third open family on flat rate.",
-      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     }
   ],
   "grounding": {
@@ -458,8 +459,8 @@
     "filings": [
       {
         "branch": "NIS2",
-        "grounded": 7,
-        "total": 7,
+        "grounded": 10,
+        "total": 10,
         "score": 1.0,
         "ungrounded": [],
         "regime": "NIS2",
@@ -472,8 +473,8 @@
       },
       {
         "branch": "SEC",
-        "grounded": 7,
-        "total": 7,
+        "grounded": 10,
+        "total": 10,
         "score": 1.0,
         "ungrounded": [],
         "regime": "SEC",
@@ -486,8 +487,8 @@
       },
       {
         "branch": "DORA",
-        "grounded": 8,
-        "total": 8,
+        "grounded": 11,
+        "total": 11,
         "score": 1.0,
         "ungrounded": [],
         "regime": "DORA",
@@ -530,13 +531,17 @@
     "replayed_sha256": "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3",
     "byte_identical": true,
     "chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
+    "attestation_sha": "e95b0420feed3ebf3e3e6196710d8035f40e700ca7d73e538bf1e84f33364e71",
+    "fact_record_hash": "235727614ebe1cf388bdba7722f4d818ca7163e8198284c3b4052bab65dde06f",
     "signature": {
       "algorithm": "ed25519",
       "detached": true,
-      "signed_payload": "canonical_json{sha256,chain_head}",
+      "signed_payload": "canonical_json{sha256,chain_head,attestation_sha,fact_record_hash}",
       "sha256": "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3",
       "chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
-      "signature": "ac138bd6640b05c39a43d2f8750b0affd077fdf78a275fbc36f47833e225ec9244aa13b28e62c5ff76fc0df1048e37c5fd4b859541b99d40f67a62d3774c260d",
+      "attestation_sha": "e95b0420feed3ebf3e3e6196710d8035f40e700ca7d73e538bf1e84f33364e71",
+      "fact_record_hash": "235727614ebe1cf388bdba7722f4d818ca7163e8198284c3b4052bab65dde06f",
+      "signature": "bb61b12fac8d606f01d9a1e7cc6b56c1b75296f21c94ee850dbec96a27c2751a9beff6dc7ee9189b83363de362ee81388b66795fcf533f85bbfd1e655cad070f",
       "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
       "pubkey_fingerprint": "46e30f5bff8c221d",
       "signer": "Deadline Warden",
@@ -593,5 +598,147 @@
       "sec",
       "dora"
     ]
+  },
+  "operability": {
+    "mode": "normal",
+    "clock_set": "NIS2 early warning (24h), NIS2 full notification (72h), DORA major-incident (72h), SEC 8-K (4 business days)",
+    "slo_line": "All 3 filings landed with at least 69.23h of statutory margin; 0 breach(es). Replay byte-identical.",
+    "phase_timings": [
+      {
+        "phase": "drafting",
+        "duration_hours": 0.67,
+        "start": "2026-06-16T02:31:00+00:00",
+        "end": "2026-06-16T03:11:00+00:00"
+      },
+      {
+        "phase": "contradiction_round_trip",
+        "duration_hours": 0.82,
+        "start": "2026-06-16T03:11:00+00:00",
+        "end": "2026-06-16T04:00:00+00:00"
+      },
+      {
+        "phase": "two_key_release",
+        "duration_hours": 1.0,
+        "start": "2026-06-16T04:00:00+00:00",
+        "end": "2026-06-16T05:00:00+00:00"
+      }
+    ],
+    "total_duration_hours": 2.48,
+    "throughput": {
+      "drafted": 3,
+      "filings": 3,
+      "released": 3,
+      "suppressed": 0,
+      "diff_conflicts": 0
+    },
+    "reliability": {
+      "recovered_retries": 0,
+      "duplicates_dropped": 0,
+      "chaos_events": 0,
+      "rejected_transitions": 0
+    },
+    "liveness": null,
+    "deadline_margins": [
+      {
+        "clock": "NIS2 early warning (24h)",
+        "correlation_id": "inc-8842:nis2-early",
+        "trigger_event": "becoming aware",
+        "deadline_utc": "2026-06-17T02:14:00+00:00",
+        "filed_utc": null,
+        "filed": false,
+        "margin_hours": null,
+        "breached": false
+      },
+      {
+        "clock": "NIS2 full notification (72h)",
+        "correlation_id": "inc-8842:nis2",
+        "trigger_event": "becoming aware",
+        "deadline_utc": "2026-06-19T02:14:00+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 69.23,
+        "breached": false
+      },
+      {
+        "clock": "DORA major-incident (72h)",
+        "correlation_id": "inc-8842:dora",
+        "trigger_event": "incident occurrence",
+        "deadline_utc": "2026-06-19T02:14:00+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 69.23,
+        "breached": false
+      },
+      {
+        "clock": "SEC 8-K (4 business days)",
+        "correlation_id": "inc-8842:sec",
+        "trigger_event": "materiality determination",
+        "deadline_utc": "2026-06-23T23:59:59+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 187.0,
+        "breached": false
+      }
+    ],
+    "nearest_deadline": {
+      "clock": "NIS2 early warning (24h)",
+      "deadline_utc": "2026-06-17T02:14:00+00:00",
+      "margin_hours": null,
+      "filed": false
+    },
+    "min_filed_margin_hours": 69.23,
+    "any_breached": false,
+    "filings_landed": 3
+  },
+  "attestation": {
+    "regimes": [
+      {
+        "regime": "DORA major-incident (72h)",
+        "correlation_id": "inc-8842:dora",
+        "trigger_event": "incident occurrence",
+        "statutory_deadline": "2026-06-19T02:14:00+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 249240,
+        "margin_human": "2d 21h 14m",
+        "met": true
+      },
+      {
+        "regime": "NIS2 full notification (72h)",
+        "correlation_id": "inc-8842:nis2",
+        "trigger_event": "becoming aware",
+        "statutory_deadline": "2026-06-19T02:14:00+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 249240,
+        "margin_human": "2d 21h 14m",
+        "met": true
+      },
+      {
+        "regime": "NIS2 early warning (24h)",
+        "correlation_id": "inc-8842:nis2-early",
+        "trigger_event": "becoming aware",
+        "statutory_deadline": "2026-06-17T02:14:00+00:00",
+        "filed": false,
+        "filed_at": null,
+        "margin_seconds": null,
+        "margin_human": null,
+        "met": null
+      },
+      {
+        "regime": "SEC 8-K (4 business days)",
+        "correlation_id": "inc-8842:sec",
+        "trigger_event": "materiality determination",
+        "statutory_deadline": "2026-06-23T23:59:59+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 673199,
+        "margin_human": "7d 18h 59m",
+        "met": true
+      }
+    ],
+    "filed_count": 3,
+    "met_count": 3,
+    "all_met": true
   }
 }

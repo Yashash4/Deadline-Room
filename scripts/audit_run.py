@@ -10,7 +10,8 @@ It composes the FROZEN verifiers already in the repo (it reimplements no crypto
 and no replay): warden/logcheck.py for structural soundness, warden/replay.py for
 byte-identical replay, warden/chain.py for the per-entry hash chain head,
 warden/signing.py for the detached Ed25519 signature over the bound
-{sha256, chain_head} payload. On top of those it runs three pure log predicates
+{sha256, chain_head, attestation_sha, fact_record_hash} payload. On top of those
+it runs three pure log predicates
 that read the sealed events directly: in-log exactly-once (no dedup key accepted
 twice, every drafted filing lands once), two-key release (every human release is
 preceded by a passed contradiction diff AND two DISTINCT release keys, the
@@ -175,7 +176,8 @@ def check_chain(log: RunLog, recorded_head: str | None) -> Check:
 
 def check_signature(jsonl: str, signature: dict | None) -> Check:
     """SIGNATURE: the detached Ed25519 signature verifies against the committed
-    public key over the bound {sha256, chain_head} payload."""
+    public key over the bound {sha256, chain_head, attestation_sha,
+    fact_record_hash} payload."""
     if signature is None:
         return Check("SIGNATURE", False,
                      "no detached signature found (packet replay.signature or "
@@ -184,7 +186,8 @@ def check_signature(jsonl: str, signature: dict | None) -> Check:
         fp = signature.get("pubkey_fingerprint") or fingerprint(
             signature.get("public_key", ""))
         return Check("SIGNATURE", True,
-                     f"valid Ed25519 over {{sha256, chain_head}}, signer fp {fp}")
+                     "valid Ed25519 over {sha256, chain_head, attestation_sha, "
+                     f"fact_record_hash}}, signer fp {fp}")
     return Check("SIGNATURE", False,
                  "detached signature does NOT verify against the committed public key")
 

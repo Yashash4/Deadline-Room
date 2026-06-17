@@ -1,18 +1,26 @@
 """Re-sign the committed web/data captured scenarios over the BOUND payload.
 
 The captured replay viewer ships four scenarios (normal, contradiction, chaos,
-amendment), each a packet JSON plus a bundled run-log JSONL. The signature over
-each run log used to cover the bare run-log bytes. This script re-signs each over
-the BOUND payload instead: the canonical {sha256, chain_head} object, so a valid
-signature attests the exact ORDERED, COMPLETE run, not just the byte stream. It
-also persists the chain head into each packet's replay block so the browser can
-rebuild and verify the same bound payload client-side.
+amendment), each a packet JSON plus a bundled run-log JSONL. This script re-signs
+each over the BOUND payload: the canonical {sha256, chain_head, attestation_sha,
+fact_record_hash} object, so a valid signature attests the exact ORDERED, COMPLETE
+run, driven from this exact fact-record, that met these statutory deadlines, not
+just the byte stream. It persists the chain head, the attestation digest, and the
+input fact-record hash into each packet's replay block so the browser can rebuild
+and verify the same bound payload client-side, and it regenerates the sibling
+<log>.intoto.json DSSE/in-toto sidecar over the new predicate.
+
+The attestation digest is derived from the packet's clock rows (deadline minus
+filed-at per regime) and the fact-record hash from the packet's input fact-record,
+so the two derived digests recomputed here are exactly the ones a fresh run would
+produce. The deadline-compliance attestation object is refreshed into the packet at
+the same time so the rendered table matches the signed digest.
 
 It is DERIVED and read-only over the run-log bytes: the .jsonl files are never
-rewritten (only the packet replay.signature, replay.chain_head, and the sibling
-<log>.sig.json sidecar move), so every packet's original_sha256 and the in-browser
-byte-identical replay are unchanged. The chain head is computed from the same
-canonical entries replay reproduces.
+rewritten (only the packet replay block, the packet attestation, the <log>.sig.json
+sidecar, and the <log>.intoto.json sidecar move), so every packet's original_sha256
+and the in-browser byte-identical replay are unchanged. The chain head is computed
+from the same canonical entries replay reproduces.
 
 Run from code/:  py scripts/resign_captures.py
 """
@@ -27,7 +35,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from floor.attestation import attestation_sha, build_attestation  # noqa: E402
+from floor.fact_record import fact_record_hash  # noqa: E402
 from warden.chain import head_for_log  # noqa: E402
+from warden.intoto import attestation_for_capture, sidecar_path_for  # noqa: E402
 from warden.replay import RunLog  # noqa: E402
 from warden.signing import sign_run_log_jsonl, verify_run_log_jsonl  # noqa: E402
 
@@ -53,8 +64,18 @@ def _resign(mode: str) -> str:
             f"{mode}: bundled log hash does not match packet replay hash; "
             "the capture is inconsistent, not re-signing.")
 
+    # The two DERIVED digests folded into the bound payload, recomputed from the
+    # packet's own clock rows and input fact-record so they equal what a fresh run
+    # produces. The attestation object is refreshed into the packet too, so the
+    # rendered table and the signed digest agree.
+    attestation = build_attestation(packet.get("clocks", []))
+    attestation_sha_hex = attestation_sha(attestation)
+    fact_record_hash_hex = fact_record_hash(
+        packet.get("incident", {}).get("fact_record", {}))
+
     chain_head_hex = head_for_log(log)
-    signature = sign_run_log_jsonl(jsonl)
+    signature = sign_run_log_jsonl(
+        jsonl, attestation_sha_hex, fact_record_hash_hex)
     if signature["chain_head"] != chain_head_hex:
         raise SystemExit(f"{mode}: signature chain_head disagrees with the log head")
     if signature["sha256"] != packet["replay"]["original_sha256"]:
@@ -63,9 +84,19 @@ def _resign(mode: str) -> str:
         raise SystemExit(f"{mode}: freshly produced signature does not verify")
 
     packet["replay"]["chain_head"] = chain_head_hex
+    packet["replay"]["attestation_sha"] = attestation_sha_hex
+    packet["replay"]["fact_record_hash"] = fact_record_hash_hex
     packet["replay"]["signature"] = signature
+    packet["attestation"] = attestation
     packet_path.write_text(json.dumps(packet, indent=2), encoding="utf-8")
     sidecar_path.write_text(json.dumps(signature, indent=2) + "\n", encoding="utf-8")
+
+    # Regenerate the in-toto / DSSE sidecar over the new predicate (it names the
+    # same two bound digests). It reads the freshly written packet so the digests
+    # in its predicate match the just-sealed signature.
+    intoto_path = sidecar_path_for(log_path)
+    envelope = attestation_for_capture(jsonl, packet, subject_name=log_path.name)
+    intoto_path.write_text(json.dumps(envelope, indent=2) + "\n", encoding="utf-8")
 
     # The run-log bytes must be untouched: this script is derived/read-only.
     if log_path.read_bytes() != before_bytes:
@@ -77,9 +108,10 @@ def _resign(mode: str) -> str:
 def main() -> int:
     for mode in SCENARIOS:
         head = _resign(mode)
-        print(f"  {mode:22s} re-signed over sha256 + chain_head {head[:16]}...")
-    print("Re-signed every captured scenario over the bound payload. Run-log bytes "
-          "unchanged.")
+        print(f"  {mode:22s} re-signed over sha256 + chain_head + attestation_sha + "
+              f"fact_record_hash (head {head[:16]}...)")
+    print("Re-signed every captured scenario over the 4-field bound payload and "
+          "regenerated the in-toto sidecars. Run-log bytes unchanged.")
     return 0
 
 

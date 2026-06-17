@@ -610,6 +610,52 @@ def _render_liveness(lv: dict | None) -> str:
     return "".join(parts)
 
 
+def _render_attestation(att: dict) -> str:
+    """Render the deadline-compliance attestation: per regime, the statutory
+    deadline, the filed-at instant, the margin, and a met/missed verdict, with the
+    headline that N statutory deadlines were provably met and the verdict is SIGNED.
+
+    The attestation is derived deterministically from the clock rows (deadline minus
+    filed-at) and its digest is folded into the bound Ed25519 signature, so the
+    timeliness verdict is itself attested by the Warden's key. This is the line a
+    buyer pays for and an examiner writes down first."""
+    if not att or not att.get("regimes"):
+        return ""
+    filed = att.get("filed_count", 0)
+    met = att.get("met_count", 0)
+    all_met = att.get("all_met", False)
+    top_cls = "ok" if all_met else "bad"
+    headline = (
+        f"These filings provably met {met} of {filed} statutory deadline"
+        f"{'s' if filed != 1 else ''}, signed."
+        if all_met else
+        f"{met} of {filed} statutory deadline{'s' if filed != 1 else ''} met; "
+        "at least one was missed. Verdict signed regardless.")
+    parts = ["<h2>8e. Deadline compliance attestation (signed)</h2>",
+             f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+             "<p class='sub'>Per regime, the statutory deadline, when the filing "
+             "landed, and how much margin remained (deadline minus filed-at). This "
+             "verdict's digest is folded into the Warden's Ed25519 signature, so a "
+             "tampered margin breaks the signature: the timeliness claim is itself "
+             "signed, not merely asserted.</p>"]
+    rows = []
+    for r in att["regimes"]:
+        if r.get("filed"):
+            verdict = "MET" if r.get("met") else "MISSED"
+            margin = r.get("margin_human") or "n/a"
+            filed_at = r.get("filed_at") or ""
+        else:
+            verdict = "running"
+            margin = "(not filed)"
+            filed_at = "(running)"
+        rows.append([r.get("regime"), r.get("trigger_event"),
+                     r.get("statutory_deadline"), filed_at, margin, verdict])
+    parts.append(_rows(
+        ["Regime", "Trigger event", "Statutory deadline", "Filed (UTC)",
+         "Margin", "Verdict"], rows))
+    return "".join(parts)
+
+
 def _render_release(rel: dict) -> str:
     """Render the two-key release gate: both human sign-offs (Lena and the GC) per
     released branch, proving segregation of duties (one key alone never releases)."""
@@ -893,6 +939,26 @@ def _render_cover(p: dict) -> str:
   </div>
   <p class="chain-caption">{_esc(sig.get("caveat", ""))}</p>"""
 
+    # Deadline-compliance attestation seal: the signed timeliness verdict on the
+    # cover. The attestation digest is folded into the signature above, so this
+    # green "deadlines met, signed" panel is a SIGNED claim, not a label. Rendered
+    # only when filings were attested; omitted cleanly otherwise.
+    att = p.get("attestation") or {}
+    att_block = ""
+    if att.get("filed_count"):
+        att_all_met = att.get("all_met", False)
+        att_cls = "seal-ok" if att_all_met else "seal-bad"
+        filed = att.get("filed_count", 0)
+        met = att.get("met_count", 0)
+        att_state = (
+            f"{met}/{filed} statutory deadlines met, signed" if att_all_met
+            else f"{met}/{filed} deadlines met, signed")
+        att_block = f"""
+  <div class="cover-seal {att_cls}">
+    <span class="seal-tag">DEADLINES MET</span>
+    <span class="seal-state">{_esc(att_state)}</span>
+  </div>"""
+
     return f"""<section class="cover">
   <div class="cover-band">
     <div class="cover-title">EXAMINER PACKET</div>
@@ -914,7 +980,7 @@ def _render_cover(p: dict) -> str:
     <span class="seal-tag">RUN-LOG SEAL</span>
     <span class="seal-hash">{_esc(short_sha)}</span>
     <span class="seal-state">{_esc(seal_text)}</span>
-  </div>{sig_block}{slo_block}
+  </div>{sig_block}{att_block}{slo_block}
 </section>"""
 
 
@@ -972,6 +1038,7 @@ def _render_html(p: dict) -> str:
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
+    attestation_block = _render_attestation(p.get("attestation", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
     operability_block = _render_operability(p.get("operability", {}))
     pending = p.get("pending", [])
@@ -1145,6 +1212,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {adversarial_block}
 
 {release_block}
+
+{attestation_block}
 
 {reliability_block}
 

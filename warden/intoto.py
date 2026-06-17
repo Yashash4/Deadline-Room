@@ -2,7 +2,8 @@
 
 `warden/signing.py` already produces the SUBSTANCE of a supply-chain attestation:
 a detached Ed25519 signature over a canonical, ordered, hash-chained record (the
-bound `{sha256, chain_head}` payload). What it lacks is the ECOSYSTEM'S name and
+bound `{sha256, chain_head, attestation_sha, fact_record_hash}` payload). What it
+lacks is the ECOSYSTEM'S name and
 structure for that fact. This module re-expresses the exact same provenance as a
 standards-conformant in-toto Statement wrapped in a DSSE (Dead Simple Signing
 Envelope), so the run-log seal verifies not only with our own
@@ -129,6 +130,8 @@ def build_statement(
     signer_fingerprint: str,
     chain_head_hex: str | None = None,
     sha256_hex: str | None = None,
+    attestation_sha_hex: str | None = None,
+    fact_record_hash_hex: str | None = None,
 ) -> dict:
     """Build the in-toto Statement for a Deadline Room run.
 
@@ -136,11 +139,13 @@ def build_statement(
     digest (recomputed here from the bytes handed in, so the Statement attests
     these exact bytes). The predicate carries the run facts the packet already
     holds: the per-entry chain head (the single value that summarizes the
-    ordered, complete run), the regulatory frameworks that filed, the SEC
-    statutory deadline, and the signer's public-key fingerprint. Every value is
-    derived read-only from the run-log bytes or passed in from the sealed packet,
-    so the Statement is a pure render: no `now()`, no LLM, nothing that could
-    drift between runs.
+    ordered, complete run), the deadline-compliance attestation digest and the
+    input fact-record hash (the same two derived digests the native detached
+    signature binds, so the in-toto Statement names the full chain of custody),
+    the regulatory frameworks that filed, the SEC statutory deadline, and the
+    signer's public-key fingerprint. Every value is derived read-only from the
+    run-log bytes or passed in from the sealed packet, so the Statement is a pure
+    render: no `now()`, no LLM, nothing that could drift between runs.
     """
     if sha256_hex is None:
         sha256_hex = _sha256_hex(run_log_jsonl.encode("utf-8"))
@@ -155,6 +160,8 @@ def build_statement(
         "signer": "Deadline Warden",
         "signer_fingerprint": signer_fingerprint,
         "chain_head": chain_head_hex,
+        "attestation_sha": attestation_sha_hex,
+        "fact_record_hash": fact_record_hash_hex,
         "filed_frameworks": list(filed_frameworks),
         "sec_deadline": sec_deadline,
         "demo_key": True,
@@ -283,6 +290,18 @@ def _signer_fingerprint_from_packet(packet: dict) -> str:
     return fingerprint(load_public_key_hex())
 
 
+def _bound_digests_from_packet(packet: dict) -> tuple[str | None, str | None]:
+    """The deadline-compliance attestation digest and the input fact-record hash,
+    read from the sealed signature record in the packet's replay block.
+
+    Read-only: these are the SAME two derived digests the native detached signature
+    binds. The in-toto predicate names them so the standards envelope reflects the
+    full chain of custody. None when a packet predates the binding, so the
+    predicate field is explicitly null rather than guessed."""
+    sig = (packet.get("replay") or {}).get("signature") or {}
+    return sig.get("attestation_sha"), sig.get("fact_record_hash")
+
+
 def attestation_for_capture(
     run_log_jsonl: str,
     packet: dict,
@@ -292,18 +311,22 @@ def attestation_for_capture(
 ) -> dict:
     """Build the signed DSSE/in-toto attestation for one captured run.
 
-    Pulls the filed regulatory frameworks, the SEC deadline, and the signer
-    fingerprint from data the packet already carries, pins the run-log sha256 and
-    chain head from the run-log bytes, builds the in-toto Statement, and wraps it
-    in a signed DSSE envelope. The result is the additive sidecar emitted beside
-    the capture; it is derived entirely from bytes already on disk and is never
-    written into the hashed run-log."""
+    Pulls the filed regulatory frameworks, the SEC deadline, the signer
+    fingerprint, and the two bound digests (the deadline-compliance attestation
+    digest and the input fact-record hash) from data the packet already carries,
+    pins the run-log sha256 and chain head from the run-log bytes, builds the
+    in-toto Statement, and wraps it in a signed DSSE envelope. The result is the
+    additive sidecar emitted beside the capture; it is derived entirely from bytes
+    already on disk and is never written into the hashed run-log."""
+    attestation_sha_hex, fact_record_hash_hex = _bound_digests_from_packet(packet)
     statement = build_statement(
         run_log_jsonl,
         subject_name=subject_name,
         filed_frameworks=_filed_frameworks_from_packet(packet),
         sec_deadline=_sec_deadline_from_packet(packet),
         signer_fingerprint=_signer_fingerprint_from_packet(packet),
+        attestation_sha_hex=attestation_sha_hex,
+        fact_record_hash_hex=fact_record_hash_hex,
     )
     return build_dsse_envelope(statement, private_key)
 

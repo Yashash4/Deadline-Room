@@ -81,7 +81,9 @@ from warden.signing import sign_run_log_jsonl  # noqa: E402
 from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
+from floor.attestation import attestation_sha, build_attestation  # noqa: E402
 from floor.challenger import challenge_filing  # noqa: E402
+from floor.fact_record import fact_record_hash  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
@@ -923,17 +925,35 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # block and bound into the signature below.
     chain_head_hex = head_for_log(log)
 
+    # ---- Deadline-compliance attestation + fact-record input provenance ------
+    # Two DERIVED digests, folded into the signature below so the seal attests both
+    # ends of the chain of custody. The attestation is the per-regime met/margin
+    # timeliness verdict, computed read-only from the SAME clock rows the packet
+    # renders (deadline minus filed-at, met when filed at or before the deadline).
+    # The fact-record hash is the canonical digest of CANONICAL_FACTS, the input the
+    # run was driven from. Neither is ever written into the hashed JSONL, so
+    # original_sha, the chain head, and byte-identical replay are untouched; they
+    # are bound only into the detached signature and rendered at packet time.
+    attestation = build_attestation(_clock_rows(clocks))
+    attestation_sha_hex = attestation_sha(attestation)
+    fact_record_hash_hex = fact_record_hash(CANONICAL_FACTS)
+
     # ---- Detached Ed25519 signature (additive: integrity -> authenticity) ----
-    # Signs the BOUND payload: the canonical run-log sha256 AND the chain head
-    # together, so a valid signature attests the exact ordered, complete run, not
-    # just a byte stream. The signature lives in replay_info / the packet sidecar,
-    # never in the hashed JSONL, so original_sha and the byte-identical replay are
-    # untouched. One flipped field (the sha moves) OR a reorder/omission (the
-    # chain head moves) makes this signature INVALID, which the tamper test and
-    # scripts/verify_signature.py both demonstrate.
-    signature = sign_run_log_jsonl(log.to_jsonl())
+    # Signs the BOUND payload: the canonical run-log sha256, the chain head, the
+    # deadline-compliance attestation digest, AND the input fact-record hash, so a
+    # valid signature attests the exact ordered, complete run, driven from this
+    # exact fact-record, that met these statutory deadlines, not just a byte stream.
+    # The signature lives in replay_info / the packet sidecar, never in the hashed
+    # JSONL, so original_sha and the byte-identical replay are untouched. A flipped
+    # field (sha moves), a reorder/omission (chain head moves), a tampered margin
+    # (attestation digest moves), or a changed input (fact-record hash moves) all
+    # make this signature INVALID, which the tamper test, the tamper sweep, and
+    # scripts/verify_signature.py demonstrate.
+    signature = sign_run_log_jsonl(
+        log.to_jsonl(), attestation_sha_hex, fact_record_hash_hex)
     trace.say(f"    Signed by {signature['signer']} (ed25519, key fp "
-              f"{signature['pubkey_fingerprint']}) over sha256 + chain_head; the "
+              f"{signature['pubkey_fingerprint']}) over sha256 + chain_head + "
+              f"attestation_sha + fact_record_hash; the "
               f"signature is detached, the run-log sha is unchanged.")
 
     # ---- Structured run telemetry (derived OUT-OF-LOG) ----------------
@@ -981,6 +1001,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         breached, filings, mode, ledger,
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
                      "byte_identical": byte_identical, "chain_head": chain_head_hex,
+                     "attestation_sha": attestation_sha_hex,
+                     "fact_record_hash": fact_record_hash_hex,
                      "signature": signature},
         amendment=amendment,
         provider_set=provider_set, provider_validation=provider_validation,
@@ -991,6 +1013,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                            if sm.state(branch_corr[b]).value == "released"],
         recovered_retries=RETRY_COUNTER.recovered,
         operability=operability,
+        attestation=attestation,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2485,22 +2508,35 @@ def _msg_id(post_result) -> str:
     return ""
 
 
-def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
-                     breached, filings, mode, ledger, replay_info,
-                     amendment=None, provider_set=roster.PROVIDER_DEV,
-                     provider_validation=None, materiality=None, recruit=None,
-                     nydfs_recruit=None,
-                     release_gate=None, released_branches=None,
-                     recovered_retries: int = 0, operability=None) -> dict:
-    clock_rows = []
+def _clock_rows(clocks) -> list[dict]:
+    """Build the packet's clock rows from the live ClockEngine, in catalog order.
+
+    One dict per clock with its name, correlation id, trigger event, started and
+    deadline instants, the stopped instant (empty while running), and whether it
+    breached. Factored out so the deadline-compliance attestation (folded into the
+    signature before the packet is assembled) and the packet render derive from the
+    EXACT same rows, never two slightly different snapshots."""
+    rows = []
     for c in clocks.all():
-        clock_rows.append({
+        rows.append({
             "name": c.name, "correlation_id": c.correlation_id,
             "trigger_event": c.trigger_event,
             "started": c.started_at.isoformat(), "deadline": c.deadline.isoformat(),
             "stopped": c.stopped_at.isoformat() if c.stopped_at else "",
             "breached": c.breached(c.stopped_at or c.deadline) if c.stopped_at else False,
         })
+    return rows
+
+
+def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
+                     breached, filings, mode, ledger, replay_info,
+                     amendment=None, provider_set=roster.PROVIDER_DEV,
+                     provider_validation=None, materiality=None, recruit=None,
+                     nydfs_recruit=None,
+                     release_gate=None, released_branches=None,
+                     recovered_retries: int = 0, operability=None,
+                     attestation=None) -> dict:
+    clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
     final_claims = {b: c.canonical() for b, c in claims_by_branch.items()}
@@ -2638,6 +2674,14 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # clean, zeroed block); the renderer omits empty sub-sections gracefully.
     if operability is not None:
         packet["operability"] = operability
+    # Deadline-compliance attestation. Additive, derived OUT-OF-LOG from the same
+    # clock rows above (deadline, filed-at, margin, met per regime). Its digest is
+    # folded into the bound Ed25519 payload (computed before this packet is
+    # assembled), so the timeliness verdict is itself signed; the object renders in
+    # the packet as the per-regime met/margin table. It never enters the hashed
+    # JSONL, so the run-log sha and byte-identical replay are untouched.
+    if attestation is not None:
+        packet["attestation"] = attestation
     return packet
 
 
@@ -2779,10 +2823,16 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
     chain_head_hex = head_for_log(log)
 
     # Detached Ed25519 signature over the BOUND payload (run-log sha256 + chain
-    # head), so a valid signature attests the exact ordered, complete run. The
-    # signature is metadata beside the log, never inside the hashed JSONL, and the
-    # chain head is derived read-only, so original_sha and replay are untouched.
-    signature = sign_run_log_jsonl(log.to_jsonl())
+    # head + deadline-compliance attestation digest + input fact-record hash), so a
+    # valid signature attests the exact ordered, complete run, driven from this
+    # exact fact-record, that met these statutory deadlines. The signature is
+    # metadata beside the log, never inside the hashed JSONL, and every bound digest
+    # is derived read-only, so original_sha and replay are untouched.
+    attestation = build_attestation(_clock_rows(clocks))
+    attestation_sha_hex = attestation_sha(attestation)
+    fact_record_hash_hex = fact_record_hash(CANONICAL_FACTS)
+    signature = sign_run_log_jsonl(
+        log.to_jsonl(), attestation_sha_hex, fact_record_hash_hex)
 
     packet = _assemble_legacy_packet(
         room_id, trace, clocks, conflicts, breached,
@@ -2790,7 +2840,10 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
                   "rationale": nis2_role.rationale, "text": drafted["text"]}],
         replay_info={"original_sha256": original_sha, "replayed_sha256": replayed_sha,
                      "byte_identical": byte_identical, "chain_head": chain_head_hex,
+                     "attestation_sha": attestation_sha_hex,
+                     "fact_record_hash": fact_record_hash_hex,
                      "signature": signature},
+        attestation=attestation,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}.jsonl"
@@ -2805,19 +2858,11 @@ def _run_single_drafter_floor(out_dir, draft_timeout, warden, drafter, draft_fn)
 
 
 def _assemble_legacy_packet(room_id, trace, clocks, conflicts, breached, filings,
-                            replay_info) -> dict:
-    clock_rows = []
-    for c in clocks.all():
-        clock_rows.append({
-            "name": c.name, "correlation_id": c.correlation_id,
-            "trigger_event": c.trigger_event,
-            "started": c.started_at.isoformat(), "deadline": c.deadline.isoformat(),
-            "stopped": c.stopped_at.isoformat() if c.stopped_at else "",
-            "breached": c.breached(c.stopped_at or c.deadline) if c.stopped_at else False,
-        })
+                            replay_info, attestation=None) -> dict:
+    clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
-    return {
+    packet = {
         "incident": {
             "incident_id": INCIDENT_ID,
             "band_room_id": room_id,
@@ -2840,6 +2885,9 @@ def _assemble_legacy_packet(room_id, trace, clocks, conflicts, breached, filings
             "from an in-process function to its own Band agent.",
         ],
     }
+    if attestation is not None:
+        packet["attestation"] = attestation
+    return packet
 
 
 def main() -> int:

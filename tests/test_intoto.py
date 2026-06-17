@@ -124,6 +124,11 @@ def test_envelope_verifies_and_subject_digest_matches_for_every_capture():
         assert isinstance(pred["filed_frameworks"], list) and pred["filed_frameworks"]
         assert "sec_deadline" in pred
         assert pred["signer_fingerprint"]
+        # The two bound digests are named in the predicate, mirroring the sealed
+        # detached signature, so the standards envelope reflects the full custody.
+        sealed_sig = (packet.get("replay") or {}).get("signature") or {}
+        assert pred["attestation_sha"] == sealed_sig["attestation_sha"]
+        assert pred["fact_record_hash"] == sealed_sig["fact_record_hash"]
 
 
 def test_committed_sidecar_matches_freshly_built_and_sealed_sig():
@@ -234,15 +239,21 @@ def test_building_attestation_does_not_change_run_log_bytes_or_sha():
 
 def test_existing_detached_signature_unchanged_by_intoto_layer():
     # The native signing path must still produce and verify the SAME bound-payload
-    # signature; the in-toto sidecar rides beside it, never replacing it.
+    # signature; the in-toto sidecar rides beside it, never replacing it. The two
+    # derived digests are read from the sealed record (they are bound into the
+    # payload but cannot be recomputed from the run-log bytes), so re-signing with
+    # them reproduces the committed signature exactly.
     jsonl, _ = _read_capture(*CAPTURES[0])
-    record = sign_run_log_jsonl(jsonl)
     sealed = json.loads(
         (DATA / (CAPTURES[0][0] + ".sig.json")).read_text(encoding="utf-8")
     )
+    record = sign_run_log_jsonl(
+        jsonl, sealed["attestation_sha"], sealed["fact_record_hash"])
     assert record["signature"] == sealed["signature"]
     assert record["sha256"] == sealed["sha256"]
     assert record["chain_head"] == sealed["chain_head"]
+    assert record["attestation_sha"] == sealed["attestation_sha"]
+    assert record["fact_record_hash"] == sealed["fact_record_hash"]
     assert verify_run_log_jsonl(jsonl, sealed) is True
 
 

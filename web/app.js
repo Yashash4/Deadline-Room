@@ -1111,14 +1111,23 @@ async function verifyAll() {
 }
 
 // The exact bytes the signature is taken over: the canonical JSON object that
-// BINDS the run-log sha256 to the chain head. Mirrors Python's
-// json.dumps({"sha256":..,"chain_head":..}, sort_keys=True, separators=(",",":")),
-// so sorted keys render as {"chain_head":"...","sha256":"..."} with no spaces.
+// BINDS the run-log sha256, the chain head, the deadline-compliance attestation
+// digest, and the input fact-record hash. Mirrors Python's json.dumps({...},
+// sort_keys=True, separators=(",",":")), so sorted keys render as
+// {"attestation_sha":"...","chain_head":"...","fact_record_hash":"...","sha256":"..."}
+// with no spaces. The sha and chain head are recomputed in the browser from the
+// bundled log; the attestation digest and fact-record hash are derived from data
+// outside the run log (the clocks and the input fact-record), so they are read
+// from the signature record, exactly as Python's verify rebuilds the payload.
 // Rebuilding the identical bytes here is what lets the browser verify the same
 // signature Python produced.
-function boundPayloadString(sha256Hex, chainHeadHex) {
-  return "{" + JSON.stringify("chain_head") + ":" + JSON.stringify(chainHeadHex)
-    + "," + JSON.stringify("sha256") + ":" + JSON.stringify(sha256Hex) + "}";
+function boundPayloadString(sha256Hex, chainHeadHex, attestationShaHex, factRecordHashHex) {
+  return "{"
+    + JSON.stringify("attestation_sha") + ":" + JSON.stringify(attestationShaHex)
+    + "," + JSON.stringify("chain_head") + ":" + JSON.stringify(chainHeadHex)
+    + "," + JSON.stringify("fact_record_hash") + ":" + JSON.stringify(factRecordHashHex)
+    + "," + JSON.stringify("sha256") + ":" + JSON.stringify(sha256Hex)
+    + "}";
 }
 
 async function verifySignature(recomputedSha, recomputedHead) {
@@ -1129,6 +1138,12 @@ async function verifySignature(recomputedSha, recomputedHead) {
   // signature still has something to verify against.
   const sha = recomputedSha || packet.replay.original_sha256;
   const head = recomputedHead || packet.replay.chain_head || (sig && sig.chain_head);
+  // The attestation digest and fact-record hash are DERIVED from data outside the
+  // run log, so they cannot be recomputed from the bundled bytes; they are read
+  // from the signature record (the same values Python binds). An empty string when
+  // absent keeps the bound bytes well-formed for an older capture.
+  const attestationSha = sig.attestation_sha || "";
+  const factRecordHash = sig.fact_record_hash || "";
   // Detect WebCrypto Ed25519 support up front (older Safari lacks it). The hash
   // and chain checks already passed independently, so we degrade gracefully.
   if (!(crypto.subtle && crypto.subtle.importKey)) {
@@ -1149,17 +1164,20 @@ async function verifySignature(recomputedSha, recomputedHead) {
       return;
     }
     const sigBytes = hexToBytes(sig.signature);
-    // The signature covers the canonical {sha256, chain_head} object, NOT the bare
-    // run-log bytes. Binding the head means a reorder (which moves the head) turns
-    // the signature INVALID too, not just the chain check.
-    const signedBytes = new TextEncoder().encode(boundPayloadString(sha, head));
+    // The signature covers the canonical {sha256, chain_head, attestation_sha,
+    // fact_record_hash} object, NOT the bare run-log bytes. Binding the head means a
+    // reorder (which moves the head) turns the signature INVALID too, not just the
+    // chain check; binding the attestation and fact-record digests means a tampered
+    // margin or a changed input would also invalidate it.
+    const signedBytes = new TextEncoder().encode(
+      boundPayloadString(sha, head, attestationSha, factRecordHash));
     const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, sigBytes, signedBytes);
     if (valid) {
       setPill("#sig-pill", "ok", "VALID");
-      $("#sig-detail").textContent = `Signed by ${sig.signer}, key fingerprint ${sig.pubkey_fingerprint}. The browser verified the Ed25519 signature over the bound payload (run-log sha256 + chain head) against the bundled public key: this exact ordered, complete run is attested.`;
+      $("#sig-detail").textContent = `Signed by ${sig.signer}, key fingerprint ${sig.pubkey_fingerprint}. The browser verified the Ed25519 signature over the bound payload (run-log sha256 + chain head + deadline-compliance attestation digest + input fact-record hash) against the bundled public key: this exact ordered, complete run, driven from this exact fact-record, that met these statutory deadlines, is attested.`;
     } else {
       setPill("#sig-pill", "fail", "INVALID");
-      $("#sig-detail").textContent = "The signature did not verify against the bundled public key (the bound sha256 + chain head no longer match what was signed).";
+      $("#sig-detail").textContent = "The signature did not verify against the bundled public key (the bound sha256 + chain head + attestation digest + fact-record hash no longer match what was signed).";
     }
   } catch (err) {
     setPill("#sig-pill", "warn", "unsupported");

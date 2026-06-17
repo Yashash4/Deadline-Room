@@ -61,12 +61,27 @@ def _fresh_log() -> RunLog:
     ).log
 
 
+# The two DERIVED digests the bound payload now also binds. They are computed
+# outside the hashed run-log (from the deadline-compliance attestation and the
+# input fact-record), so the tests pass concrete fixed values; what matters for the
+# signing guarantees is that they are folded into the signed payload and carried in
+# the record. Using stable literals keeps the determinism checks exact.
+ATT_SHA = "a" * 64
+FR_HASH = "b" * 64
+
+
+def _sign(jsonl: str) -> dict:
+    """Sign a run log with the two derived digests bound in. A thin wrapper so the
+    tests state the 4-field signing call once."""
+    return sign_run_log_jsonl(jsonl, ATT_SHA, FR_HASH)
+
+
 # --- a valid signature verifies ----------------------------------------
 
 def test_valid_signature_verifies_over_the_run_log_bytes():
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
     assert record["algorithm"] == "ed25519"
     assert record["detached"] is True
     assert verify_run_log_jsonl(jsonl, record) is True
@@ -76,7 +91,7 @@ def test_committed_public_key_matches_the_demo_private_key():
     # The committed pubkey is exactly the public half of the committed demo seed.
     sk = load_demo_private_key()
     assert public_key_hex_of(sk) == load_public_key_hex()
-    record = sign_run_log_jsonl(_fresh_log().to_jsonl())
+    record = _sign(_fresh_log().to_jsonl())
     assert record["public_key"] == load_public_key_hex()
     assert record["pubkey_fingerprint"] == fingerprint(load_public_key_hex())
 
@@ -86,7 +101,7 @@ def test_committed_public_key_matches_the_demo_private_key():
 def test_one_byte_change_to_the_signed_bytes_makes_it_invalid():
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
 
     # Flip a single character of the signed payload, like a field edit.
     assert '"admitted":true' in jsonl
@@ -118,14 +133,14 @@ def test_sign_is_deterministic_with_the_demo_key():
     # Ed25519 is deterministic: the same payload and key always yield the same
     # signature, so captured artifacts are reproducible byte for byte.
     assert sign_bytes(payload) == sign_bytes(payload)
-    a = sign_run_log_jsonl(log.to_jsonl())
-    b = sign_run_log_jsonl(log.to_jsonl())
+    a = _sign(log.to_jsonl())
+    b = _sign(log.to_jsonl())
     assert a["signature"] == b["signature"]
     assert a["public_key"] == b["public_key"]
 
 
 def test_signature_record_carries_the_honest_demo_caveat():
-    record = sign_run_log_jsonl(_fresh_log().to_jsonl())
+    record = _sign(_fresh_log().to_jsonl())
     assert record["demo_key"] is True
     assert record["caveat"] == DEMO_KEY_CAVEAT
     # The caveat states plainly that the key ships with the repo (not HSM/KMS).
@@ -140,7 +155,7 @@ def test_signing_does_not_change_the_run_log_bytes_or_the_replay_sha():
     before_sha = log.sha256()
 
     # Sign in every way the module offers.
-    sign_run_log_jsonl(log.to_jsonl())
+    _sign(log.to_jsonl())
     sign_bytes(canonical_signing_bytes(log.to_jsonl()))
 
     # The run-log bytes and its sha are byte-identical afterwards: the signature
@@ -155,7 +170,7 @@ def test_byte_identical_replay_still_holds_with_signing_present():
 
     # Produce a signature, then assert replay is still byte-identical and the sha
     # the signature was taken over is unchanged.
-    record = sign_run_log_jsonl(log.to_jsonl())
+    record = _sign(log.to_jsonl())
     assert verify_run_log_jsonl(log.to_jsonl(), record) is True
 
     replayed = replay(log)
@@ -172,35 +187,60 @@ def test_signature_lives_outside_the_hashed_payload():
     # the detached property the packet relies on.
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
     replay_info = {"original_sha256": log.sha256(), "signature": record}
     # The signature hex is not in the bytes it signs (no self-reference loop).
     assert record["signature"] not in jsonl
     # And re-signing the unchanged bytes gives the same signature stored above.
-    assert sign_run_log_jsonl(copy.copy(jsonl))["signature"] == \
+    assert _sign(copy.copy(jsonl))["signature"] == \
         replay_info["signature"]["signature"]
 
 
 # --- THE BINDING: the signed payload includes the chain head -----------
 
-def test_signed_payload_binds_both_the_sha_and_the_chain_head():
-    # The record names the bound payload and carries BOTH attested values, and
-    # they equal what the log itself produces: the byte sha and the chain head.
+def test_signed_payload_binds_the_sha_chain_head_and_derived_digests():
+    # The record names the 4-field bound payload and carries every attested value:
+    # the byte sha and the chain head equal what the log itself produces, and the
+    # two derived digests are the ones passed in.
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
 
-    assert record["signed_payload"] == "canonical_json{sha256,chain_head}"
+    assert record["signed_payload"] == (
+        "canonical_json{sha256,chain_head,attestation_sha,fact_record_hash}")
     assert record["sha256"] == log.sha256()
     assert record["chain_head"] == chain_head(_entries_of(jsonl))
+    assert record["attestation_sha"] == ATT_SHA
+    assert record["fact_record_hash"] == FR_HASH
 
 
 def test_bound_payload_is_canonical_sorted_key_json():
     # The exact bytes the signature covers: sorted keys, no whitespace, mirroring
-    # the run log's own canonicalization. chain_head sorts before sha256. Pinning
-    # this is what lets the browser rebuild identical bytes.
-    payload = bound_payload_bytes("aa", "bb")
-    assert payload == b'{"chain_head":"bb","sha256":"aa"}'
+    # the run log's own canonicalization. The four keys sort as attestation_sha,
+    # chain_head, fact_record_hash, sha256. Pinning this is what lets the browser
+    # rebuild identical bytes.
+    payload = bound_payload_bytes("aa", "bb", "cc", "dd")
+    assert payload == (
+        b'{"attestation_sha":"cc","chain_head":"bb",'
+        b'"fact_record_hash":"dd","sha256":"aa"}')
+
+
+def test_tampering_a_derived_digest_in_the_record_breaks_the_signature():
+    # The two derived digests are part of the signed payload, so editing either one
+    # in the record (the values a verifier reads, since they cannot be recomputed
+    # from the run-log bytes) changes the bound payload and the signature fails.
+    log = _fresh_log()
+    jsonl = log.to_jsonl()
+    record = _sign(jsonl)
+    assert verify_run_log_jsonl(jsonl, record) is True
+
+    forged_att = dict(record)
+    forged_att["attestation_sha"] = "f" * 64
+    assert verify_run_log_jsonl(jsonl, forged_att) is False
+
+    forged_fr = dict(record)
+    forged_fr["fact_record_hash"] = "e" * 64
+    assert verify_run_log_jsonl(jsonl, forged_fr) is False
 
 
 def test_a_field_edit_breaks_the_bound_signature():
@@ -208,7 +248,7 @@ def test_a_field_edit_breaks_the_bound_signature():
     # payload changes and the signature is INVALID. The honest baseline verifies.
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
     assert verify_run_log_jsonl(jsonl, record) is True
 
     assert '"admitted":true' in jsonl
@@ -225,7 +265,7 @@ def test_a_reorder_now_breaks_the_signature_the_key_new_guarantee():
     # signature taken over the bare run-log bytes.
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
     assert verify_run_log_jsonl(jsonl, record) is True
 
     reordered = _reorder_first_two_protocol_events(jsonl)
@@ -242,10 +282,10 @@ def test_bound_verify_is_deterministic():
     # carried through the bound payload).
     log = _fresh_log()
     jsonl = log.to_jsonl()
-    record = sign_run_log_jsonl(jsonl)
+    record = _sign(jsonl)
     assert verify_run_log_jsonl(jsonl, record) is True
     assert verify_run_log_jsonl(jsonl, record) is True
-    assert sign_run_log_jsonl(jsonl)["signature"] == record["signature"]
+    assert _sign(jsonl)["signature"] == record["signature"]
 
 
 # --- the captured web/data scenarios carry the bound signature ---------
@@ -264,11 +304,15 @@ def test_captured_scenarios_carry_chain_head_and_a_bound_signature():
         sig = replay_block["signature"]
         # The packet replay block persists the chain head, and it matches the log.
         assert replay_block["chain_head"] == chain_head(_entries_of(jsonl))
-        # The signature record binds sha + head and verifies against the bundled
-        # log over the bound payload.
-        assert sig["signed_payload"] == "canonical_json{sha256,chain_head}"
+        # The signature record binds the four-field payload and verifies against the
+        # bundled log over it.
+        assert sig["signed_payload"] == (
+            "canonical_json{sha256,chain_head,attestation_sha,fact_record_hash}")
         assert sig["sha256"] == log.sha256() == replay_block["original_sha256"]
         assert sig["chain_head"] == replay_block["chain_head"]
+        # The two derived digests are present and mirrored into the replay block.
+        assert sig["attestation_sha"] == replay_block["attestation_sha"]
+        assert sig["fact_record_hash"] == replay_block["fact_record_hash"]
         assert verify_run_log_jsonl(jsonl, sig) is True
 
         # The sibling sidecar carries the same bound signature.
@@ -276,6 +320,8 @@ def test_captured_scenarios_carry_chain_head_and_a_bound_signature():
             (data / f"run-inc-8842-{mode}.jsonl.sig.json").read_text(encoding="utf-8"))
         assert sidecar["signature"] == sig["signature"]
         assert sidecar["chain_head"] == sig["chain_head"]
+        assert sidecar["attestation_sha"] == sig["attestation_sha"]
+        assert sidecar["fact_record_hash"] == sig["fact_record_hash"]
         assert verify_run_log_jsonl(jsonl, sidecar) is True
 
         # And a reorder of that captured log breaks its captured signature.
@@ -291,7 +337,7 @@ def test_binding_does_not_change_the_run_log_bytes_or_replay_sha():
     before_jsonl = log.to_jsonl()
     before_sha = log.sha256()
 
-    record = sign_run_log_jsonl(log.to_jsonl())
+    record = _sign(log.to_jsonl())
     assert "chain_head" in record
 
     assert log.to_jsonl() == before_jsonl

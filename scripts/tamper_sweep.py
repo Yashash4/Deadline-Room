@@ -24,10 +24,11 @@ forger editing the log bytes can reach):
                      bytes equals the SEALED chain head. Reorder, delete,
                      duplicate, truncate, or edit any entry and the head moves.
   * signature      : the detached Ed25519 signature, taken over the bound
-                     {sha256, chain_head} payload, verifies under the committed
-                     public key. A field edit moves the sha; a reorder/omission
-                     moves the head; either changes the bound payload and the
-                     signature goes INVALID.
+                     {sha256, chain_head, attestation_sha, fact_record_hash}
+                     payload, verifies under the committed public key. A field edit
+                     moves the sha; a reorder/omission moves the head; a forged
+                     attestation digest or fact-record hash in the record changes
+                     the bound payload too; any of them makes the signature INVALID.
   * logcheck       : the structural validator accepts the JSONL (no truncation, no
                      corruption, no missing field, contiguous seqs). A truncated
                      tail or a non-contiguous seq is caught here even before crypto.
@@ -44,10 +45,11 @@ MUTATION FAMILIES (single-point each, over a TEMP COPY, never the sealed file):
   - duplicate        : duplicate each entry in place.
   - truncate         : cut the log at each length shorter than the full run.
   - timestamp        : shift each ts / deadline field by a fixed offset.
-  - packet tamper    : forge the recorded sha256, chain_head, or signature in the
-                       packet sidecar (the values a verifier trusts). Caught when
-                       the recorded value no longer matches the bytes on disk OR
-                       the signature no longer verifies.
+  - packet tamper    : forge the recorded sha256, chain_head, attestation_sha,
+                       fact_record_hash, signature, or public_key in the packet
+                       sidecar (the values a verifier trusts). Caught when the
+                       recorded value no longer matches the bytes on disk OR the
+                       signature no longer verifies over the rebuilt bound payload.
 
 HONEST no-op class. Some "mutations" produce bytes identical to the sealed log
 (setting a field to the value it already held, swapping two identical entries,
@@ -424,6 +426,27 @@ def packet_tamper_results(sealed: SealedRun, rng: random.Random):
     # derived from the bytes.
     forged_head = true_head[:-1] + ("0" if true_head[-1] != "0" else "1")
     yield ("packet forge recorded chain_head", forged_head != true_head, "chain compare")
+
+    # Forge the recorded attestation_sha in the signature record: it is part of the
+    # bound payload, so a verifier rebuilding the payload with the forged digest
+    # gets a signature that no longer verifies. Caught by the signature detector.
+    sig_att = copy.deepcopy(sealed.signature)
+    original_att = sig_att.get("attestation_sha", "")
+    if original_att:
+        sig_att["attestation_sha"] = original_att[:-1] + (
+            "0" if original_att[-1] != "0" else "1")
+        caught_att = not verify_run_log_jsonl(jsonl, sig_att)
+        yield ("packet forge attestation_sha", caught_att, "signature")
+
+    # Forge the recorded fact_record_hash in the signature record: same posture, it
+    # is bound into the payload, so a forged input digest breaks verification.
+    sig_fr = copy.deepcopy(sealed.signature)
+    original_fr = sig_fr.get("fact_record_hash", "")
+    if original_fr:
+        sig_fr["fact_record_hash"] = original_fr[:-1] + (
+            "0" if original_fr[-1] != "0" else "1")
+        caught_fr = not verify_run_log_jsonl(jsonl, sig_fr)
+        yield ("packet forge fact_record_hash", caught_fr, "signature")
 
     # Forge the signature hex: caught when it no longer verifies over the bound
     # payload recomputed from the bytes.
