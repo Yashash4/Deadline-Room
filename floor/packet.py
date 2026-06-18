@@ -1657,6 +1657,92 @@ def _render_edgar_export(ex: dict) -> str:
     return "".join(parts)
 
 
+def _render_ecosystem_exports(ex: dict) -> str:
+    """Render the ecosystem-exports reference (STIX 2.1 / OSCAL / MISP) (E4.7).
+
+    The incident plugs into the security and compliance ecosystem through three
+    named-standard exports, each a pure DERIVED transform of the packet (no LLM, no
+    now(), no uuid4(), never in the hashed run-log, so byte-identical replay and
+    every sealed sha are untouched):
+
+      - a valid OASIS STIX 2.1 bundle (the incident as the threat-intel ecosystem's
+        native object: the attacker as threat-actor + malware, the victim as an
+        identity, the incident SDO with the core incident extension, and a
+        course-of-action per confirmed control finding);
+      - a NIST OSCAL assessment-results document (the E4.4 control-evidence register
+        as the named GRC standard: each control a finding with its named-framework
+        references, each evidenced control an observation linked to the run-log);
+      - a MISP-core-format event (the CERT/ISAC sharing object, riding on the same
+        STIX mapping).
+
+    This renders a compact REFERENCE (the per-standard object counts and the honest
+    coverage note), with the full documents available as the JSON sidecar's
+    ecosystem_exports block and the standard-native validators
+    (scripts/stix_export.py, scripts/oscal_export.py, scripts/misp_export.py). The
+    validators are the receipt; this section names what was emitted."""
+    if not ex:
+        return ""
+    rows: list[list] = []
+    stix = ex.get("stix")
+    if stix:
+        objs = stix.get("objects", [])
+        by_type: dict[str, int] = {}
+        for o in objs:
+            by_type[o.get("type")] = by_type.get(o.get("type"), 0) + 1
+        sdo_summary = ", ".join(
+            f"{by_type[t]} {t}" for t in (
+                "threat-actor", "malware", "identity", "incident",
+                "observed-data", "course-of-action", "relationship")
+            if by_type.get(t))
+        rows.append([
+            "STIX 2.1 bundle (OASIS)",
+            f"{len(objs)} objects: {sdo_summary}",
+            "BUILT: a valid STIX 2.1 bundle a TIP (MISP, OpenCTI, Sentinel, "
+            "Splunk ES) ingests; not pushed over a live TAXII server (STUB)."])
+    oscal = ex.get("oscal")
+    if oscal:
+        ar = oscal.get("assessment-results", {})
+        result = (ar.get("results") or [{}])[0]
+        rows.append([
+            "OSCAL assessment-results (NIST)",
+            f"{len(result.get('findings', []))} findings, "
+            f"{len(result.get('observations', []))} observations "
+            f"(OSCAL {ar.get('metadata', {}).get('oscal-version', '')})",
+            "BUILT: the E4.4 control register as a NIST OSCAL assessment-results "
+            "document; assessment-results only, not a full SSP + plan + POA&M "
+            "suite (STUB)."])
+    misp = ex.get("misp")
+    if misp:
+        event = misp.get("Event", {})
+        rows.append([
+            "MISP event (core format)",
+            f"{len(event.get('Attribute', []))} attributes, "
+            f"{len(event.get('Galaxy', []))} galaxies, "
+            f"{len(event.get('Tag', []))} tags",
+            "BUILT: a well-formed MISP-core-format event for CERT/ISAC sharing; "
+            "not pushed to a live MISP instance (STUB). MISP also imports the "
+            "STIX bundle directly."])
+    if not rows:
+        return ""
+    parts = [
+        "<h2>8h. Ecosystem exports (STIX 2.1 / OSCAL / MISP)</h2>",
+        "<p class='sub'>The incident also speaks the native languages of the "
+        "security and compliance ecosystem, so it drops into a SIEM/SOAR, a GRC "
+        "tool, and a threat-intel platform without re-keying. Each export below is "
+        "a pure deterministic transform of the data this packet already carries "
+        "(the canonical fact-record, the contradiction diff, and the "
+        "control-evidence register), with stable UUIDv5 ids and fact-record "
+        "timestamps (no LLM, no now(), no random ids), so it never enters the "
+        "hashed run-log and byte-identical replay is untouched. The full documents "
+        "are in the JSON sidecar (<code>ecosystem_exports</code>); the "
+        "standard-native validators (<code>scripts/stix_export.py</code>, "
+        "<code>scripts/oscal_export.py</code>, <code>scripts/misp_export.py</code>) "
+        "are the receipt.</p>",
+        _rows(["Standard", "Emitted", "Coverage (honest scope)"], rows),
+    ]
+    return "".join(parts)
+
+
 def _clock_status(c: dict) -> tuple[str, str]:
     """Map one clock row to (label, css class) for the jurisdictions strip.
     Pure: reads only c['stopped'] and c['breached'], both already in the dict.
@@ -2038,6 +2124,7 @@ def _render_html(p: dict) -> str:
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
     edgar_block = _render_edgar_export(p.get("edgar_export", {}))
+    ecosystem_block = _render_ecosystem_exports(p.get("ecosystem_exports", {}))
     attestation_block = _render_attestation(p.get("attestation", {}))
     timestamp_block = _render_timestamp(p.get("timestamp", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
@@ -2241,6 +2328,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {release_block}
 
 {edgar_block}
+
+{ecosystem_block}
 
 {submission_block}
 

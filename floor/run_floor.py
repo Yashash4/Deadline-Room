@@ -119,6 +119,10 @@ from floor import regimes, roster  # noqa: E402
 from floor.attestation import attestation_sha, build_attestation  # noqa: E402
 from floor.exports_edgar import (  # noqa: E402
     EdgarExportError, to_edgar_8k, to_edgar_ixbrl)
+from floor.exports_stix import StixExportError, to_stix_bundle  # noqa: E402
+from floor.exports_oscal import (  # noqa: E402
+    OscalExportError, to_oscal_assessment_results)
+from floor.exports_misp import MispExportError, to_misp_event  # noqa: E402
 from floor.challenger import challenge_filing  # noqa: E402
 from floor.fact_record import fact_record_hash  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
@@ -4585,6 +4589,34 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         }
     except EdgarExportError:
         pass
+    # Ecosystem exports (STIX 2.1 / OSCAL / MISP) (E4.7). Pure DERIVED transforms of
+    # the packet just assembled: the STIX 2.1 bundle (the incident as the
+    # threat-intel ecosystem's native object), the NIST OSCAL assessment-results
+    # document (the E4.4 control-evidence register re-serialized into the named GRC
+    # standard), and the MISP-core-format event (the CERT/ISAC sharing object,
+    # riding on the same STIX mapping). Every id is a deterministic UUIDv5 over
+    # stable content and every timestamp is a fact-record value, so the exports are
+    # byte-stable with no LLM, no now(), and no uuid4(). They are computed at packet
+    # ASSEMBLY time, read only the packet (never the hashed run-log), and are never
+    # written back into the log, so the run-log sha, byte-identical replay, and
+    # every sealed capture are untouched. Each is omitted cleanly when its required
+    # input is absent (a suppressed-incident packet with no fact-record), so a
+    # missing input surfaces structurally rather than as a malformed export.
+    ecosystem_exports: dict = {}
+    try:
+        ecosystem_exports["stix"] = to_stix_bundle(packet)
+    except StixExportError:
+        pass
+    try:
+        ecosystem_exports["oscal"] = to_oscal_assessment_results(packet)
+    except OscalExportError:
+        pass
+    try:
+        ecosystem_exports["misp"] = to_misp_event(packet)
+    except MispExportError:
+        pass
+    if ecosystem_exports:
+        packet["ecosystem_exports"] = ecosystem_exports
     return packet
 
 

@@ -948,6 +948,432 @@
     "caveat": "Modeled submission channel (local stub), not a live regulator endpoint. The submission FORMAT and the required-field contract validation are real; the network hop to the actual regulator is modeled. The filing id is a modeled accession-style id derived from the artifact bytes, not a real EDGAR accession number, and no government acknowledgement is fabricated.",
     "accepted_at": "2026-06-16T06:00:00+00:00"
   },
+  "completeness": {
+    "sheets": [
+      {
+        "regime": "NIS2",
+        "form_title": "NIS2 Article 23 incident notification",
+        "cover_tag": "Article 23(4)(b) incident notification",
+        "applicable": true,
+        "complete": true,
+        "verdict": "COMPLETE (3/3 mandated fields present)",
+        "present_count": 3,
+        "empty_count": 0,
+        "na_count": 0,
+        "total": 3,
+        "fields": [
+          {
+            "label": "Initial severity and impact assessment",
+            "status": "PRESENT",
+            "evidence": "A significant incident affecting 48,211 records of Meridian Trust Bank N.V. was assessed as high severity; the core bank..."
+          },
+          {
+            "label": "Indicators of compromise",
+            "status": "PRESENT",
+            "evidence": "Known indicators: threat actor LockBit 3.0; affected systems core banking ledger, customer KYC store."
+          },
+          {
+            "label": "Suspected unlawful or malicious act and cross-border impact",
+            "status": "PRESENT",
+            "evidence": "The incident is suspected to be a malicious act; cross-border impact is possible given the entity's EU and UK establishm..."
+          }
+        ]
+      },
+      {
+        "regime": "SEC",
+        "form_title": "Form 8-K, Item 1.05 Material Cybersecurity Incidents",
+        "cover_tag": "Item 1.05 Material Cybersecurity Incidents",
+        "applicable": true,
+        "complete": true,
+        "verdict": "COMPLETE (4/4 mandated fields present)",
+        "present_count": 4,
+        "empty_count": 0,
+        "na_count": 0,
+        "total": 4,
+        "fields": [
+          {
+            "label": "Nature of the incident",
+            "status": "PRESENT",
+            "evidence": "Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its..."
+          },
+          {
+            "label": "Scope of the incident",
+            "status": "PRESENT",
+            "evidence": "The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store)..."
+          },
+          {
+            "label": "Timing of the incident",
+            "status": "PRESENT",
+            "evidence": "The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing."
+          },
+          {
+            "label": "Material impact or reasonably likely material impact",
+            "status": "PRESENT",
+            "evidence": "The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and re..."
+          }
+        ]
+      },
+      {
+        "regime": "DORA",
+        "form_title": "DORA Article 19 major ICT-related incident report",
+        "cover_tag": "Major incident notification (Article 19, RTS classification)",
+        "applicable": true,
+        "complete": true,
+        "verdict": "COMPLETE (4/4 mandated fields present)",
+        "present_count": 4,
+        "empty_count": 0,
+        "na_count": 0,
+        "total": 4,
+        "fields": [
+          {
+            "label": "Clients, financial counterparts, and transactions affected",
+            "status": "PRESENT",
+            "evidence": "Stated from the fact-record for this field."
+          },
+          {
+            "label": "Duration and service downtime",
+            "status": "PRESENT",
+            "evidence": "Stated from the fact-record for this field."
+          },
+          {
+            "label": "Geographical spread and critical services affected",
+            "status": "PRESENT",
+            "evidence": "Stated from the fact-record for this field."
+          },
+          {
+            "label": "Data losses and economic impact",
+            "status": "PRESENT",
+            "evidence": "Stated from the fact-record for this field."
+          }
+        ]
+      },
+      {
+        "regime": "UK ICO",
+        "form_title": "UK GDPR Article 33 personal data breach notification to the ICO",
+        "cover_tag": "Article 33(3) personal data breach notification",
+        "applicable": true,
+        "complete": true,
+        "verdict": "COMPLETE (4/4 mandated fields present)",
+        "present_count": 4,
+        "empty_count": 0,
+        "na_count": 0,
+        "total": 4,
+        "fields": [
+          {
+            "label": "Nature of the breach",
+            "status": "PRESENT",
+            "evidence": "A personal data breach at Meridian Trust Bank N.V. attributed to LockBit 3.0 affected the core banking ledger, customer..."
+          },
+          {
+            "label": "Categories and approximate number of data subjects and records",
+            "status": "PRESENT",
+            "evidence": "Approximately 48,211 records and their data subjects (name, address, account_number) were concerned."
+          },
+          {
+            "label": "Likely consequences",
+            "status": "PRESENT",
+            "evidence": "The likely consequences include risk to the affected individuals from exposure of the categories of personal data involv..."
+          },
+          {
+            "label": "Measures taken or proposed",
+            "status": "PRESENT",
+            "evidence": "Containment is partially contained; remediation and notification measures are underway to mitigate the breach's adverse..."
+          }
+        ]
+      }
+    ],
+    "all_complete": true,
+    "regimes_screened": [
+      "NIS2",
+      "SEC",
+      "DORA",
+      "UK ICO"
+    ]
+  },
+  "consistency": {
+    "filings": [
+      "NIS2",
+      "SEC",
+      "DORA",
+      "UK ICO"
+    ],
+    "filing_count": 4,
+    "fact_count": 4,
+    "conflict_count": 0,
+    "consistent": true,
+    "verdict": "CONSISTENT: all 4 filings report the same value on every one of the 4 load-bearing facts",
+    "facts": [
+      {
+        "fact": "incident_start_utc",
+        "label": "Incident start (UTC)",
+        "status": "CONSISTENT",
+        "agreed_value": "2026-06-16T02:14:00+00:00",
+        "filings": [
+          "NIS2",
+          "SEC",
+          "DORA",
+          "UK ICO"
+        ],
+        "conflict": []
+      },
+      {
+        "fact": "records_affected",
+        "label": "Records affected",
+        "status": "CONSISTENT",
+        "agreed_value": 48211,
+        "filings": [
+          "NIS2",
+          "SEC",
+          "DORA",
+          "UK ICO"
+        ],
+        "conflict": []
+      },
+      {
+        "fact": "attacker",
+        "label": "Attacker",
+        "status": "CONSISTENT",
+        "agreed_value": "lockbit",
+        "filings": [
+          "NIS2",
+          "SEC",
+          "DORA",
+          "UK ICO"
+        ],
+        "conflict": []
+      },
+      {
+        "fact": "containment",
+        "label": "Containment status",
+        "status": "CONSISTENT",
+        "agreed_value": "partially_contained",
+        "filings": [
+          "NIS2",
+          "SEC",
+          "DORA",
+          "UK ICO"
+        ],
+        "conflict": []
+      }
+    ]
+  },
+  "controls": {
+    "total": 6,
+    "operated_count": 4,
+    "not_exercised_count": 2,
+    "verdict": "4 of 6 catalogued controls OPERATED and are evidenced in this run; 2 were not exercised by this run's scenario.",
+    "controls": [
+      {
+        "id": "SOD-01",
+        "title": "Segregation of duties on release (two-key gate)",
+        "objective": "No single human can both withhold and grant a regulated filing's release; two distinct privileged roles must concur before the filing leaves the room.",
+        "mechanism": "warden/release_gate.py (TwoKeyReleaseGate) + the AWAITING_HUMAN_SIGNOFF -> HUMAN_RELEASED edge in warden/state_machine.py",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "CC1.3",
+            "criterion": "The entity establishes structures, reporting lines, and appropriate authorities and responsibilities (segregation of incompatible duties)."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.5.3",
+            "criterion": "Segregation of duties: conflicting duties and areas of responsibility are segregated to reduce unauthorised or unintentional modification."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "PR.AA-05",
+            "criterion": "Access permissions, entitlements, and authorizations incorporate the principles of least privilege and separation of duties."
+          }
+        ],
+        "framework_refs": "SOC 2 CC1.3; ISO/IEC 27001:2022 A.5.3; NIST CSF 2.0 PR.AA-05",
+        "status": "OPERATED",
+        "operated": true,
+        "evidence": {
+          "found_events": [
+            "protocol_event:human_released",
+            "protocol_event:signoff_opened"
+          ],
+          "detail": "proving run-log event(s) present, read from packet.release.signoffs, sealed at the run chain head",
+          "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+          "signature_fp": "46e30f5bff8c221d"
+        },
+        "exercised_when": "Always operates on any run that reaches a release: two distinct human roles (head_of_ir and general_counsel) each record a release_signoff and the Warden admits HUMAN_RELEASED only after both keys are present."
+      },
+      {
+        "id": "VAL-01",
+        "title": "Cross-filing contradiction veto (consistency control)",
+        "objective": "A regulated filing cannot release while two drafters disagree on a load-bearing fact; the Warden blocks the signoff transition on the conflict.",
+        "mechanism": "warden/diff.py (diff_claims, UTC/alias canonicalization) gating the awaiting_human_signoff transition",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "PI1.2",
+            "criterion": "Processing integrity: inputs to processing are complete and accurate; the system prevents processing of data that fails validation."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.8.26",
+            "criterion": "Application security requirements: information processed is validated for accuracy and consistency before it is acted upon."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "DE.AE-02",
+            "criterion": "Detected anomalies and indicators of compromise are analyzed to characterize the event (here, an inconsistency across filings)."
+          }
+        ],
+        "framework_refs": "SOC 2 PI1.2; ISO/IEC 27001:2022 A.8.26; NIST CSF 2.0 DE.AE-02",
+        "status": "NOT-EXERCISED",
+        "operated": false,
+        "evidence": {
+          "found_events": [],
+          "detail": "not exercised by this run: no protocol_event:diff_blocked, diff event present at packet.diff.blocked_conflicts",
+          "chain_head": "",
+          "signature_fp": ""
+        },
+        "exercised_when": "Operates only when a cross-filing contradiction is present: the diff emits diff_blocked and the Warden refuses the signoff transition until the fact is reconciled. A clean run (all filings already agree) records the GREEN diff_passed and the veto is NOT-EXERCISED."
+      },
+      {
+        "id": "AVL-01",
+        "title": "Exactly-once handoff under live agent kill (idempotency ledger)",
+        "objective": "A killed-and-restarted agent never double-files; a re-delivered unit of work is acknowledged and dropped, so each filing lands exactly once.",
+        "mechanism": "warden/ledger.py (IdempotencyLedger, read-then-act dedup guard)",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "A1.2",
+            "criterion": "Availability: the entity processes work to completion under failure; recovery procedures prevent loss or duplication of in-flight work."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.8.14",
+            "criterion": "Redundancy of information processing facilities: processing continues correctly through component failure without loss or duplication."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "RC.RP-01",
+            "criterion": "The recovery portion of the incident response plan is executed to restore correct operation after disruption (here, an agent kill)."
+          }
+        ],
+        "framework_refs": "SOC 2 A1.2; ISO/IEC 27001:2022 A.8.14; NIST CSF 2.0 RC.RP-01",
+        "status": "OPERATED",
+        "operated": true,
+        "evidence": {
+          "found_events": [
+            "ledger",
+            "chaos"
+          ],
+          "detail": "4 proving run-log event(s) present, read from packet.chaos.ledger, sealed at the run chain head",
+          "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+          "signature_fp": "46e30f5bff8c221d"
+        },
+        "exercised_when": "The ledger records every unit of work on every run; the DUPLICATE-DROP path (duplicates_dropped > 0) operates only under a chaos kill that forces a re-post. A clean run records ACCEPTED ledger entries with zero drops."
+      },
+      {
+        "id": "INT-01",
+        "title": "Signed, hash-chained provenance (audit-trail integrity)",
+        "objective": "The complete, ordered run record is tamper-evident and attributable: any edit, reorder, or omission moves the seal and invalidates the signature.",
+        "mechanism": "warden/chain.py (per-entry hash chain) + warden/signing.py (detached Ed25519 over the bound sha256 + chain head)",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "CC7.3",
+            "criterion": "The entity evaluates security events and maintains evidence of system activity sufficient to support investigation and accountability."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.8.15",
+            "criterion": "Logging: event logs recording activities are produced, kept, and protected from tampering and unauthorised access."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "PR.DS-06",
+            "criterion": "The integrity of stored information is protected; integrity-checking mechanisms verify records have not been altered."
+          }
+        ],
+        "framework_refs": "SOC 2 CC7.3; ISO/IEC 27001:2022 A.8.15; NIST CSF 2.0 PR.DS-06",
+        "status": "OPERATED",
+        "operated": true,
+        "evidence": {
+          "found_events": [
+            "room"
+          ],
+          "detail": "1 proving run-log event(s) present, read from packet.replay.chain_head, sealed at the run chain head",
+          "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+          "signature_fp": "46e30f5bff8c221d"
+        },
+        "exercised_when": "Always operates: every run seals its append-only JSONL with a per-entry hash chain and a detached Ed25519 signature over the chain head, so the whole ordered run is attestable and tamper-evident."
+      },
+      {
+        "id": "TML-01",
+        "title": "Statutory deadline clocks (timeliness control)",
+        "objective": "Each regime's reporting deadline is computed deterministically from the statutory trigger and tracked to a met/breached verdict per filing.",
+        "mechanism": "warden/clocks.py (UTC instants, business-day and holiday-aware arithmetic) driven from the declarative regime catalog",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "CC2.3",
+            "criterion": "The entity communicates with external parties (regulators) on matters affecting the system, within the timeframes its obligations require."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.5.5",
+            "criterion": "Contact with authorities: the entity maintains and meets the reporting obligations to relevant authorities within required timeframes."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "RS.CO-02",
+            "criterion": "Incidents are reported consistent with established criteria, including mandated regulatory reporting timeframes."
+          }
+        ],
+        "framework_refs": "SOC 2 CC2.3; ISO/IEC 27001:2022 A.5.5; NIST CSF 2.0 RS.CO-02",
+        "status": "OPERATED",
+        "operated": true,
+        "evidence": {
+          "found_events": [
+            "clock_started",
+            "clock_stopped"
+          ],
+          "detail": "5 proving run-log event(s) present, read from packet.clocks, sealed at the run chain head",
+          "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+          "signature_fp": "46e30f5bff8c221d"
+        },
+        "exercised_when": "Operates on every run: each in-scope regime starts a statutory clock at its trigger event and the clock is stopped at the filing release, with the deadline and met/breached verdict bound into the signed attestation."
+      },
+      {
+        "id": "DEC-01",
+        "title": "Reportability / materiality decision gate (decision control)",
+        "objective": "A regime that does not cross its statutory reporting threshold is driven to a terminal SUPPRESSED state by rule, not silently filed or dropped.",
+        "mechanism": "warden/reportability.py + warden/materiality gate (deterministic Python gating an LLM-supplied typed verdict; floor/run_floor.py reportability)",
+        "frameworks": [
+          {
+            "standard": "SOC 2",
+            "ref": "CC3.2",
+            "criterion": "The entity identifies and assesses risks (here, the duty-to-notify threshold) as a basis for determining how they are managed."
+          },
+          {
+            "standard": "ISO/IEC 27001:2022",
+            "ref": "A.5.34",
+            "criterion": "Privacy and protection of PII: the entity identifies and meets the applicable reporting requirements, deciding which obligations attach."
+          },
+          {
+            "standard": "NIST CSF 2.0",
+            "ref": "RS.MA-03",
+            "criterion": "Incidents are categorized and prioritized; the reporting decision per obligation is made against defined criteria."
+          }
+        ],
+        "framework_refs": "SOC 2 CC3.2; ISO/IEC 27001:2022 A.5.34; NIST CSF 2.0 RS.MA-03",
+        "status": "NOT-EXERCISED",
+        "operated": false,
+        "evidence": {
+          "found_events": [],
+          "detail": "not exercised by this run: no reportability, determination_record, clock_stopped event present at packet.reportability.regimes",
+          "chain_head": "",
+          "signature_fp": ""
+        },
+        "exercised_when": "Operates only on a run that runs the per-regime reportability beat: each regime's threshold is assessed and a below-threshold regime is gated to SUPPRESSED. A core run without that beat is NOT-EXERCISED for this control."
+      }
+    ]
+  },
   "recruit": {
     "recruited": true,
     "in_scope": true,
@@ -1024,6 +1450,263 @@
       "sec",
       "dora",
       "uk"
+    ]
+  },
+  "sod": {
+    "total_invariants": 4,
+    "passed_count": 4,
+    "failed_count": 0,
+    "all_hold": true,
+    "verdict": "SEGREGATED: all 4 separation-of-duties invariants hold across the whole run; no identity spanned a conflicting pair of duties",
+    "actors": [
+      {
+        "actor": "dora_drafter",
+        "roles": [
+          "drafter"
+        ],
+        "duties": [
+          "author"
+        ],
+        "actions": [
+          "draft_posted",
+          "draft_started"
+        ]
+      },
+      {
+        "actor": "gc",
+        "roles": [
+          "general_counsel"
+        ],
+        "duties": [
+          "release"
+        ],
+        "actions": [
+          "release_signoff"
+        ]
+      },
+      {
+        "actor": "lena",
+        "roles": [
+          "head_of_ir",
+          "human_owner"
+        ],
+        "duties": [
+          "release"
+        ],
+        "actions": [
+          "human_released",
+          "release_signoff"
+        ]
+      },
+      {
+        "actor": "nis2_drafter",
+        "roles": [
+          "drafter"
+        ],
+        "duties": [
+          "author"
+        ],
+        "actions": [
+          "draft_posted",
+          "draft_started"
+        ]
+      },
+      {
+        "actor": "sec_drafter",
+        "roles": [
+          "drafter"
+        ],
+        "duties": [
+          "author"
+        ],
+        "actions": [
+          "draft_posted",
+          "draft_started"
+        ]
+      },
+      {
+        "actor": "triage",
+        "roles": [
+          "triage"
+        ],
+        "duties": [
+          "triage"
+        ],
+        "actions": [
+          "fact_record_posted"
+        ]
+      },
+      {
+        "actor": "uk_drafter",
+        "roles": [
+          "drafter"
+        ],
+        "duties": [
+          "author"
+        ],
+        "actions": [
+          "draft_posted",
+          "draft_started"
+        ]
+      },
+      {
+        "actor": "warden",
+        "roles": [
+          "warden"
+        ],
+        "duties": [
+          "gate"
+        ],
+        "actions": [
+          "diff_passed",
+          "signoff_opened"
+        ]
+      }
+    ],
+    "invariants": [
+      {
+        "id": "SOD-M1",
+        "title": "The two release keys are distinct roles and distinct actors per branch",
+        "status": "PASS",
+        "passed": true,
+        "detail": "all 4 released branch(es) collected two distinct keys (general_counsel + head_of_ir, distinct actors)",
+        "evidence": [
+          {
+            "branch": "inc-8842:dora",
+            "actor": "gc",
+            "role": "general_counsel",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:dora",
+            "actor": "lena",
+            "role": "head_of_ir",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:nis2",
+            "actor": "gc",
+            "role": "general_counsel",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:nis2",
+            "actor": "lena",
+            "role": "head_of_ir",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:sec",
+            "actor": "gc",
+            "role": "general_counsel",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:sec",
+            "actor": "lena",
+            "role": "head_of_ir",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:uk",
+            "actor": "gc",
+            "role": "general_counsel",
+            "duty": "release"
+          },
+          {
+            "branch": "inc-8842:uk",
+            "actor": "lena",
+            "role": "head_of_ir",
+            "duty": "release"
+          }
+        ]
+      },
+      {
+        "id": "SOD-M2",
+        "title": "No single actor both drafted a filing and released it",
+        "status": "PASS",
+        "passed": true,
+        "detail": "the 4 drafter identit(y/ies) and the 2 release-key identit(y/ies) are disjoint; no overlap",
+        "evidence": [
+          {
+            "actor": "dora_drafter",
+            "duty": "author",
+            "branches": [
+              "inc-8842:dora"
+            ]
+          },
+          {
+            "actor": "nis2_drafter",
+            "duty": "author",
+            "branches": [
+              "inc-8842:nis2"
+            ]
+          },
+          {
+            "actor": "sec_drafter",
+            "duty": "author",
+            "branches": [
+              "inc-8842:sec"
+            ]
+          },
+          {
+            "actor": "uk_drafter",
+            "duty": "author",
+            "branches": [
+              "inc-8842:uk"
+            ]
+          },
+          {
+            "actor": "gc",
+            "duty": "release",
+            "action": "release_signoff"
+          },
+          {
+            "actor": "lena",
+            "duty": "release",
+            "action": "release_signoff"
+          }
+        ]
+      },
+      {
+        "id": "SOD-M3",
+        "title": "The Warden (gatekeeper) never authored a filing it then gated",
+        "status": "PASS",
+        "passed": true,
+        "detail": "the gatekeeper identit(y/ies) ['warden'] ran only gate actions; none appears as a drafter author",
+        "evidence": [
+          {
+            "actor": "warden",
+            "duty": "gate",
+            "actions": [
+              "diff_passed",
+              "signoff_opened"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "SOD-M4",
+        "title": "The human release roles are distinct from the drafter roles",
+        "status": "PASS",
+        "passed": true,
+        "detail": "drafter role(s) ['drafter'] and release role(s) ['general_counsel', 'head_of_ir'] do not overlap",
+        "evidence": [
+          {
+            "duty": "author",
+            "roles": [
+              "drafter"
+            ]
+          },
+          {
+            "duty": "release",
+            "roles": [
+              "general_counsel",
+              "head_of_ir"
+            ]
+          }
+        ]
+      }
     ]
   },
   "operability": {
@@ -1245,5 +1928,632 @@
       "export_note": "EDGAR-shaped Form 8-K Item 1.05 export of the real mandated fields. This is not a filed EDGAR submission: no accession number is assigned and the filer-identifying fields marked as placeholders are supplied by the registrant at submission. The Item 1.05 content elements and the CYD/iXBRL tagging use the real SEC concept names."
     },
     "ixbrl": "<ix:fragment xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\" form=\"8-K\" item=\"1.05\" period-of-report=\"2026-06-16\">\n<ix:header xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:xbrli=\"http://www.xbrl.org/2003/instance\" xmlns:xbrldi=\"http://xbrl.org/2006/xbrldi\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\">\n  <ix:references>\n    <link:schemaRef xmlns:link=\"http://www.xbrl.org/2003/linkbase\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" xlink:href=\"https://xbrl.sec.gov/cyd/2024/cyd-2024.xsd\"/>\n  </ix:references>\n  <ix:resources>\n    <xbrli:context id=\"C-inc-8842\">\n      <xbrli:entity>\n        <xbrli:identifier scheme=\"http://www.sec.gov/CIK\">0000000000</xbrli:identifier>\n        <xbrli:segment>\n          <xbrldi:explicitMember dimension=\"cyd:MaterialCybersecurityIncidentAxis\">cyd:Inc8842Member</xbrldi:explicitMember>\n        </xbrli:segment>\n      </xbrli:entity>\n      <xbrli:period>\n        <xbrli:instant>2026-06-16</xbrli:instant>\n      </xbrli:period>\n    </xbrli:context>\n  </ix:resources>\n</ix:header>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentTextBlock\" contextRef=\"C-inc-8842\">Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentNatureScopeTimingTextBlock\" contextRef=\"C-inc-8842\">Nature of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.\n\nScope of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.\n\nTiming of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentMaterialImpactOrReasonablyLikelyMaterialImpactTextBlock\" contextRef=\"C-inc-8842\">Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n</ix:fragment>"
+  },
+  "ecosystem_exports": {
+    "stix": {
+      "type": "bundle",
+      "id": "bundle--3afebc16-1bb7-5f8d-8cad-ab80646a2ea5",
+      "objects": [
+        {
+          "type": "threat-actor",
+          "spec_version": "2.1",
+          "id": "threat-actor--bf5f4787-5c12-54c6-b3ae-ea8ead862527",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "LockBit 3.0",
+          "threat_actor_types": [
+            "crime-syndicate"
+          ],
+          "description": "The threat actor attributed to incident inc-8842 against Meridian Trust Bank N.V.."
+        },
+        {
+          "type": "malware",
+          "spec_version": "2.1",
+          "id": "malware--473c3f10-8ab7-5327-bd17-14e9d622ad7e",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "LockBit 3.0",
+          "is_family": true,
+          "malware_types": [
+            "ransomware"
+          ],
+          "description": "LockBit 3.0 ransomware family, the malware associated with incident inc-8842."
+        },
+        {
+          "type": "identity",
+          "spec_version": "2.1",
+          "id": "identity--fb5d9cc1-6cb9-5846-87d1-98bc720adc58",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "Meridian Trust Bank N.V.",
+          "identity_class": "organization",
+          "sectors": [
+            "financial-services"
+          ],
+          "description": "The regulated entity affected by incident inc-8842."
+        },
+        {
+          "type": "observed-data",
+          "spec_version": "2.1",
+          "id": "observed-data--3cda23ad-b703-594a-88c2-9938d9516131",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "first_observed": "2026-06-16T02:14:00.000Z",
+          "last_observed": "2026-06-16T02:14:00.000Z",
+          "number_observed": 1,
+          "description": "systems: core banking ledger, customer KYC store; data-subject categories: name, address, account_number"
+        },
+        {
+          "type": "incident",
+          "spec_version": "2.1",
+          "id": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "Incident inc-8842",
+          "description": "Regulated breach-reporting incident inc-8842: Meridian Trust Bank N.V. affected by LockBit 3.0, approximately 48,211 records, containment partially_contained, beginning 2026-06-16T02:14:00+00:00.",
+          "extensions": {
+            "extension-definition--ef765651-680c-498d-9894-99799f2fa126": {
+              "extension_type": "property-extension",
+              "determination": "confirmed",
+              "investigation_status": "closed",
+              "first_seen": "2026-06-16T02:14:00.000Z"
+            }
+          }
+        },
+        {
+          "type": "course-of-action",
+          "spec_version": "2.1",
+          "id": "course-of-action--5d25efd1-6b32-52a2-85f7-3f89f60384de",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "SOD-01: Segregation of duties on release (two-key gate)",
+          "description": "No single human can both withhold and grant a regulated filing's release; two distinct privileged roles must concur before the filing leaves the room. Control SOD-01 OPERATED in this incident; named-framework references: SOC 2 CC1.3; ISO/IEC 27001:2022 A.5.3; NIST CSF 2.0 PR.AA-05. Evidence: 8 proving run-log event(s) present, read from packet.release.signoffs, sealed at the run chain head."
+        },
+        {
+          "type": "course-of-action",
+          "spec_version": "2.1",
+          "id": "course-of-action--3796bceb-24ae-5878-bd65-f9c2951cb46b",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "AVL-01: Exactly-once handoff under live agent kill (idempotency ledger)",
+          "description": "A killed-and-restarted agent never double-files; a re-delivered unit of work is acknowledged and dropped, so each filing lands exactly once. Control AVL-01 OPERATED in this incident; named-framework references: SOC 2 A1.2; ISO/IEC 27001:2022 A.8.14; NIST CSF 2.0 RC.RP-01. Evidence: 4 proving run-log event(s) present, read from packet.chaos.ledger, sealed at the run chain head."
+        },
+        {
+          "type": "course-of-action",
+          "spec_version": "2.1",
+          "id": "course-of-action--ac26f3f2-e849-5bf7-932e-466199dcdcfc",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "INT-01: Signed, hash-chained provenance (audit-trail integrity)",
+          "description": "The complete, ordered run record is tamper-evident and attributable: any edit, reorder, or omission moves the seal and invalidates the signature. Control INT-01 OPERATED in this incident; named-framework references: SOC 2 CC7.3; ISO/IEC 27001:2022 A.8.15; NIST CSF 2.0 PR.DS-06. Evidence: 1 proving run-log event(s) present, read from packet.replay.chain_head, sealed at the run chain head."
+        },
+        {
+          "type": "course-of-action",
+          "spec_version": "2.1",
+          "id": "course-of-action--73a9a278-ef8f-5d6e-a1e8-63fc72e35d4a",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "name": "TML-01: Statutory deadline clocks (timeliness control)",
+          "description": "Each regime's reporting deadline is computed deterministically from the statutory trigger and tracked to a met/breached verdict per filing. Control TML-01 OPERATED in this incident; named-framework references: SOC 2 CC2.3; ISO/IEC 27001:2022 A.5.5; NIST CSF 2.0 RS.CO-02. Evidence: 5 proving run-log event(s) present, read from packet.clocks, sealed at the run chain head."
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--ea94fa6a-74e5-5a5b-bd9f-0496da1d41e4",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "uses",
+          "source_ref": "threat-actor--bf5f4787-5c12-54c6-b3ae-ea8ead862527",
+          "target_ref": "malware--473c3f10-8ab7-5327-bd17-14e9d622ad7e"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--56bd3bff-d87e-51bd-8f4c-186232dd0a15",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "attributed-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "threat-actor--bf5f4787-5c12-54c6-b3ae-ea8ead862527"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--860aaa9e-8a24-53d3-9f08-3d35b1ab358a",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "targets",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "identity--fb5d9cc1-6cb9-5846-87d1-98bc720adc58"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--5ef569a2-cecc-50a3-a0b9-1facb44ccc69",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "related-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "observed-data--3cda23ad-b703-594a-88c2-9938d9516131"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--d6635efb-7592-5fd0-af67-cc6f530ca033",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "related-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "course-of-action--5d25efd1-6b32-52a2-85f7-3f89f60384de"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--cb4d27d4-c569-5184-aec8-110e06ba3c18",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "related-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "course-of-action--3796bceb-24ae-5878-bd65-f9c2951cb46b"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--4eb97c84-f85f-5583-8d41-df11fc2e21ae",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "related-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "course-of-action--ac26f3f2-e849-5bf7-932e-466199dcdcfc"
+        },
+        {
+          "type": "relationship",
+          "spec_version": "2.1",
+          "id": "relationship--dbb98f3c-8abe-5430-9ae5-3202c6076bba",
+          "created": "2026-06-16T02:14:00.000Z",
+          "modified": "2026-06-16T02:14:00.000Z",
+          "relationship_type": "related-to",
+          "source_ref": "incident--35fb8835-a3d0-5fb4-816f-9ac016420dd9",
+          "target_ref": "course-of-action--73a9a278-ef8f-5d6e-a1e8-63fc72e35d4a"
+        }
+      ]
+    },
+    "oscal": {
+      "assessment-results": {
+        "uuid": "cc8dc167-7ff8-59f5-8869-8821153d66ef",
+        "metadata": {
+          "title": "Deadline Room control-evidence assessment results: incident inc-8842",
+          "last-modified": "2026-06-16T02:31:00.000Z",
+          "version": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+          "oscal-version": "1.1.2"
+        },
+        "import-ap": {
+          "href": "#deadline-room-control-register",
+          "remarks": "The assessment basis is the Deadline Room control-evidence register (floor/controls.yaml); this document reports its results. No separate OSCAL assessment-plan is modeled."
+        },
+        "results": [
+          {
+            "uuid": "a4538519-f62a-511b-a053-73417a1aa301",
+            "title": "Control assessment results for incident inc-8842",
+            "description": "Assessment of the Deadline Room control mechanisms exercised by incident inc-8842. 4 of 6 catalogued controls OPERATED and are evidenced in this run; 2 were not exercised by this run's scenario.",
+            "start": "2026-06-16T02:31:00.000Z",
+            "observations": [
+              {
+                "uuid": "dd19449d-6565-510b-bd7c-aeb9c812f2ec",
+                "description": "Evidence that control SOD-01 (Segregation of duties on release (two-key gate)) operated in this incident run. 8 proving run-log event(s) present, read from packet.release.signoffs, sealed at the run chain head.",
+                "methods": [
+                  "TEST"
+                ],
+                "types": [
+                  "control-objective"
+                ],
+                "relevant-evidence": [
+                  {
+                    "href": "#run-log/event/release_signoff",
+                    "description": "Run-log event 'release_signoff' evidencing control SOD-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  },
+                  {
+                    "href": "#run-log/event/protocol_event:human_released",
+                    "description": "Run-log event 'protocol_event:human_released' evidencing control SOD-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  },
+                  {
+                    "href": "#run-log/event/protocol_event:signoff_opened",
+                    "description": "Run-log event 'protocol_event:signoff_opened' evidencing control SOD-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  }
+                ],
+                "collected": "2026-06-16T02:31:00.000Z"
+              },
+              {
+                "uuid": "4ac61ef1-0a22-5ce1-b39e-1597d700d95f",
+                "description": "Evidence that control AVL-01 (Exactly-once handoff under live agent kill (idempotency ledger)) operated in this incident run. 4 proving run-log event(s) present, read from packet.chaos.ledger, sealed at the run chain head.",
+                "methods": [
+                  "TEST"
+                ],
+                "types": [
+                  "control-objective"
+                ],
+                "relevant-evidence": [
+                  {
+                    "href": "#run-log/event/ledger",
+                    "description": "Run-log event 'ledger' evidencing control AVL-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  },
+                  {
+                    "href": "#run-log/event/chaos",
+                    "description": "Run-log event 'chaos' evidencing control AVL-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  }
+                ],
+                "collected": "2026-06-16T02:31:00.000Z"
+              },
+              {
+                "uuid": "70844b23-99c5-511f-8878-4d7b7a2f68e1",
+                "description": "Evidence that control INT-01 (Signed, hash-chained provenance (audit-trail integrity)) operated in this incident run. 1 proving run-log event(s) present, read from packet.replay.chain_head, sealed at the run chain head.",
+                "methods": [
+                  "TEST"
+                ],
+                "types": [
+                  "control-objective"
+                ],
+                "relevant-evidence": [
+                  {
+                    "href": "#run-log/event/room",
+                    "description": "Run-log event 'room' evidencing control INT-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  }
+                ],
+                "collected": "2026-06-16T02:31:00.000Z"
+              },
+              {
+                "uuid": "96468702-6bd2-5f70-b5ec-5e09ef0e71ee",
+                "description": "Evidence that control TML-01 (Statutory deadline clocks (timeliness control)) operated in this incident run. 5 proving run-log event(s) present, read from packet.clocks, sealed at the run chain head.",
+                "methods": [
+                  "TEST"
+                ],
+                "types": [
+                  "control-objective"
+                ],
+                "relevant-evidence": [
+                  {
+                    "href": "#run-log/event/clock_started",
+                    "description": "Run-log event 'clock_started' evidencing control TML-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  },
+                  {
+                    "href": "#run-log/event/clock_stopped",
+                    "description": "Run-log event 'clock_stopped' evidencing control TML-01, sealed at chain head fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1 (signer 46e30f5bff8c221d)"
+                  }
+                ],
+                "collected": "2026-06-16T02:31:00.000Z"
+              }
+            ],
+            "findings": [
+              {
+                "uuid": "e8eb54e7-d622-5484-8084-8f341b13ad91",
+                "title": "SOD-01: Segregation of duties on release (two-key gate)",
+                "description": "No single human can both withhold and grant a regulated filing's release; two distinct privileged roles must concur before the filing leaves the room. Status in this run: OPERATED. Always operates on any run that reaches a release: two distinct human roles (head_of_ir and general_counsel) each record a release_signoff and the Warden admits HUMAN_RELEASED only after both keys are present.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 CC1.3",
+                    "remarks": "The entity establishes structures, reporting lines, and appropriate authorities and responsibilities (segregation of incompatible duties)."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.5.3",
+                    "remarks": "Segregation of duties: conflicting duties and areas of responsibility are segregated to reduce unauthorised or unintentional modification."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 PR.AA-05",
+                    "remarks": "Access permissions, entitlements, and authorizations incorporate the principles of least privilege and separation of duties."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "SOD-01",
+                  "status": {
+                    "state": "satisfied",
+                    "reason": null
+                  }
+                },
+                "related-observations": [
+                  {
+                    "observation-uuid": "dd19449d-6565-510b-bd7c-aeb9c812f2ec"
+                  }
+                ]
+              },
+              {
+                "uuid": "b9006b85-8fd8-59da-8a5c-ad42ea1577d1",
+                "title": "VAL-01: Cross-filing contradiction veto (consistency control)",
+                "description": "A regulated filing cannot release while two drafters disagree on a load-bearing fact; the Warden blocks the signoff transition on the conflict. Status in this run: NOT-EXERCISED. Operates only when a cross-filing contradiction is present: the diff emits diff_blocked and the Warden refuses the signoff transition until the fact is reconciled. A clean run (all filings already agree) records the GREEN diff_passed and the veto is NOT-EXERCISED.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 PI1.2",
+                    "remarks": "Processing integrity: inputs to processing are complete and accurate; the system prevents processing of data that fails validation."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.8.26",
+                    "remarks": "Application security requirements: information processed is validated for accuracy and consistency before it is acted upon."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 DE.AE-02",
+                    "remarks": "Detected anomalies and indicators of compromise are analyzed to characterize the event (here, an inconsistency across filings)."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "VAL-01",
+                  "status": {
+                    "state": "not-satisfied",
+                    "reason": "not-exercised"
+                  }
+                }
+              },
+              {
+                "uuid": "e7686be0-e4f3-578d-8254-24f4a53d9668",
+                "title": "AVL-01: Exactly-once handoff under live agent kill (idempotency ledger)",
+                "description": "A killed-and-restarted agent never double-files; a re-delivered unit of work is acknowledged and dropped, so each filing lands exactly once. Status in this run: OPERATED. The ledger records every unit of work on every run; the DUPLICATE-DROP path (duplicates_dropped > 0) operates only under a chaos kill that forces a re-post. A clean run records ACCEPTED ledger entries with zero drops.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 A1.2",
+                    "remarks": "Availability: the entity processes work to completion under failure; recovery procedures prevent loss or duplication of in-flight work."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.8.14",
+                    "remarks": "Redundancy of information processing facilities: processing continues correctly through component failure without loss or duplication."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 RC.RP-01",
+                    "remarks": "The recovery portion of the incident response plan is executed to restore correct operation after disruption (here, an agent kill)."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "AVL-01",
+                  "status": {
+                    "state": "satisfied",
+                    "reason": null
+                  }
+                },
+                "related-observations": [
+                  {
+                    "observation-uuid": "4ac61ef1-0a22-5ce1-b39e-1597d700d95f"
+                  }
+                ]
+              },
+              {
+                "uuid": "5a70f503-15a5-5278-998f-9744f2fd3129",
+                "title": "INT-01: Signed, hash-chained provenance (audit-trail integrity)",
+                "description": "The complete, ordered run record is tamper-evident and attributable: any edit, reorder, or omission moves the seal and invalidates the signature. Status in this run: OPERATED. Always operates: every run seals its append-only JSONL with a per-entry hash chain and a detached Ed25519 signature over the chain head, so the whole ordered run is attestable and tamper-evident.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 CC7.3",
+                    "remarks": "The entity evaluates security events and maintains evidence of system activity sufficient to support investigation and accountability."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.8.15",
+                    "remarks": "Logging: event logs recording activities are produced, kept, and protected from tampering and unauthorised access."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 PR.DS-06",
+                    "remarks": "The integrity of stored information is protected; integrity-checking mechanisms verify records have not been altered."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "INT-01",
+                  "status": {
+                    "state": "satisfied",
+                    "reason": null
+                  }
+                },
+                "related-observations": [
+                  {
+                    "observation-uuid": "70844b23-99c5-511f-8878-4d7b7a2f68e1"
+                  }
+                ]
+              },
+              {
+                "uuid": "f63fe1fe-38fb-510f-beef-2672854035b3",
+                "title": "TML-01: Statutory deadline clocks (timeliness control)",
+                "description": "Each regime's reporting deadline is computed deterministically from the statutory trigger and tracked to a met/breached verdict per filing. Status in this run: OPERATED. Operates on every run: each in-scope regime starts a statutory clock at its trigger event and the clock is stopped at the filing release, with the deadline and met/breached verdict bound into the signed attestation.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 CC2.3",
+                    "remarks": "The entity communicates with external parties (regulators) on matters affecting the system, within the timeframes its obligations require."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.5.5",
+                    "remarks": "Contact with authorities: the entity maintains and meets the reporting obligations to relevant authorities within required timeframes."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 RS.CO-02",
+                    "remarks": "Incidents are reported consistent with established criteria, including mandated regulatory reporting timeframes."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "TML-01",
+                  "status": {
+                    "state": "satisfied",
+                    "reason": null
+                  }
+                },
+                "related-observations": [
+                  {
+                    "observation-uuid": "96468702-6bd2-5f70-b5ec-5e09ef0e71ee"
+                  }
+                ]
+              },
+              {
+                "uuid": "94a3d50f-4bd9-519b-98cc-e9d253dea647",
+                "title": "DEC-01: Reportability / materiality decision gate (decision control)",
+                "description": "A regime that does not cross its statutory reporting threshold is driven to a terminal SUPPRESSED state by rule, not silently filed or dropped. Status in this run: NOT-EXERCISED. Operates only on a run that runs the per-regime reportability beat: each regime's threshold is assessed and a below-threshold regime is gated to SUPPRESSED. A core run without that beat is NOT-EXERCISED for this control.",
+                "props": [
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "SOC 2 CC3.2",
+                    "remarks": "The entity identifies and assesses risks (here, the duty-to-notify threshold) as a basis for determining how they are managed."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "ISO/IEC 27001:2022 A.5.34",
+                    "remarks": "Privacy and protection of PII: the entity identifies and meets the applicable reporting requirements, deciding which obligations attach."
+                  },
+                  {
+                    "name": "framework-control",
+                    "ns": "https://deadline-room.example/ns/oscal/framework",
+                    "value": "NIST CSF 2.0 RS.MA-03",
+                    "remarks": "Incidents are categorized and prioritized; the reporting decision per obligation is made against defined criteria."
+                  }
+                ],
+                "target": {
+                  "type": "objective-id",
+                  "target-id": "DEC-01",
+                  "status": {
+                    "state": "not-satisfied",
+                    "reason": "not-exercised"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "misp": {
+      "Event": {
+        "uuid": "3890affe-5204-5c3a-a048-efd554d388da",
+        "info": "Regulated breach incident inc-8842: Meridian Trust Bank N.V. affected by LockBit 3.0 (~48,211 records)",
+        "date": "2026-06-16",
+        "threat_level_id": "1",
+        "analysis": "2",
+        "distribution": "0",
+        "published": false,
+        "Orgc": {
+          "uuid": "97dfb23c-ae76-572f-a048-c14e91b20b10",
+          "name": "Deadline Room"
+        },
+        "Attribute": [
+          {
+            "uuid": "d5daa862-6101-5608-8877-f37b8a595aac",
+            "type": "threat-actor",
+            "category": "Attribution",
+            "value": "LockBit 3.0",
+            "comment": "The threat actor attributed to the incident.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "85d39a8e-d233-56f8-b066-4b9cf63e5bd8",
+            "type": "malware-type",
+            "category": "Payload delivery",
+            "value": "LockBit 3.0",
+            "comment": "The ransomware family associated with the incident.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "6186fc34-87f2-55bb-8a62-8a3143d0b85d",
+            "type": "target-org",
+            "category": "Targeting data",
+            "value": "Meridian Trust Bank N.V.",
+            "comment": "The regulated entity affected by the incident.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "bbc88020-754f-5403-b519-892fcce1e86f",
+            "type": "comment",
+            "category": "Other",
+            "value": "Affected systems: core banking ledger, customer KYC store",
+            "comment": "Systems impacted by the incident.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "0101e9ce-dd49-5acf-b4f6-40796c88c654",
+            "type": "comment",
+            "category": "Other",
+            "value": "Affected data-subject categories: name, address, account_number",
+            "comment": "Personal-data categories exposed by the incident.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "7e71560b-8610-55be-aebd-3ed86c8e45eb",
+            "type": "counter",
+            "category": "Other",
+            "value": "48211",
+            "comment": "Approximately 48,211 records affected.",
+            "to_ids": false,
+            "disable_correlation": false
+          },
+          {
+            "uuid": "95421506-8ecf-5401-9ccc-a5db0a392813",
+            "type": "datetime",
+            "category": "Other",
+            "value": "2026-06-16T02:14:00.000Z",
+            "comment": "Incident start (UTC).",
+            "to_ids": false,
+            "disable_correlation": false
+          }
+        ],
+        "Tag": [
+          {
+            "name": "tlp:amber"
+          },
+          {
+            "name": "deadline-room:incident=\"inc-8842\""
+          },
+          {
+            "name": "misp-galaxy:ransomware=\"LockBit 3.0\""
+          }
+        ],
+        "Galaxy": [
+          {
+            "uuid": "52b54058-4334-5b7d-a6ba-00b0c2e5c2bc",
+            "name": "Ransomware",
+            "type": "ransomware",
+            "description": "The LockBit 3.0 ransomware family associated with the incident.",
+            "GalaxyCluster": [
+              {
+                "uuid": "5a0ae67b-7027-5037-8b77-8bea268d91f1",
+                "value": "LockBit 3.0",
+                "type": "ransomware",
+                "description": "LockBit 3.0 ransomware family."
+              }
+            ]
+          }
+        ],
+        "export_note": "MISP-core-format event export of the incident's load-bearing indicators. This is a conformant event document, not a push to a live MISP instance; MISP also imports the STIX 2.1 bundle directly."
+      }
+    }
   }
 }
