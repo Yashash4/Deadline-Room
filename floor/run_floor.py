@@ -56,6 +56,19 @@ The Warden makes ZERO LLM calls. Only drafter processes draft text.
                        the LLM's; the gate is deterministic Python, exactly like
                        the SEC materiality seam this generalizes.
 
+  deficiency           AFTER the SEC branch releases, the MODELED regulator (an
+                       honest stub: a per-regime mandated-field completeness screen,
+                       NOT a real government endpoint) reviews a filing that
+                       deliberately omits one mandated Item 1.05 element. The
+                       deterministic screen returns a typed DEFICIENCY NOTICE naming
+                       the missing field. The room cures it on the EXISTING
+                       FACT_AMENDED corrected-resubmission seam: the Warden reopens
+                       the SEC branch, the drafter re-drafts the cited element and
+                       re-files under the same two-key gate, and the modeled
+                       regulator re-reviews the cured filing -> ACCEPTED. The
+                       detection and every Warden transition are deterministic
+                       Python; only the re-draft prose is the model's.
+
 Run live:
   py floor/run_floor.py                       (normal)
   py floor/run_floor.py --inject-contradiction
@@ -63,6 +76,7 @@ Run live:
   py floor/run_floor.py --amendment
   py floor/run_floor.py --inject-claims
   py floor/run_floor.py --reportability
+  py floor/run_floor.py --deficiency
 """
 
 from __future__ import annotations
@@ -481,6 +495,37 @@ _AFFECTED_PARTY_OFFSETS_MIN = {
 AFFECTED_PARTY_FACTS = dict(CANONICAL_FACTS)
 
 
+# E3.9: the deficiency / rejection loop. AFTER the regulator branches release, the
+# MODELED regulator (an honest stub: floor/deficiency.py, a per-regime mandated-field
+# completeness screen, NOT a real government endpoint) reviews a released filing. The
+# beat deliberately files a SEC 8-K that OMITS one mandated Item 1.05 element (the
+# "Timing of the incident" field), so the screen returns a typed DEFICIENCY NOTICE
+# naming the missing field. The room then CURES it on the EXISTING corrected-
+# resubmission seam: the Warden reopens the SEC branch via FACT_AMENDED
+# (released -> amending), the drafter re-drafts a COMPLETE filing addressing the cited
+# deficiency, re-files (amending -> draft_submitted -> ... -> released) under the SAME
+# two-key gate, and the modeled regulator re-reviews the cured filing -> ACCEPTED. The
+# deficiency detection and the Warden gate are deterministic Python (zero LLM): the
+# screen is a field-completeness rule, and only the drafter's re-draft prose is the
+# model's. The review never gates a Warden transition and never enters the hashed
+# run-log, so byte-identical replay and every sealed sha are untouched.
+DEFICIENCY_BRANCH = "sec"
+# The Item 1.05 mandated element the initial filing deliberately omits so the screen
+# rejects it. It is the EXACT field label from the SEC 8-K profile in floor/formats.py;
+# the cure re-draft restores it.
+DEFICIENCY_OMITTED_FIELD = "Timing of the incident"
+TS_DEFICIENCY_NOTICE = "2026-06-16T08:14:00+00:00"   # the desk reviews the release
+TS_DEFICIENCY_CURE = "2026-06-16T08:30:00+00:00"     # the drafter re-files the cure
+TS_DEFICIENCY_RELEASE = "2026-06-16T09:00:00+00:00"  # the cured filing re-releases
+# The two-key gate re-runs on the cured filing exactly as on the initial release: a
+# corrected resubmission of a material filing collects BOTH distinct keys again.
+TS_DEFICIENCY_SIGN_GC = "2026-06-16T08:55:00+00:00"
+DEFICIENCY_RELEASE_SIGNERS = (
+    ("general_counsel", "gc", TS_DEFICIENCY_SIGN_GC),
+    ("head_of_ir", "lena", TS_DEFICIENCY_RELEASE),
+)
+
+
 # The declarative regime catalog, loaded once. The startup clocks (NIS2 early +
 # full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
 # records, so adding a regulator is appending a YAML block, not editing code.
@@ -766,7 +811,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
                     "inject_claims", "reportability", "cross_border",
-                    "affected_party"):
+                    "affected_party", "deficiency"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
@@ -797,6 +842,13 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # base when a test wants the trigger without the cascade.
     if mode == "affected_party":
         affected_party = True
+    # The deficiency beat (E3.9) is its OWN scenario: it rides the clean (normal)
+    # base path through release, then runs the modeled-regulator intake review over a
+    # filing that deliberately omits one mandated field. The review issues a typed
+    # DEFICIENCY NOTICE, the room cures it on the FACT_AMENDED corrected-resubmission
+    # seam, and the modeled regulator re-reviews the cured filing -> ACCEPTED. The
+    # review is an examiner-side read; it never gates a Warden transition.
+    run_deficiency = mode == "deficiency"
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
@@ -808,7 +860,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # camera) and then the affected-party phase, both layered on the clean release
     # path, so its drafting/diff base is normal.
     base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability",
-                                       "cross_border", "affected_party")
+                                       "cross_border", "affected_party", "deficiency")
                  else mode)
     # The affected_party scenario runs the amendment beat first so the forensic
     # revision raises the record count before the affected-party scope is computed.
@@ -1274,6 +1326,29 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             claims_by_branch[AFFECTED_PARTY_BRANCH] = affected_party_record.pop("claims")
             filings.append(affected_party_record.pop("filing"))
 
+    # ---- E3.9: the deficiency / rejection loop. AFTER the regulator branches
+    # release, the modeled regulator reviews a deliberately incomplete SEC filing,
+    # issues a typed DEFICIENCY NOTICE naming the missing mandated field, and the room
+    # cures it on the FACT_AMENDED corrected-resubmission seam; the modeled regulator
+    # re-reviews the cured filing -> ACCEPTED. The deficiency detection and the Warden
+    # gate are deterministic Python; only the cure re-draft prose is the model's. The
+    # review never enters the hashed run-log, so replay stays byte-identical. -------
+    deficiency_record = None
+    if run_deficiency:
+        deficiency_record = _deficiency_phase(
+            sm=sm, trace=trace, log=log, ledger=ledger,
+            triage=triage, warden=warden, drafters=drafters,
+            warden_id=warden_id, triage_id=triage_id, drafter_ids=drafter_ids,
+            branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
+            release_gate=release_gate, provider_set=provider_set)
+        # The cured filing replaces the deficient SEC filing in the packet, and its
+        # reconciled claims become the SEC branch's final claims.
+        for i, f in enumerate(filings):
+            if f.get("regime") == "SEC":
+                filings[i] = deficiency_record["cured_filing"]
+                break
+        claims_by_branch[DEFICIENCY_BRANCH] = deficiency_record.pop("cured_claims")
+
     # The "now" the breach check reads is the last moment the run reached: the
     # affected-party release (after the amendment) when that beat ran, else the
     # amendment re-release, else the regulator release.
@@ -1282,6 +1357,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                    _AFFECTED_PARTY_OFFSETS_MIN["release"])
         if (affected_party and affected_party_record
             and affected_party_record.get("recruited"))
+        else TS_DEFICIENCY_RELEASE if run_deficiency
         else TS_AMEND_RELEASE if run_amendment else TS_RELEASE)
     breached = [c.name for c in clocks.breaches(breach_now)]
 
@@ -1393,6 +1469,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         reportability=reportability_record,
         cross_border=cross_border_record,
         affected_party=affected_party_record,
+        deficiency=deficiency_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2275,6 +2352,217 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
              "sha256": e.sha256(), "prior_envelope_hash": e.prior_envelope_hash}
             for e in guard.history()
         ],
+    }
+
+
+# ----------------------------------------------------------------------------
+# E3.9: the deficiency / rejection loop. AFTER the SEC branch releases, the MODELED
+# regulator (floor/deficiency.py, an honest stub: a per-regime mandated-field
+# completeness screen, NOT a real government endpoint) reviews the filing. The beat
+# deliberately files a SEC 8-K that OMITS one mandated Item 1.05 element, so the
+# screen returns a typed DEFICIENCY NOTICE naming the missing field. The room cures it
+# on the EXISTING FACT_AMENDED corrected-resubmission seam: the Warden reopens the SEC
+# branch (released -> amending), the drafter re-drafts a COMPLETE filing addressing the
+# cited deficiency, re-files (amending -> draft_submitted -> contradiction_checked ->
+# awaiting_human_signoff -> released) under the SAME two-key gate, and the modeled
+# regulator re-reviews the cured filing -> ACCEPTED. The deficiency detection and every
+# Warden transition are deterministic Python (zero LLM); only the drafter's re-draft
+# prose is the model's. The review is an examiner-side read: it never gates a Warden
+# transition and never enters the hashed run-log, so byte-identical replay and every
+# sealed sha are untouched.
+# ----------------------------------------------------------------------------
+def _render_filing_fields(profile, facts: dict, *, omit_field: str | None = None) -> str:
+    """Render a filing's prose as the profile's mandated fields, each as its own
+    labelled section, from the canonical facts. Deterministic: the model fills these
+    slots on a live run; here the prose is a faithful one-line statement per field so
+    the completeness screen has a real labelled section to read.
+
+    When omit_field names a mandated field label, that section is left out entirely,
+    modeling a filing that misses a required Item 1.05 element. The completeness screen
+    then names that exact field in its deficiency notice. The [CLAIMS] block (the
+    Warden-owned deterministic envelope) is attached by the caller, never here."""
+    lines = [profile.cover_tag, ""]
+    for f in profile.fields:
+        if omit_field is not None and f.label == omit_field:
+            continue
+        if f.label == "Nature of the incident":
+            body = (f"Meridian Trust Bank N.V. suffered a cybersecurity incident "
+                    f"involving the threat actor {facts['attacker']} affecting its "
+                    f"core banking and KYC systems.")
+        elif f.label == "Scope of the incident":
+            body = (f"The incident affected {facts['records_affected']:,} records "
+                    f"across the affected systems.")
+        elif f.label == "Timing of the incident":
+            body = (f"The incident began {facts['incident_start_utc']}; containment "
+                    f"status is {facts['containment']} as of the filing.")
+        else:
+            body = ("The material impact, or reasonably likely material impact, on the "
+                    "registrant is under continuing assessment and confined to what the "
+                    "fact-record supports.")
+        lines.append(f"{f.label}: {body}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _deficiency_draft_fn(branch, draft_fns, key, default):
+    """Resolve the cure/deficient re-draft for the deficiency beat. Tests inject
+    draft_fns keyed by f'{branch}:{key}' (e.g. 'sec:cure'); without an injected fn the
+    deterministic default render is used so the beat runs offline and on a live floor
+    identically when no LLM re-draft is wired. Returns fn() -> filing prose."""
+    if draft_fns is not None:
+        injected = draft_fns.get(f"{branch}:{key}")
+        if injected is not None:
+            return injected
+    return default
+
+
+def _deficiency_phase(*, sm, trace, log, ledger, triage, warden, drafters,
+                      warden_id, triage_id, drafter_ids, branch_corr,
+                      draft_fns, draft_timeout, release_gate,
+                      provider_set=roster.PROVIDER_DEV) -> dict:
+    from floor import deficiency as deficiency_mod
+
+    branch = DEFICIENCY_BRANCH
+    corr = branch_corr[branch]
+    sec_id = drafter_ids[branch]
+    profile = _format_profile_for_branch(branch)
+    if profile is None:
+        raise RuntimeError(f"deficiency beat: branch {branch} has no format profile")
+    facts = {
+        "incident_start_utc": CANONICAL_FACTS["incident_start_utc"],
+        "records_affected": CANONICAL_FACTS["records_affected"],
+        "attacker": CANONICAL_FACTS["attacker"],
+        "containment": CANONICAL_FACTS["containment"],
+    }
+
+    # 1. The released SEC filing is reviewed by the modeled regulator. It deliberately
+    #    OMITS one mandated Item 1.05 element, so the deterministic completeness screen
+    #    returns a typed DEFICIENCY NOTICE naming that exact field. The deficient prose
+    #    rides the draft_fns seam (live: the LLM; tests: a stub); the typed structure
+    #    (the labelled sections, the [CLAIMS] block) is deterministic.
+    deficient_default = _render_filing_fields(profile, facts,
+                                              omit_field=DEFICIENCY_OMITTED_FIELD)
+    deficient_fn = _deficiency_draft_fn(branch, draft_fns, "deficient",
+                                        lambda: deficient_default)
+    deficient_body = build_draft_body(deficient_fn(), branch, facts)
+    deficient_filing = {
+        "regime": "SEC", "by": "SEC Drafter",
+        "model": roster.resolve(roster.SEC_DRAFTER, provider_set)[1],
+        "provider": roster.resolve(roster.SEC_DRAFTER, provider_set)[0],
+        "rationale": roster.prod_role_rationale(roster.SEC_DRAFTER)
+        if provider_set == roster.PROVIDER_PROD else roster.SEC_DRAFTER.rationale,
+        "text": deficient_body,
+    }
+    first_verdict = deficiency_mod.review(profile, deficient_body, "SEC")
+    log.append("regulator_intake", {"phase": "initial", "regime": "SEC",
+                                     "accepted": first_verdict.accepted,
+                                     "deficient_fields": [d.deficient_field
+                                                          for d in first_verdict.deficiencies]})
+    if first_verdict.accepted:
+        raise RuntimeError("deficiency beat: the deliberately incomplete filing was "
+                           "accepted; the omitted mandated field was not detected")
+    notice_fields = ", ".join(d.deficient_field for d in first_verdict.deficiencies)
+    trace.say(f"[D1] Modeled regulator reviewed the SEC release: {first_verdict.stamp}. "
+              f"Missing mandated field(s): {notice_fields}.")
+
+    # 2. The modeled regulator posts the typed DEFICIENCY NOTICE into the room,
+    #    @mentioning the SEC drafter, and Triage reopens the SEC branch on the EXISTING
+    #    corrected-resubmission seam: FACT_AMENDED (released -> amending). The notice is
+    #    a typed examiner verdict; the reopen is the Warden's deterministic transition.
+    notice_lines = "\n".join(
+        f"- {d.code} | {d.deficient_field} | {d.severity}" for d in first_verdict.deficiencies)
+    notice_res = warden.post(
+        "DEFICIENCY NOTICE (modeled regulator intake). The SEC 8-K release failed the "
+        "mandated-field completeness screen and is REJECTED for a corrected "
+        f"resubmission:\n{notice_lines}\n{first_verdict.caveat}",
+        mentions=[sec_id], dedup_key=f"deficiency:{INCIDENT_ID}:sec:notice")
+    notice_mid = _msg_id(notice_res)
+    trace.record_handoff("Modeled regulator", "SEC Drafter", "deficiency_notice", notice_mid)
+    _proto(sm, trace, corr, Event.FACT_AMENDED, TS_DEFICIENCY_NOTICE, "triage", "triage")
+    trace.say(f"[D2] Deficiency notice posted; SEC branch reopened to amending for the "
+              f"cure (msg {notice_mid})")
+
+    # 3. The SEC drafter drains the notice, re-drafts a COMPLETE filing addressing the
+    #    cited deficiency (the re-draft prose is the model's via the cure seam; the
+    #    typed structure is deterministic), and re-files. The Warden gates the
+    #    re-filing deterministically through the SAME transitions a release runs.
+    sec_client = drafters[branch]
+    notice_msg = _drain(sec_client, "SEC", trace,
+                        poll=(0.0 if _is_fake(sec_client) else 2.0))
+    if not notice_msg:
+        raise RuntimeError("SEC Drafter never saw the deficiency notice")
+    sec_client.mark(notice_msg["id"], "processing")
+    trace.record_lifecycle(notice_msg["id"], "processing")
+
+    cure_default = _render_filing_fields(profile, facts, omit_field=None)
+    cure_fn = _deficiency_draft_fn(branch, draft_fns, "cure", lambda: cure_default)
+    cure_body = build_draft_body(cure_fn(), branch, facts)
+    entry = ledger.record(f"draft:{branch}:{INCIDENT_ID}:cure-1", 1, TS_DEFICIENCY_CURE)
+    log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
+                          "disposition": entry.disposition.value})
+    cure_res = sec_client.post(
+        "SEC Drafter corrected resubmission addressing the deficiency notice.\n\n"
+        + cure_body,
+        mentions=[warden_id], dedup_key=f"draft:{branch}:{INCIDENT_ID}:cure-1")
+    cure_mid = _msg_id(cure_res)
+    sec_client.mark(notice_msg["id"], "processed")
+    trace.record_lifecycle(notice_msg["id"], "processed")
+    trace.record_handoff("SEC Drafter", "Warden", "deficiency_cure", cure_mid)
+    _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_DEFICIENCY_CURE, "sec_drafter", "drafter")
+    cured_claims = parse_claims(cure_body)
+    trace.say(f"[D3] SEC Drafter re-filed the cured 8-K with the {DEFICIENCY_OMITTED_FIELD} "
+              f"field restored (msg {cure_mid})")
+
+    # 4. The Warden gates the cured filing deterministically (no LLM): diff passes (a
+    #    single-branch re-file has no cross-filing conflict), signoff opens, and the
+    #    cured material filing re-releases under the SAME two-key gate (GC + Lena),
+    #    collecting BOTH distinct keys again from scratch.
+    _proto(sm, trace, corr, Event.DIFF_PASSED, TS_DEFICIENCY_RELEASE, "warden", "warden")
+    _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_DEFICIENCY_RELEASE, "warden", "warden")
+    release_gate.reset(corr)
+    released = _two_key_release(sm, trace, log, release_gate, corr,
+                               signers=DEFICIENCY_RELEASE_SIGNERS, warden=warden,
+                               mentions=[sec_id])
+    if not released:
+        raise RuntimeError("deficiency cure re-release did not obtain two keys")
+
+    cured_filing = {
+        "regime": "SEC", "by": "SEC Drafter",
+        "model": deficient_filing["model"], "provider": deficient_filing["provider"],
+        "rationale": deficient_filing["rationale"], "text": cure_body,
+    }
+
+    # 5. The modeled regulator re-reviews the cured filing. The completeness screen now
+    #    finds every mandated field present -> ACCEPTED FOR FILING (the honest stamp; no
+    #    fabricated receipt). The rejection-then-cure loop closed on camera.
+    final_verdict = deficiency_mod.review(profile, cure_body, "SEC")
+    log.append("regulator_intake", {"phase": "cured", "regime": "SEC",
+                                     "accepted": final_verdict.accepted,
+                                     "deficient_fields": [d.deficient_field
+                                                          for d in final_verdict.deficiencies]})
+    if not final_verdict.accepted:
+        raise RuntimeError("deficiency beat: the cured filing was still deficient: "
+                           + ", ".join(d.deficient_field for d in final_verdict.deficiencies))
+    _warden_announce(
+        warden, trace,
+        "Corrected resubmission RE-REVIEWED by the modeled regulator: ACCEPTED FOR "
+        f"FILING. @SEC Drafter restored the {DEFICIENCY_OMITTED_FIELD} field; the "
+        "completeness screen now passes.",
+        mentions=[sec_id], dedup_key=f"deficiency:{INCIDENT_ID}:sec:accepted")
+    trace.say(f"[D4] Modeled regulator re-reviewed the cured SEC filing: "
+              f"{final_verdict.stamp}. The rejection-then-cure loop closed.")
+
+    return {
+        "regime": "SEC",
+        "branch": branch,
+        "omitted_field": DEFICIENCY_OMITTED_FIELD,
+        "notice_message_id": notice_mid,
+        "cure_message_id": cure_mid,
+        "initial_review": first_verdict.as_dict(),
+        "deficient_filing_text": deficient_body,
+        "final_review": final_verdict.as_dict(),
+        "cured_filing": cured_filing,
+        "cured_claims": cured_claims,
     }
 
 
@@ -3669,7 +3957,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      release_gate=None, released_branches=None,
                      recovered_retries: int = 0, operability=None,
                      attestation=None, reportability=None,
-                     cross_border=None, affected_party=None) -> dict:
+                     cross_border=None, affected_party=None,
+                     deficiency=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -3796,6 +4085,19 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         packet["cross_border"] = cross_border
     if affected_party is not None:
         packet["affected_party"] = affected_party
+    if deficiency is not None:
+        # The modeled-regulator deficiency / rejection loop: the typed deficiency
+        # notice, the cure roundtrip, and the final ACCEPTED stamp. An examiner-side
+        # read over the released filing, never a Warden gate, never in the hashed
+        # run-log, so replay stays byte-identical.
+        packet["deficiency"] = {
+            "regime": deficiency["regime"],
+            "omitted_field": deficiency["omitted_field"],
+            "notice_message_id": deficiency["notice_message_id"],
+            "cure_message_id": deficiency["cure_message_id"],
+            "initial_review": deficiency["initial_review"],
+            "final_review": deficiency["final_review"],
+        }
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
@@ -4122,6 +4424,18 @@ def main() -> int:
                              "not-required with the rule. The amendment cascade grows "
                              "the affected-party SCOPE. The high-risk judgment is the "
                              "LLM's; the gate is deterministic Python")
+    parser.add_argument("--deficiency", action="store_true",
+                        help="run the deficiency / rejection loop (E3.9): after the SEC "
+                             "branch releases, the MODELED regulator (an honest stub: a "
+                             "per-regime mandated-field completeness screen, not a real "
+                             "government endpoint) reviews a filing that deliberately omits "
+                             "one mandated Item 1.05 element and returns a typed DEFICIENCY "
+                             "NOTICE naming the missing field. The room cures it on the "
+                             "FACT_AMENDED corrected-resubmission seam (the Warden reopens "
+                             "the branch, the drafter re-drafts the cited element and "
+                             "re-files under the same two-key gate) and the modeled "
+                             "regulator re-reviews -> ACCEPTED. The detection and the gate "
+                             "are deterministic Python; only the re-draft prose is the LLM's")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -4137,10 +4451,10 @@ def main() -> int:
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
             args.inject_claims, args.reportability, args.cross_border,
-            args.affected_party]) > 1:
+            args.affected_party, args.deficiency]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
-              "--inject-claims, --reportability, --cross-border, or "
-              "--affected-party.")
+              "--inject-claims, --reportability, --cross-border, "
+              "--affected-party, or --deficiency.")
         return 1
     if args.reportability and args.materiality:
         print("--reportability and --materiality are separate beats; pick one.")
@@ -4150,6 +4464,9 @@ def main() -> int:
         return 1
     if args.affected_party and args.materiality:
         print("--affected-party and --materiality are separate beats; pick one.")
+        return 1
+    if args.deficiency and args.materiality:
+        print("--deficiency and --materiality are separate beats; pick one.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
@@ -4163,7 +4480,8 @@ def main() -> int:
            "inject_claims" if args.inject_claims else \
            "reportability" if args.reportability else \
            "cross_border" if args.cross_border else \
-           "affected_party" if args.affected_party else "normal"
+           "affected_party" if args.affected_party else \
+           "deficiency" if args.deficiency else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 

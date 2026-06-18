@@ -205,6 +205,67 @@ def _render_reconciliation(rec: dict) -> str:
     return "".join(parts)
 
 
+def _render_deficiency(d: dict) -> str:
+    """Render the deficiency / rejection loop (E3.9), if the deficiency beat ran:
+    the modeled regulator's typed DEFICIENCY NOTICE on the released filing, the
+    cure roundtrip on the corrected-resubmission seam, and the final ACCEPTED FOR
+    FILING stamp.
+
+    The modeled regulator is an HONEST stub: a per-regime mandated-field
+    completeness screen, not a real government endpoint, and it assigns no
+    accession or receipt number. The notice names the exact mandated field that was
+    missing; the cure re-files it; the re-review accepts. The detection is
+    deterministic Python and the review never gates a Warden transition, so this is
+    an examiner-side read rendered from the packet, outside the hashed run-log."""
+    if not d:
+        return ""
+    initial = d.get("initial_review", {})
+    final = d.get("final_review", {})
+    omitted = d.get("omitted_field", "")
+    regime = d.get("regime", "")
+    parts = ["<h2>6c. Deficiency / rejection loop (modeled regulator intake)</h2>",
+             "<p class='sub'>A real filing does not vanish into the regulator on "
+             "release: an intake desk reviews it and, if a mandated field is "
+             "missing, issues a DEFICIENCY NOTICE that the filer must cure and "
+             "resubmit. Here a MODELED regulator (an honest stub: a per-regime "
+             "mandated-field completeness screen, not a real government endpoint, "
+             "and no accession or receipt number is invented) reviews the released "
+             f"{_esc(regime)} filing, the room cures the cited defect on the "
+             "existing corrected-resubmission seam, and the modeled regulator "
+             "re-reviews. The deficiency detection and every Warden transition are "
+             "deterministic Python; only the re-draft prose is the model's.</p>"]
+    # The typed deficiency notice the screen returned on the initial release.
+    parts.append(
+        f"<p class='bad'><strong>{_esc(regime)} initial release: "
+        f"{_esc(initial.get('stamp'))}.</strong> The modeled regulator rejected the "
+        f"filing for a corrected resubmission.</p>")
+    notice_rows = [
+        [df.get("code"), df.get("deficient_field"), df.get("severity"),
+         df.get("reason")]
+        for df in initial.get("deficiencies", [])
+    ]
+    parts.append("<p class='sub'>Deficiency notice (each row a typed defect the "
+                 "completeness screen named):</p>")
+    parts.append(_rows(
+        ["Code", "Deficient field", "Severity", "Reason"], notice_rows))
+    # The cure roundtrip.
+    parts.append(
+        "<p class='sub'>Cure roundtrip: the Warden reopened the "
+        f"{_esc(regime)} branch (FACT_AMENDED, released -&gt; amending, Band message "
+        f"{_esc(d.get('notice_message_id'))}); the drafter re-drafted the "
+        f"<code>{_esc(omitted)}</code> field and re-filed (Band message "
+        f"{_esc(d.get('cure_message_id'))}); the cured filing re-released under the "
+        "same two-key gate.</p>")
+    # The final accepted stamp, with the honest modeled-stub caveat.
+    parts.append(
+        f"<p class='ok'><strong>{_esc(regime)} corrected resubmission: "
+        f"{_esc(final.get('stamp'))}.</strong> The completeness screen now finds "
+        "every mandated field present. The rejection-then-cure loop closed.</p>")
+    parts.append(
+        f"<p class='sub'><em>{_esc(final.get('caveat'))}</em></p>")
+    return "".join(parts)
+
+
 def _render_reportability(r: dict) -> str:
     """Render the per-regime reportability / duty-to-notify gate (E3.1), if the
     reportability beat ran. Per regime: the statutory trigger standard, the
@@ -1499,6 +1560,7 @@ def _render_html(p: dict) -> str:
     handoff_graph = _render_handoff_graph(p)
     diff_summary = _render_diff(diff)
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
+    deficiency_block = _render_deficiency(p.get("deficiency", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
@@ -1686,6 +1748,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {diff_summary}
 
 {reconciliation_block}
+
+{deficiency_block}
 
 <h2>7. Drafted filings</h2>
 {filing_blocks or '<p>No filings drafted.</p>'}
