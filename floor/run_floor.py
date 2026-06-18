@@ -140,6 +140,7 @@ from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
+from floor.completeness import completeness_record  # noqa: E402
 from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
@@ -4472,6 +4473,17 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         # one piece here that IS in the hashed log; the rendered artifact mirror in
         # the packet is the same bytes the receipt's sha is taken over.
         packet["submission"] = submission
+    # ---- E4.2: the examiner's first auto-screen, a per-regime completeness sheet ----
+    # A PURE DERIVED render over the filings already in the packet: per regime, every
+    # mandated field marked PRESENT / EMPTY / NA against the EXACT field labels the
+    # form defines (the same regime catalog that drives the clocks), with an overall
+    # complete/incomplete verdict. It reads the labelled sections from the filing
+    # prose, makes zero LLM calls and no now(), and never enters the hashed run-log or
+    # gates a transition. Derived from the assembled packet so it screens exactly the
+    # filings the examiner receives. Omitted cleanly when no filing names a known form.
+    completeness = completeness_record(packet)
+    if completeness:
+        packet["completeness"] = completeness
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:

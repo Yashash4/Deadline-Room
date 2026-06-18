@@ -332,6 +332,72 @@ def _render_submission(s: dict) -> str:
     return "".join(parts)
 
 
+def _render_completeness(c: dict) -> str:
+    """Render the per-regime submission COMPLETENESS SHEET (E4.2): the examiner's
+    first auto-screen. Per regime, a green/amber matrix over the EXACT mandated field
+    labels the form requires, each marked PRESENT / EMPTY / NOT-APPLICABLE, with an
+    overall complete/incomplete verdict per regime and across the submission.
+
+    This is what an examiner's intake system shows FIRST: before any human reads the
+    prose, the structured submission is auto-screened for completeness against the
+    form's mandated fields. The matrix is a PURE DERIVED RENDER read from the labelled
+    sections of the filing prose (the same labels that drive the deficiency screen and
+    the submission export, drawn from the same regime catalog that drives the clocks).
+    Zero LLM, no now(); it never enters the hashed run-log and gates nothing."""
+    if not c or not c.get("sheets"):
+        return ""
+    all_complete = c.get("all_complete", False)
+    top_cls = "ok" if all_complete else "bad"
+    headline = (
+        "Submission completeness screen PASSED: every mandated field of every owed "
+        "regime is present. The structured submission clears automated intake."
+        if all_complete else
+        "Submission completeness screen INCOMPLETE: at least one mandated field is "
+        "empty. A real intake desk would return a deficiency notice (see below).")
+    parts = [
+        "<h2>0. Submission completeness screen (the examiner's first auto-screen)</h2>",
+        f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+        "<p class='sub'>An examiner does not read the prose first. The intake system "
+        "auto-screens the STRUCTURED submission before any human looks at it: for "
+        "each regime, every mandated field the form requires is checked against the "
+        "EXACT field labels the form defines, and marked PRESENT, EMPTY, or "
+        "NOT-APPLICABLE. A single empty mandated field is a guaranteed deficiency "
+        "notice. This matrix is generated from the SAME per-regime field catalog that "
+        "drives the statutory clocks (regulation as config): the mandated-field "
+        "labels here are the labels the drafter filled. It is a pure derived read "
+        "over the filing prose, never a gate.</p>",
+    ]
+    for sheet in c.get("sheets", []):
+        applicable = sheet.get("applicable", True)
+        complete = sheet.get("complete", False)
+        verdict = sheet.get("verdict", "")
+        v_cls = "ok" if complete else ("sub" if not applicable else "bad")
+        parts.append(
+            f"<h3>{_esc(sheet.get('regime'))} &mdash; {_esc(sheet.get('form_title'))}</h3>"
+            .replace("&mdash;", ":"))
+        parts.append(
+            f"<p class='{v_cls}'><strong>{_esc(verdict)}</strong> "
+            f"<span class='sub'>({_esc(sheet.get('cover_tag'))})</span></p>")
+        rows = []
+        for fld in sheet.get("fields", []):
+            status = fld.get("status", "")
+            if status == "PRESENT":
+                badge = "<span class='cstat cstat-ok'>PRESENT</span>"
+            elif status == "NA":
+                badge = "<span class='cstat cstat-na'>N/A</span>"
+            else:
+                badge = "<span class='cstat cstat-bad'>EMPTY</span>"
+            rows.append(
+                "<tr><td><strong>" + _esc(fld.get("label")) + "</strong></td>"
+                "<td>" + badge + "</td>"
+                "<td>" + _esc(fld.get("evidence")) + "</td></tr>")
+        parts.append(
+            "<table><thead><tr><th>Mandated field</th><th>Status</th>"
+            "<th>Evidence</th></tr></thead><tbody>"
+            + "".join(rows) + "</tbody></table>")
+    return "".join(parts)
+
+
 def _render_legal_hold(h: dict) -> str:
     """Render the legal-hold / preservation obligation (E3.10), if the legal-hold
     beat ran: the trigger (incident detection) and the attached-at timestamp, the
@@ -1704,6 +1770,7 @@ def _render_html(p: dict) -> str:
     diff_summary = _render_diff(diff)
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     deficiency_block = _render_deficiency(p.get("deficiency", {}))
+    completeness_block = _render_completeness(p.get("completeness", {}))
     submission_block = _render_submission(p.get("submission", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
@@ -1748,6 +1815,11 @@ h3 {{ font-size: 15px; margin: 18px 0 6px; }}
 .badge {{ display: inline-block; background: #1d6f42; color: #fff; border-radius: 4px;
           padding: 2px 8px; font-size: 12px; margin-right: 6px; }}
 .badge.warn {{ background: #8a5a00; }}
+.cstat {{ display: inline-block; border-radius: 4px; padding: 1px 8px; font-size: 12px;
+          font-weight: 700; letter-spacing: 0.5px; }}
+.cstat-ok {{ background: #e6f4ec; color: #1d7a43; }}
+.cstat-bad {{ background: #fbf2dd; color: #8a5a00; }}
+.cstat-na {{ background: #eef0f3; color: #5b6473; }}
 table {{ width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 13px;
          break-inside: avoid; }}
 th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #d7dce4;
@@ -1851,6 +1923,8 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
   <span class="badge {'warn' if replay.get('byte_identical') is False else ''}">
     replay {'byte-identical' if replay.get('byte_identical') else 'MISMATCH'}</span>
 </p>
+
+{completeness_block}
 
 <h2>1. Incident fact-record (canonical)</h2>
 <pre>{_esc(json.dumps(incident.get('fact_record', {}), indent=2))}</pre>
