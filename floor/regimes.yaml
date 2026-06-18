@@ -50,6 +50,17 @@
 #   recruit (recruit-mode regimes only):
 #     jurisdiction  the blast-radius token that triggers the recruit (e.g. "UK")
 #     name_tokens   tokens matched against a peer's name/handle on /agent/peers
+#   corpus_tags (E3.11, the regulation corpus + citation-accuracy spine):
+#     The stable human-citation chunk ids in the regulation corpus (floor/corpus/,
+#     built into floor/corpus/index.json by scripts/build_corpus.py) that GROUND
+#     this regime: the real statutory passages the regime's filing draws on and an
+#     examiner can trace it to. They are reference-data pointers ONLY, never gated,
+#     clocked, or counted on, and never in the hashed run-log. The E5.9 retriever
+#     uses them to fetch the verbatim text to inject; scripts/build_corpus.py
+#     asserts every tag resolves to a real chunk, so a wrong or stale citation
+#     surfaces at build time, not in front of a regulator. Each id is the exact
+#     chunk id declared in the corpus source markers (e.g. NIS2-Art23(4),
+#     SEC-Form8K-Item1.05(a), GDPR-Art33), preserving its citation punctuation.
 #   high_risk (the affected-party / data-subject track only, E3.4):
 #     The GDPR Article 34 threshold for COMMUNICATING the breach to the affected
 #     INDIVIDUALS (not the supervisory authority). It attaches only when the breach
@@ -161,6 +172,7 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    corpus_tags: ["NIS2-Art23(4)", "NIS2-Art23(1)", "NIS2-Art23(3)", "NIS2-Recital-101"]
     reportability:
       standard: >-
         NIS2 Article 23 significant impact: an incident is reportable when it
@@ -186,6 +198,7 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    corpus_tags: ["NIS2-Art23(4)", "NIS2-Art23(1)", "NIS2-Art23(3)", "NIS2-Recital-101"]
     reportability:
       standard: >-
         NIS2 Article 23 significant impact: an incident is reportable when it
@@ -211,6 +224,7 @@ regimes:
     start:
       mode: startup
       anchor: incident_t0
+    corpus_tags: ["DORA-2022/2554-Art19(1)", "DORA-2022/2554-Art19(3)", "DORA-2022/2554-Art19(4)", "DORA-RTS-2024/1772-Art1", "DORA-RTS-2024/1772-Art19"]
     reportability:
       standard: >-
         DORA major incident (Regulation 2022/2554 Art 19, classified under the
@@ -251,6 +265,7 @@ regimes:
     start:
       mode: startup
       anchor: materiality_determination
+    corpus_tags: ["SEC-Form8K-Item1.05(a)", "SEC-Form8K-Item1.05(b)", "SEC-Form8K-Item1.05-Instruction1", "SEC-Form8K-Item1.05-Instruction2", "SEC-17CFR229.106(a)", "SEC-CF-CDI-104B.01"]
     reportability:
       standard: >-
         SEC Item 1.05 materiality: a cybersecurity incident is reportable when
@@ -292,6 +307,7 @@ regimes:
     recruit:
       jurisdiction: UK
       name_tokens: [uk, ico]
+    corpus_tags: ["GDPR-Art33", "GDPR-Art4(12)", "GDPR-Art5(1)(c)", "GDPR-Art56(1)"]
     reportability:
       standard: >-
         UK GDPR / GDPR Article 33 risk to the rights and freedoms of natural
@@ -333,6 +349,7 @@ regimes:
     recruit:
       jurisdiction: NY
       name_tokens: [nydfs]
+    corpus_tags: ["NYDFS-23NYCRR500.17(a)", "NYDFS-23NYCRR500.01(d)"]
     reportability:
       standard: >-
         NYDFS 23 NYCRR 500.17(a) materiality: a cybersecurity event is reportable
@@ -377,6 +394,7 @@ regimes:
     recruit:
       jurisdiction: IN
       name_tokens: [india]
+    corpus_tags: ["India-DPDP-s8(6)", "India-DPDP-Rule7"]
     reportability:
       standard: >-
         India DPDP Act 2023 (s 8(6)) read with DPDP Rules 2025 (Rule 7): on any
@@ -413,6 +431,7 @@ regimes:
     recruit:
       jurisdiction: SG
       name_tokens: [singapore, pdpc]
+    corpus_tags: ["Singapore-PDPA-s26D", "Singapore-PDPA-s26B"]
     reportability:
       standard: >-
         Singapore PDPA s 26B notifiable data breach: a data breach is notifiable
@@ -447,6 +466,7 @@ regimes:
     recruit:
       jurisdiction: AU
       name_tokens: [australia, oaic]
+    corpus_tags: ["Australia-NDB-s26WE"]
     reportability:
       standard: >-
         Australia Privacy Act 1988 (Cth) s 26WE eligible data breach: there is
@@ -481,6 +501,7 @@ regimes:
     recruit:
       jurisdiction: CA
       name_tokens: [canada, osfi]
+    corpus_tags: ["Canada-PIPEDA-s10.1"]
     reportability:
       standard: >-
         OSFI Technology and Cyber Security Incident Reporting advisory: a
@@ -515,6 +536,7 @@ regimes:
     recruit:
       jurisdiction: BR
       name_tokens: [brazil, anpd]
+    corpus_tags: ["Brazil-LGPD-Art48"]
     reportability:
       standard: >-
         Brazil LGPD (Law 13.709/2018) Art 48 read with Regulation CD/ANPD 15/2024:
@@ -548,6 +570,7 @@ regimes:
     recruit:
       jurisdiction: KR
       name_tokens: [korea, pipc]
+    corpus_tags: ["Korea-PIPA-Art34"]
     reportability:
       standard: >-
         South Korea PIPA Art 34: a personal-information controller must report a
@@ -575,6 +598,7 @@ regimes:
     start:
       mode: post_release
       anchor: release_moment
+    corpus_tags: ["GDPR-Art34", "GDPR-Art33", "GDPR-Art4(12)"]
     high_risk:
       standard: >-
         GDPR Article 34: a personal-data breach must be communicated to the

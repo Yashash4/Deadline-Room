@@ -1,0 +1,244 @@
+{
+  "chunks": {
+    "Australia-NDB-s26WE": {
+      "citation": "Australia Privacy Act 1988 (Cth) section 26WE",
+      "id": "Australia-NDB-s26WE",
+      "regime_family": "global",
+      "text": "Summary (not verbatim): under Part IIIC of the Privacy Act 1988 (Cth), there is an\neligible data breach of an entity if there is unauthorised access to, or\nunauthorised disclosure of, personal information held by the entity, or personal\ninformation held by the entity is lost in circumstances where unauthorised access or\ndisclosure is likely, AND a reasonable person would conclude that the access or\ndisclosure would be likely to result in serious harm to any of the individuals to\nwhom the information relates. Section 26WK requires the entity, on having reasonable\ngrounds to believe an eligible data breach has occurred, to prepare a statement and\ngive a copy to the Australian Information Commissioner as soon as practicable, and\nto notify affected individuals. On having reasonable grounds only to suspect an\neligible data breach, the entity has up to 30 days under section 26WH to carry out a\nreasonable and expeditious assessment. The exact statutory wording is in the Privacy\nAct 1988 (Cth) on the Federal Register of Legislation; this chunk is labelled a\nsummary because that precise wording is not reproduced verbatim here.",
+      "title": "Eligible data breach",
+      "verbatim": false
+    },
+    "Brazil-LGPD-Art48": {
+      "citation": "Brazil LGPD (Law 13.709/2018) Article 48",
+      "id": "Brazil-LGPD-Art48",
+      "regime_family": "global",
+      "text": "Summary (not verbatim, English translation): Article 48 of the Lei Geral de\nProtecao de Dados Pessoais (Law No. 13.709/2018) requires the controller to\ncommunicate to the National Data Protection Authority (ANPD) and to the data subject\nthe occurrence of a security incident that may create relevant risk or harm to the\ndata subjects. The communication must be made within a reasonable time period, as\ndefined by the ANPD, and must mention at least the nature of the affected personal\ndata, the data subjects involved, the technical and security measures used to\nprotect the data, the risks related to the incident, the reasons for any delay where\nthe communication was not immediate, and the measures that were or will be taken to\nreverse or mitigate the effects of the incident. Regulation CD/ANPD No. 15/2024\nsets the communication deadline at 3 business days counted from the controller's\nawareness that the incident affected personal data. The official Portuguese text is\nin Law 13.709/2018 on the Planalto site and the ANPD regulation on the ANPD site;\nthis chunk is labelled a summary and English translation because the official text\nis in Portuguese and is not reproduced verbatim here.",
+      "title": "Communication of a security incident",
+      "verbatim": false
+    },
+    "Canada-PIPEDA-s10.1": {
+      "citation": "Canada PIPEDA section 10.1",
+      "id": "Canada-PIPEDA-s10.1",
+      "regime_family": "global",
+      "text": "Summary (not verbatim): section 10.1 of the Personal Information Protection and\nElectronic Documents Act (PIPEDA) requires an organisation to report to the Privacy\nCommissioner of Canada any breach of security safeguards involving personal\ninformation under its control if it is reasonable in the circumstances to believe\nthat the breach creates a real risk of significant harm to an individual. The report\nmust be made as soon as feasible after the organisation determines that the breach\nhas occurred, and the organisation must also notify affected individuals as soon as\nfeasible. \"Significant harm\" includes bodily harm, humiliation, damage to\nreputation or relationships, loss of employment, business or professional\nopportunities, financial loss, identity theft, negative effects on the credit\nrecord, and damage to or loss of property. The Breach of Security Safeguards\nRegulations prescribe the content of the report. For federally regulated financial\ninstitutions the OSFI Technology and Cyber Security Incident Reporting advisory\nadditionally requires a report to OSFI within 24 hours of a high or critical\nseverity incident. The exact statutory wording is in PIPEDA on the Justice Laws\nWebsite; this chunk is labelled a summary because that precise wording is not\nreproduced verbatim here.",
+      "title": "Report and notification of a breach of security safeguards",
+      "verbatim": false
+    },
+    "DORA-2022/2554-Art19(1)": {
+      "citation": "DORA Regulation (EU) 2022/2554 Article 19(1)",
+      "id": "DORA-2022/2554-Art19(1)",
+      "regime_family": "dora",
+      "text": "1. Financial entities shall report major ICT-related incidents to the relevant\ncompetent authority as referred to in Article 46 in accordance with paragraph 4 of\nthis Article.\n\nWhere a financial entity is subject to supervision by more than one national\ncompetent authority referred to in Article 46, Member States shall designate a\nsingle competent authority as the relevant competent authority responsible for\ncarrying out the functions and duties provided for in this Article.\n\nCredit institutions classified as significant, in accordance with Article 6(4) of\nRegulation (EU) No 1024/2013, shall report major ICT-related incidents to the\nrelevant national competent authority designated in accordance with Article 4 of\nDirective 2013/36/EU, which shall immediately transmit that report to the ECB.",
+      "title": "Reporting of major ICT-related incidents",
+      "verbatim": true
+    },
+    "DORA-2022/2554-Art19(3)": {
+      "citation": "DORA Regulation (EU) 2022/2554 Article 19(3)",
+      "id": "DORA-2022/2554-Art19(3)",
+      "regime_family": "dora",
+      "text": "3. Where a major ICT-related incident occurs and has an impact on the financial\ninterests of clients, financial entities shall, without undue delay as soon as\nthey become aware of it, inform their clients about the major ICT-related incident\nand about the measures that have been taken to mitigate the adverse effects of\nsuch incident.\n\nIn the case of a significant cyber threat, financial entities shall, where\napplicable, inform their clients that are potentially affected of any appropriate\nprotection measures which the latter may consider taking.",
+      "title": "Notifications and reports to the competent authority",
+      "verbatim": true
+    },
+    "DORA-2022/2554-Art19(4)": {
+      "citation": "DORA Regulation (EU) 2022/2554 Article 19(4)",
+      "id": "DORA-2022/2554-Art19(4)",
+      "regime_family": "dora",
+      "text": "4. Financial entities shall submit to the relevant competent authority referred to\nin Article 46:\n\n(a) an initial notification;\n\n(b) an intermediate report after the initial notification referred to in point\n(a), as soon as the status of the original incident has changed significantly or\nthe handling of the major ICT-related incident has changed based on new\ninformation available, followed, as appropriate, by updated notifications every\ntime a relevant status update is available, as well as upon a specific request of\nthe competent authority;\n\n(c) a final report, when the root cause analysis has been completed, regardless of\nwhether mitigation measures have already been implemented, and when the actual\nimpact figures are available to replace estimates.",
+      "title": "Initial, intermediate, and final reports",
+      "verbatim": true
+    },
+    "DORA-RTS-2024/1772-Art1": {
+      "citation": "Commission Delegated Regulation (EU) 2024/1772 Article 1",
+      "id": "DORA-RTS-2024/1772-Art1",
+      "regime_family": "dora",
+      "text": "Summary (not verbatim): Commission Delegated Regulation (EU) 2024/1772 (the RTS\nadopted under DORA Article 18(3)) classifies an ICT-related incident as MAJOR when\nit meets the materiality thresholds across a set of classification criteria. The\ncriteria are: clients, financial counterparts and transactions affected; the\nreputational impact; the duration and service downtime; the geographical spread,\nin particular across the territories of two or more Member States; the data losses\nthe incident entails, in respect of availability, authenticity, integrity, or\nconfidentiality of data; the criticality of services affected, including the\nfinancial entity's transactions and operations; and the economic impact, both\ndirect and indirect, in absolute and relative terms. An incident is major when it\naffects critical services and meets either the threshold on clients/counterparts/\ntransactions together with the data-losses threshold, or two or more of the other\ncriteria. The precise per-criterion numeric thresholds are set out in the RTS\narticles on EUR-Lex (CELEX 32024R1772); this chunk is labelled a summary because\nthose exact numeric thresholds are not reproduced verbatim here.",
+      "title": "Materiality thresholds for classification of major incidents",
+      "verbatim": false
+    },
+    "DORA-RTS-2024/1772-Art19": {
+      "citation": "Commission Delegated Regulation (EU) 2024/1772 (reporting time limits, read with DORA Art 19)",
+      "id": "DORA-RTS-2024/1772-Art19",
+      "regime_family": "dora",
+      "text": "Summary (not verbatim): the reporting time limits for a major ICT-related incident\nare set by Commission Delegated Regulation (EU) 2024/1772 read with the reporting\nimplementing standards adopted under DORA Article 20. In outline, the initial\nnotification is due as early as possible and within the time limit set by the\nstandards once the incident is classified as major; an intermediate report follows\nwithin the time limit set after the initial notification or when the status\nchanges significantly; and a final report follows within one month of the\nintermediate report, once the root-cause analysis is complete and actual impact\nfigures are available. The Deadline Room models the initial-notification window as\na 72-hour clock from incident occurrence. The exact hour figures are in the\ndelegated and implementing regulations on EUR-Lex; this chunk is labelled a summary\nbecause those precise figures are not reproduced verbatim here.",
+      "title": "Time limits for the initial notification and reports",
+      "verbatim": false
+    },
+    "GDPR-Art33": {
+      "citation": "GDPR Article 33",
+      "id": "GDPR-Art33",
+      "regime_family": "gdpr",
+      "text": "1. In the case of a personal data breach, the controller shall without undue delay\nand, where feasible, not later than 72 hours after having become aware of it,\nnotify the personal data breach to the supervisory authority competent in\naccordance with Article 55, unless the personal data breach is unlikely to result\nin a risk to the rights and freedoms of natural persons. Where the notification to\nthe supervisory authority is not made within 72 hours, it shall be accompanied by\nreasons for the delay.\n\n2. The processor shall notify the controller without undue delay after becoming\naware of a personal data breach.\n\n3. The notification referred to in paragraph 1 shall at least:\n\n(a) describe the nature of the personal data breach including where possible, the\ncategories and approximate number of data subjects concerned and the categories\nand approximate number of personal data records concerned;\n\n(b) communicate the name and contact details of the data protection officer or\nother contact point where more information can be obtained;\n\n(c) describe the likely consequences of the personal data breach;\n\n(d) describe the measures taken or proposed to be taken by the controller to\naddress the personal data breach, including, where appropriate, measures to\nmitigate its possible adverse effects.\n\n4. Where, and in so far as, it is not possible to provide the information at the\nsame time, the information may be provided in phases without undue further delay.\n\n5. The controller shall document any personal data breaches, comprising the facts\nrelating to the personal data breach, its effects and the remedial action taken.\nThat documentation shall enable the supervisory authority to verify compliance\nwith this Article.",
+      "title": "Notification of a personal data breach to the supervisory authority",
+      "verbatim": true
+    },
+    "GDPR-Art34": {
+      "citation": "GDPR Article 34",
+      "id": "GDPR-Art34",
+      "regime_family": "gdpr",
+      "text": "1. When the personal data breach is likely to result in a high risk to the rights\nand freedoms of natural persons, the controller shall communicate the personal\ndata breach to the data subject without undue delay.\n\n2. The communication to the data subject referred to in paragraph 1 of this\nArticle shall describe in clear and plain language the nature of the personal data\nbreach and contain at least the information and measures referred to in points\n(b), (c) and (d) of Article 33(3).\n\n3. The communication to the data subject referred to in paragraph 1 shall not be\nrequired if any of the following conditions are met:\n\n(a) the controller has implemented appropriate technical and organisational\nprotection measures, and those measures were applied to the personal data affected\nby the personal data breach, in particular those that render the personal data\nunintelligible to any person who is not authorised to access it, such as\nencryption;\n\n(b) the controller has taken subsequent measures which ensure that the high risk\nto the rights and freedoms of data subjects referred to in paragraph 1 is no\nlonger likely to materialise;\n\n(c) it would involve disproportionate effort. In such a case, there shall instead\nbe a public communication or similar measure whereby the data subjects are\ninformed in an equally effective manner.\n\n4. If the controller has not already communicated the personal data breach to the\ndata subject, the supervisory authority, having considered the likelihood of the\npersonal data breach resulting in a high risk, may require it to do so or may\ndecide that any of the conditions referred to in paragraph 3 are met.",
+      "title": "Communication of a personal data breach to the data subject",
+      "verbatim": true
+    },
+    "GDPR-Art4(12)": {
+      "citation": "GDPR Article 4(12)",
+      "id": "GDPR-Art4(12)",
+      "regime_family": "gdpr",
+      "text": "For the purposes of this Regulation:\n\n(12) 'personal data breach' means a breach of security leading to the accidental\nor unlawful destruction, loss, alteration, unauthorised disclosure of, or access\nto, personal data transmitted, stored or otherwise processed.",
+      "title": "Definition of a personal data breach",
+      "verbatim": true
+    },
+    "GDPR-Art5(1)(c)": {
+      "citation": "GDPR Article 5(1)(c)",
+      "id": "GDPR-Art5(1)(c)",
+      "regime_family": "gdpr",
+      "text": "1. Personal data shall be:\n\n(c) adequate, relevant and limited to what is necessary in relation to the purposes\nfor which they are processed ('data minimisation').",
+      "title": "Data minimisation",
+      "verbatim": true
+    },
+    "GDPR-Art56(1)": {
+      "citation": "GDPR Article 56(1)",
+      "id": "GDPR-Art56(1)",
+      "regime_family": "gdpr",
+      "text": "1. Without prejudice to Article 55, the supervisory authority of the main\nestablishment or of the single establishment of the controller or processor shall\nbe competent to act as lead supervisory authority for the cross-border processing\ncarried out by that controller or processor in accordance with the procedure\nprovided in Article 60.",
+      "title": "Competence of the lead supervisory authority",
+      "verbatim": true
+    },
+    "India-DPDP-Rule7": {
+      "citation": "DPDP Rules 2025 Rule 7",
+      "id": "India-DPDP-Rule7",
+      "regime_family": "global",
+      "text": "Summary (not verbatim): Rule 7 of the Digital Personal Data Protection Rules 2025\n(notified 13 November 2025) prescribes the manner and time of the intimation\nrequired by section 8(6) of the DPDP Act 2023. On becoming aware of a personal data\nbreach the Data Fiduciary intimates each affected Data Principal without delay, in a\nconcise and plain manner, describing the breach, its likely consequences, the\nmeasures taken, and the safety measures the Data Principal may take. The Data\nFiduciary also intimates the Data Protection Board without delay with the initial\nfacts, and gives the Board an updated and detailed report within 72 hours of\nbecoming aware (extendable on written request to the Board), including the broad\nfacts and circumstances, the measures taken to mitigate risk, the findings on the\nperson who caused the breach, the remedial measures, and a report on the\nintimations given to affected Data Principals. The exact rule text is in the DPDP\nRules 2025 as notified in the Gazette of India; this chunk is labelled a summary\nbecause that precise wording is not reproduced verbatim here.",
+      "title": "Manner and time of breach intimation",
+      "verbatim": false
+    },
+    "India-DPDP-s8(6)": {
+      "citation": "India DPDP Act 2023 section 8(6)",
+      "id": "India-DPDP-s8(6)",
+      "regime_family": "global",
+      "text": "In the event of a personal data breach, the Data Fiduciary shall give the Board\nand each affected Data Principal, intimation of such breach in such form and manner\nas may be prescribed.",
+      "title": "Intimation of a personal data breach",
+      "verbatim": true
+    },
+    "Korea-PIPA-Art34": {
+      "citation": "South Korea PIPA Article 34",
+      "id": "Korea-PIPA-Art34",
+      "regime_family": "global",
+      "text": "Summary (not verbatim, English translation): Article 34 of the Personal Information\nProtection Act requires that, where a personal information controller becomes aware\nthat personal information has been lost, stolen, leaked, forged, altered, or\ndamaged, it must notify the affected data subjects without delay of the items of\npersonal information concerned, the time and circumstances of the breach, the\nmeasures the data subject can take to minimise damage, the countermeasures of the\ncontroller and its remedial procedures, and the contact point for reporting damage.\nWhere the breach reaches the scale or sensitivity thresholds set by the Enforcement\nDecree (in outline, the personal information of 1,000 or more data subjects, or\nsensitive or unique-identifying information, or a breach by external unauthorised\naccess), the controller must also report the breach and its response to the\nPersonal Information Protection Commission or a specialised institution (KISA)\nwithin the time set by the Enforcement Decree. The official Korean text is in the\nPersonal Information Protection Act on the Korean Law Information Center; this chunk\nis labelled a summary and English translation because the official text is in Korean\nand is not reproduced verbatim here.",
+      "title": "Notification of a personal information breach",
+      "verbatim": false
+    },
+    "NIS2-Art23(1)": {
+      "citation": "NIS2 Article 23(1)",
+      "id": "NIS2-Art23(1)",
+      "regime_family": "nis2",
+      "text": "1. Each Member State shall ensure that essential and important entities notify,\nwithout undue delay, its CSIRT or, where applicable, its competent authority in\naccordance with paragraph 4 of any incident that has a significant impact on the\nprovision of their services as referred to in paragraph 3 (significant incident).\nWhere appropriate, entities concerned shall notify, without undue delay, the\nrecipients of their services of significant incidents that are likely to adversely\naffect the provision of those services. Each Member State shall ensure that those\nentities report, among other things, any information enabling the CSIRT or, where\napplicable, the competent authority to determine any cross-border impact of the\nincident. The mere act of notification shall not subject the notifying entity to\nincreased liability.",
+      "title": "Duty to notify significant incidents",
+      "verbatim": true
+    },
+    "NIS2-Art23(3)": {
+      "citation": "NIS2 Article 23(3)",
+      "id": "NIS2-Art23(3)",
+      "regime_family": "nis2",
+      "text": "3. An incident shall be considered to be significant if:\n\n(a) it has caused or is capable of causing severe operational disruption of the\nservices or financial loss for the entity concerned;\n\n(b) it has affected or is capable of affecting other natural or legal persons by\ncausing considerable material or non-material damage.",
+      "title": "When an incident is significant",
+      "verbatim": true
+    },
+    "NIS2-Art23(4)": {
+      "citation": "NIS2 Article 23(4)",
+      "id": "NIS2-Art23(4)",
+      "regime_family": "nis2",
+      "text": "4. Member States shall ensure that, for the purpose of notification under\nparagraph 1, the entities concerned submit to the CSIRT or, where applicable, the\ncompetent authority:\n\n(a) without undue delay and in any event within 24 hours of becoming aware of the\nsignificant incident, an early warning, which, where applicable, shall indicate\nwhether the significant incident is suspected of being caused by unlawful or\nmalicious acts or could have a cross-border impact;\n\n(b) without undue delay and in any event within 72 hours of becoming aware of the\nsignificant incident, an incident notification, which, where applicable, shall\nupdate the information referred to in point (a) and indicate an initial assessment\nof the significant incident, including its severity and impact, as well as, where\navailable, the indicators of compromise;\n\n(c) upon the request of a CSIRT or, where applicable, a competent authority, an\nintermediate report on relevant status updates;\n\n(d) a final report not later than one month after the submission of the incident\nnotification under point (b), including the following:\n\n(i) a detailed description of the incident, including its severity and impact;\n\n(ii) the type of threat or root cause that is likely to have triggered the\nincident;\n\n(iii) applied and ongoing mitigation measures;\n\n(iv) where applicable, the cross-border impact of the incident;\n\n(e) in the event of an ongoing incident at the time of the submission of the final\nreport referred to in point (d), Member States shall ensure that entities\nconcerned provide a progress report at that time and a final report within one\nmonth of their handling of the incident.",
+      "title": "Notification stages and deadlines",
+      "verbatim": true
+    },
+    "NIS2-Recital-101": {
+      "citation": "NIS2 Recital 101",
+      "id": "NIS2-Recital-101",
+      "regime_family": "nis2",
+      "text": "Summary (not verbatim): NIS2 Recital 101 explains that a graduated reporting\ntimeline (an early warning within 24 hours, a fuller incident notification within\n72 hours, and a final report within one month) balances the need for rapid\ninformation to enable the CSIRT or competent authority to react and limit the\nincident's spread against the reporting burden on the entity while it is still\nresponding. The early warning is deliberately light so it can be submitted fast;\nthe 72-hour notification carries the initial severity and impact assessment and any\nindicators of compromise. The exact recital wording is on EUR-Lex (CELEX\n32022L2555); this chunk is labelled a summary because the precise recital text is\nnot reproduced here.",
+      "title": "Purpose of the reporting timeline",
+      "verbatim": false
+    },
+    "NYDFS-23NYCRR500.01(d)": {
+      "citation": "23 NYCRR 500.1(d)",
+      "id": "NYDFS-23NYCRR500.01(d)",
+      "regime_family": "nydfs",
+      "text": "Summary (not verbatim): 23 NYCRR 500.1 defines a \"Cybersecurity Event\" as any act\nor attempt, successful or unsuccessful, to gain unauthorized access to, disrupt, or\nmisuse an information system or information stored on such information system. The\nexact definitional text is in the definitions section of 23 NYCRR Part 500 as\npublished by NYDFS; this chunk is labelled a summary because that precise wording is\nnot reproduced verbatim here.",
+      "title": "Definition of a cybersecurity event",
+      "verbatim": false
+    },
+    "NYDFS-23NYCRR500.17(a)": {
+      "citation": "23 NYCRR 500.17(a)",
+      "id": "NYDFS-23NYCRR500.17(a)",
+      "regime_family": "nydfs",
+      "text": "(a) Notice of a cybersecurity event. (1) Each covered entity shall notify the\nsuperintendent electronically in the form set forth on the department's website as\npromptly as possible but in no event later than 72 hours after determining that a\ncybersecurity event has occurred at the covered entity, its affiliates, or a third\nparty service provider that meets any of the following criteria:\n\n(i) the cybersecurity event impacts the covered entity and notice of it is required\nto be provided to any government body, self-regulatory agency, or any other\nsupervisory body;\n\n(ii) the cybersecurity event has a reasonable likelihood of materially harming any\nmaterial part of the normal operation(s) of the covered entity; or\n\n(iii) the cybersecurity event results in the deployment of ransomware within a\nmaterial part of the covered entity's information systems.\n\n(2) Each covered entity shall promptly provide to the superintendent any\ninformation requested regarding such cybersecurity event. The covered entity shall\nhave a continuing obligation to update and supplement the information provided.",
+      "title": "Notice of a cybersecurity event to the superintendent",
+      "verbatim": true
+    },
+    "SEC-17CFR229.106(a)": {
+      "citation": "17 CFR 229.106(a) (Regulation S-K Item 106)",
+      "id": "SEC-17CFR229.106(a)",
+      "regime_family": "sec",
+      "text": "(a) Definitions. For purposes of this section: Cybersecurity incident means an\nunauthorized occurrence, or a series of related unauthorized occurrences, on or\nconducted through a registrant's information systems that jeopardizes the\nconfidentiality, integrity, or availability of a registrant's information systems\nor any information residing therein.",
+      "title": "Definition of a cybersecurity incident",
+      "verbatim": true
+    },
+    "SEC-CF-CDI-104B.01": {
+      "citation": "Division of Corporation Finance C&DI Question 104B.01",
+      "id": "SEC-CF-CDI-104B.01",
+      "regime_family": "sec",
+      "text": "Summary (not verbatim): in its Compliance and Disclosure Interpretations on Form\n8-K Item 1.05, the SEC's Division of Corporation Finance explains that the\nfour-business-day filing deadline runs from the registrant's determination that a\ncybersecurity incident is MATERIAL, not from the date the incident is discovered.\nA registrant must make that materiality determination without unreasonable delay\nafter discovery. The guidance is interpretive: it confirms the trigger is the\nmateriality determination, which is why the Deadline Room anchors the SEC clock at\nthe materiality-determination instant rather than at incident occurrence. The exact\nquestion-and-answer text is published on the SEC's Corporation Finance C&DI page;\nthis chunk is labelled a summary because that precise wording is not reproduced\nverbatim here.",
+      "title": "When the four-business-day clock starts",
+      "verbatim": false
+    },
+    "SEC-Form8K-Item1.05(a)": {
+      "citation": "Form 8-K Item 1.05(a)",
+      "id": "SEC-Form8K-Item1.05(a)",
+      "regime_family": "sec",
+      "text": "(a) If the registrant experiences a cybersecurity incident that is determined by\nthe registrant to be material, describe the material aspects of the nature, scope,\nand timing of the incident, and the material impact or reasonably likely material\nimpact on the registrant, including its financial condition and results of\noperations.",
+      "title": "Material cybersecurity incidents disclosure",
+      "verbatim": true
+    },
+    "SEC-Form8K-Item1.05(b)": {
+      "citation": "Form 8-K Item 1.05(b)",
+      "id": "SEC-Form8K-Item1.05(b)",
+      "regime_family": "sec",
+      "text": "(b) To the extent that the information called for in paragraph (a) of this item is\nnot determined or is unavailable at the time of the required filing, the registrant\nshall include a statement to this effect in the filing and then must file an\namendment to its Form 8-K filing under this Item 1.05 containing such information\nwithin four business days after the registrant, without unreasonable delay,\ndetermines such information or within four business days after such information\nbecomes available.",
+      "title": "Information not determined or unavailable at the time of filing",
+      "verbatim": true
+    },
+    "SEC-Form8K-Item1.05-Instruction1": {
+      "citation": "Form 8-K Item 1.05 Instruction 1",
+      "id": "SEC-Form8K-Item1.05-Instruction1",
+      "regime_family": "sec",
+      "text": "Instruction 1 to Item 1.05. A registrant shall file a report under this Item 1.05\nwithin four business days after the registrant determines that it has experienced a\nmaterial cybersecurity incident. The registrant shall provide the information\nrequired by this Item 1.05 in accordance with Rule 12b-20, which requires the\naddition of such further material information, if any, as may be necessary to make\nthe required statements, in light of the circumstances under which they are made,\nnot misleading.",
+      "title": "Timing of the filing",
+      "verbatim": true
+    },
+    "SEC-Form8K-Item1.05-Instruction2": {
+      "citation": "Form 8-K Item 1.05 Instruction 2",
+      "id": "SEC-Form8K-Item1.05-Instruction2",
+      "regime_family": "sec",
+      "text": "Instruction 2 to Item 1.05. Notwithstanding General Instruction B.1. to Form 8-K,\nif the United States Attorney General determines that disclosure required by\nparagraph (a) of this Item 1.05 poses a substantial risk to national security or\npublic safety, and notifies the Commission of such determination in writing, the\nregistrant may delay providing the disclosure required by this Item 1.05 for a time\nperiod specified by the Attorney General, up to 30 days following the date when the\ndisclosure required by this Item 1.05 was otherwise required to be provided.",
+      "title": "National security or public safety delay",
+      "verbatim": true
+    },
+    "Singapore-PDPA-s26B": {
+      "citation": "Singapore PDPA section 26B",
+      "id": "Singapore-PDPA-s26B",
+      "regime_family": "global",
+      "text": "Summary (not verbatim): section 26B of the Singapore PDPA defines a notifiable data\nbreach. A data breach is notifiable if it results in, or is likely to result in,\nsignificant harm to an affected individual, or is, or is likely to be, of a\nsignificant scale. The Personal Data Protection (Notification of Data Breaches)\nRegulations 2021 deem a breach to be of a significant scale where it affects the\npersonal data of 500 or more individuals, and prescribe categories of personal data\nthe unauthorised access, collection, use, disclosure, copying, modification, or\ndisposal of which is deemed to result in significant harm. The exact statutory and\nregulatory wording is on Singapore Statutes Online; this chunk is labelled a summary\nbecause that precise wording is not reproduced verbatim here.",
+      "title": "What is a notifiable data breach",
+      "verbatim": false
+    },
+    "Singapore-PDPA-s26D": {
+      "citation": "Singapore PDPA section 26D",
+      "id": "Singapore-PDPA-s26D",
+      "regime_family": "global",
+      "text": "Summary (not verbatim): section 26D of the Personal Data Protection Act 2012 (as\namended by the Personal Data Protection (Amendment) Act 2020) requires that, where\nan organisation assesses that a data breach is a notifiable data breach, it must\nnotify the Personal Data Protection Commission as soon as is practicable, and in any\ncase no later than 3 calendar days after the day it makes that assessment. Where the\nnotifiable breach is likely to result in significant harm to affected individuals,\nthe organisation must also notify each affected individual affected by the breach,\non or after notifying the Commission. The 3-day clock runs from the notifiability\nassessment, not from discovery. The exact statutory wording is in section 26D of the\nPDPA on Singapore Statutes Online; this chunk is labelled a summary because that\nprecise wording is not reproduced verbatim here.",
+      "title": "Notification of a notifiable data breach",
+      "verbatim": false
+    }
+  }
+}

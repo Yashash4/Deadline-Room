@@ -155,7 +155,14 @@ class RegimeSpec:
 
     `recruit_jurisdiction` / `recruit_name_tokens` are populated only for
     recruit-mode regimes (UK, NYDFS); they are the blast-radius token and the
-    peer name-match tokens the runtime recruit uses."""
+    peer name-match tokens the runtime recruit uses.
+
+    `corpus_tags` (E3.11) are the stable human-citation chunk ids in the regulation
+    corpus (floor/corpus/, built into floor/corpus/index.json) that GROUND this
+    regime: the statutory passages the regime's filing draws on and cites. They are
+    reference-data pointers, never gated on; the E5.9 retriever uses them to fetch
+    the real text to inject, and scripts/build_corpus.py asserts every tag resolves
+    to a real chunk so a wrong or stale citation surfaces at build time."""
     key: str
     authority: str
     branch: str
@@ -170,6 +177,7 @@ class RegimeSpec:
     reportability: ReportabilitySpec | None = None
     obligations: ObligationSpec | None = None
     high_risk: HighRiskSpec | None = None
+    corpus_tags: tuple[str, ...] = ()
 
     @property
     def is_startup(self) -> bool:
@@ -254,7 +262,25 @@ def _parse_regime(record: dict) -> RegimeSpec:
         reportability=reportability_spec,
         obligations=obligations_spec,
         high_risk=high_risk_spec,
+        corpus_tags=_corpus_tags(record.get("corpus_tags")),
     )
+
+
+def _corpus_tags(value) -> tuple[str, ...]:
+    """Normalize a YAML corpus_tags list into a tuple of chunk-id strings, in the
+    declared order, preserving the citation punctuation verbatim (the ids carry
+    parentheses, slashes, and dots). None or an empty list yields the empty tuple.
+    A non-string entry is a catalog error surfaced structurally."""
+    if not value:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"corpus_tags must be a list, got {type(value).__name__}")
+    out: list[str] = []
+    for v in value:
+        s = str(v).strip()
+        if s:
+            out.append(s)
+    return tuple(out)
 
 
 def _token_tuple(value) -> tuple[str, ...]:
