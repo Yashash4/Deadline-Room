@@ -140,6 +140,9 @@ from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
+from floor.submission import (  # noqa: E402
+    MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
+    build_submission, submit)
 from floor.telemetry import RunTelemetry  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
@@ -550,6 +553,33 @@ DEFICIENCY_RELEASE_SIGNERS = (
 )
 
 
+# E4.1: the end-to-end submission pipeline beat. After the two-key release, for
+# each regime in scope, the room EXPORTS a machine-readable submission artifact (SEC
+# as the EDGAR-shaped Form 8-K Item 1.05; the others as structured per-regime
+# payloads keyed by the real mandated field labels), SUBMITS it to an honestly
+# STUBBED regulator endpoint that runs a real required-field contract validation,
+# and SEALS the modeled filed receipt back into the run log as a `submission_receipt`
+# event so the chain head and the signature attest the FILED outcome, not just the
+# draft. The submission_receipt event INTENTIONALLY enters the hashed run-log (it is
+# real evidence), so this is its OWN scenario (mode == "submit"): the four DEFAULT
+# sealed captures (normal, contradiction, chaos, amendment) and their shas stay
+# UNCHANGED. The endpoint is a MODELED local channel: the format and the validation
+# are real, the network hop is modeled, the filing id is a modeled accession-style
+# id, and no government acknowledgement is fabricated. Within the submit beat the
+# sealed path is deterministic (no now(): the accepted-at is a fixed derived
+# timestamp, the artifact sha and the modeled id are pure functions of the artifact
+# bytes), so replay is byte-identical.
+SUBMIT_REGIMES = ("SEC", "NIS2", "ICO")
+# The branch each in-scope regime's reconciled facts and filing live under in the
+# packet, so the submission artifact carries the SAME values the contradiction diff
+# agreed on. SEC and NIS2 are startup drafters; ICO rides the UK ICO recruit branch.
+SUBMIT_REGIME_BRANCH = {"SEC": "sec", "NIS2": "nis2", "ICO": "uk"}
+# The accepted-at timestamp the modeled endpoint stamps on every receipt: a FIXED
+# derived run timestamp (the submission stage runs strictly after release), never
+# now(), so the sealed receipt event replays byte-identically.
+TS_SUBMISSION_ACCEPTED = "2026-06-16T06:00:00+00:00"
+
+
 # The declarative regime catalog, loaded once. The startup clocks (NIS2 early +
 # full, DORA, SEC) and the recruit targets (UK, NYDFS) are produced FROM these
 # records, so adding a regulator is appending a YAML block, not editing code.
@@ -835,7 +865,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
                     "inject_claims", "reportability", "cross_border",
-                    "affected_party", "deficiency", "legal_hold"):
+                    "affected_party", "deficiency", "legal_hold", "submit"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
@@ -882,6 +912,16 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # gate path. It is mode-driven only (no public kwarg), like cross_border and
     # deficiency.
     run_legal_hold = mode == "legal_hold"
+    # The submission-pipeline beat (E4.1) is its OWN scenario: it rides the clean
+    # (normal) base path through the two-key release, recruiting the UK ICO branch so
+    # an ICO filing exists to submit, then runs the export -> stubbed-endpoint ->
+    # sealed-receipt loop for the in-scope regimes (SEC, NIS2, ICO). The
+    # submission_receipt event INTENTIONALLY enters the hashed run-log, so this beat
+    # is isolated from the four DEFAULT sealed captures. It is mode-driven only (no
+    # public kwarg), like cross_border, deficiency, and legal_hold.
+    run_submit = mode == "submit"
+    if run_submit:
+        uk_recruit = True
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
@@ -894,7 +934,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # path, so its drafting/diff base is normal.
     base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability",
                                        "cross_border", "affected_party", "deficiency",
-                                       "legal_hold")
+                                       "legal_hold", "submit")
                  else mode)
     # The affected_party scenario runs the amendment beat first so the forensic
     # revision raises the record count before the affected-party scope is computed.
@@ -1416,6 +1456,26 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             hold=legal_hold_record["hold"], fact_record=fact_record,
             mentions=list(drafter_ids.values()))
 
+    # ---- E4.1: the end-to-end submission pipeline. AFTER the two-key release, for
+    # each regime in scope (SEC, NIS2, ICO), export a machine-readable submission
+    # artifact, submit it to the honestly-stubbed regulator endpoint (a real
+    # required-field contract validation), and SEAL the modeled filed receipt into
+    # the run log as a `submission_receipt` event so the chain head and the signature
+    # attest the FILED outcome, not just the draft. This event INTENTIONALLY enters
+    # the hashed run-log, so the beat is its OWN scenario; the four DEFAULT sealed
+    # captures are untouched. The export FORMAT and the validation are real; the
+    # channel is modeled and the filing id is a modeled accession-style id; the
+    # sealed path is deterministic (no now()), so replay stays byte-identical. -----
+    submission_record = None
+    if run_submit:
+        released_now = [b for b in DRAFTER_BRANCHES_THIS_RUN
+                        if sm.state(branch_corr[b]).value == "released"]
+        submission_record = _submission_phase(
+            log=log, trace=trace, warden=warden,
+            claims_by_branch=claims_by_branch, filings=filings,
+            released_branches=released_now, clocks=clocks,
+            mentions=list(drafter_ids.values()))
+
     # The "now" the breach check reads is the last moment the run reached: the
     # affected-party release (after the amendment) when that beat ran, else the
     # amendment re-release, else the regulator release.
@@ -1538,6 +1598,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         affected_party=affected_party_record,
         deficiency=deficiency_record,
         legal_hold=legal_hold_record,
+        submission=submission_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2631,6 +2692,118 @@ def _deficiency_phase(*, sm, trace, log, ledger, triage, warden, drafters,
         "final_review": final_verdict.as_dict(),
         "cured_filing": cured_filing,
         "cured_claims": cured_claims,
+    }
+
+
+# ----------------------------------------------------------------------------
+# Submission pipeline (E4.1). AFTER the two-key release, for each regime in scope,
+# the room EXPORTS a machine-readable submission artifact, SUBMITS it to an honestly
+# STUBBED regulator endpoint that runs a real required-field contract validation, and
+# SEALS the modeled filed receipt back into the run log as a `submission_receipt`
+# event so the chain head and the signature attest the FILED outcome, not just the
+# draft. The submission_receipt event INTENTIONALLY enters the hashed run-log; this
+# beat is its OWN scenario so the four DEFAULT sealed captures are untouched.
+#
+# Honest modeled-channel posture: the export FORMAT and the field-contract VALIDATION
+# are real; the network hop is modeled; the filing id is a modeled accession-style id
+# derived from the artifact bytes (never a real EDGAR accession number); no government
+# acknowledgement is fabricated. Deterministic sealed path: the accepted-at is a fixed
+# derived timestamp (no now()), the artifact sha and the modeled id are pure functions
+# of the artifact bytes, so replay over the submit beat is byte-identical. The Warden
+# narrates each filed receipt in the room (additive visibility, never in the hashed
+# log), addressing the drafters, never itself.
+# ----------------------------------------------------------------------------
+def _submission_phase(*, log, trace, warden, claims_by_branch, filings,
+                      released_branches, clocks, mentions) -> dict:
+    """Export, submit, and seal a modeled filed receipt for each in-scope regime.
+
+    Builds a submission view from the released filings and the reconciled claims,
+    exports the per-regime artifact (SEC reuses the EDGAR-shaped 8-K; the others are
+    structured per-regime payloads keyed by the real mandated field labels), submits
+    each to the honest stub endpoint (a real required-field contract validation), and
+    appends ONE `submission_receipt` event per accepted submission so the filed
+    receipt is hash-chained, replayed, and signed. A regime whose branch did not
+    release (no filing exists) is skipped. Returns the packet-ready record (the
+    submissions, the modeled-channel caveat, the in-scope regimes)."""
+    endpoint = StubRegulatorEndpoint()
+    # The submission artifacts read the reconciled claims and the released filings;
+    # build the minimal view build_submission needs (the same shape _assemble_packet
+    # would expose), so the artifact carries the SAME values the contradiction diff
+    # agreed on and the SEC EDGAR export finds its clock + facts.
+    view = {
+        "incident": {"incident_id": INCIDENT_ID, "fact_record": CANONICAL_FACTS},
+        "clocks": _clock_rows(clocks),
+        "filings": list(filings),
+        "diff": {"final_claims": {b: c.canonical()
+                                  for b, c in claims_by_branch.items()}},
+    }
+    submissions: list[dict] = []
+    for regime in SUBMIT_REGIMES:
+        branch = SUBMIT_REGIME_BRANCH[regime]
+        if branch not in released_branches:
+            # The branch never released (e.g. ICO not recruited): nothing to file.
+            trace.say(f"[SUB] {regime}: branch {branch} not released; no filing to "
+                      f"submit, skipping.")
+            continue
+        try:
+            artifact = build_submission(view, regime, branch=branch)
+        except SubmissionError as e:
+            trace.say(f"[SUB] {regime}: no submission artifact ({e}); skipping.")
+            continue
+        receipt = submit(artifact, regime, TS_SUBMISSION_ACCEPTED, endpoint=endpoint)
+        if not receipt.accepted:
+            # The contract validation rejected a complete-looking filing: surface it
+            # structurally. In the submit beat every released filing is complete, so a
+            # rejection here is a real defect, not an expected path.
+            raise RuntimeError(
+                f"submission beat: the released {regime} filing was REJECTED by the "
+                f"required-field contract (missing: "
+                f"{', '.join(receipt.missing_fields)}); a released filing must be "
+                f"complete")
+        # SEAL the filed receipt into the hashed run-log. This is the loop that
+        # closes: the chain head and the signature now cover the filed receipt, so
+        # replay attests THIS exact artifact was submitted and accepted with THIS
+        # modeled receipt. Only the typed receipt fields are logged (no LLM surface).
+        log.append("submission_receipt", {
+            "regime": receipt.regime,
+            "channel": receipt.channel,
+            "modeled_filing_id": receipt.modeled_filing_id,
+            "accepted_at": receipt.accepted_at,
+            "artifact_sha256": receipt.artifact_sha256,
+            "status": receipt.status,
+            "stub_endpoint": receipt.stub_endpoint,
+        })
+        trace.say(
+            f"[SUB] {regime}: exported the {artifact.channel} artifact (sha "
+            f"{receipt.artifact_sha256[:12]}), submitted to the modeled endpoint, "
+            f"contract VALIDATED ({len(receipt.validated_fields)} mandated field(s)), "
+            f"sealed receipt {receipt.modeled_filing_id}.")
+        if warden is not None:
+            _warden_announce(
+                warden, trace,
+                f"{regime} submission FILED (modeled channel {artifact.channel}). "
+                f"Required-field contract validated; modeled filing id "
+                f"{receipt.modeled_filing_id}, artifact sha "
+                f"{receipt.artifact_sha256[:12]}. Receipt sealed into the signed "
+                f"chain. Modeled endpoint: the format and validation are real, the "
+                f"network hop is modeled, no real accession number is assigned.",
+                mentions=mentions,
+                dedup_key=f"warden:submission:{regime.lower()}:{INCIDENT_ID}")
+        submissions.append({
+            "regime": regime,
+            "branch": branch,
+            "artifact": artifact.as_dict(),
+            "receipt": receipt.as_dict(),
+        })
+    if not submissions:
+        raise RuntimeError(
+            "submission beat: no regime produced a submission; expected SEC, NIS2, "
+            "and ICO to release and file")
+    return {
+        "submissions": submissions,
+        "regimes": list(SUBMIT_REGIMES),
+        "caveat": MODELED_CHANNEL_CAVEAT,
+        "accepted_at": TS_SUBMISSION_ACCEPTED,
     }
 
 
@@ -4140,7 +4313,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      recovered_retries: int = 0, operability=None,
                      attestation=None, reportability=None,
                      cross_border=None, affected_party=None,
-                     deficiency=None, legal_hold=None) -> dict:
+                     deficiency=None, legal_hold=None, submission=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -4290,6 +4463,15 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "initial_review": deficiency["initial_review"],
             "final_review": deficiency["final_review"],
         }
+    if submission is not None:
+        # The end-to-end submission pipeline (E4.1): per regime, the machine-readable
+        # submission artifact, the modeled filed receipt (sealed into the hashed
+        # run-log as a submission_receipt event), and the honest modeled-channel
+        # caveat. The receipt's artifact_sha256 binds the receipt to THIS exact
+        # artifact, and the signature attests the filed outcome. The receipt is the
+        # one piece here that IS in the hashed log; the rendered artifact mirror in
+        # the packet is the same bytes the receipt's sha is taken over.
+        packet["submission"] = submission
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
@@ -4640,6 +4822,14 @@ def main() -> int:
                              "preservation duty alongside the breach-notification "
                              "track. Zero LLM: the hold attaches by rule and releases "
                              "by a human")
+    parser.add_argument("--submit", action="store_true",
+                        help="run the end-to-end submission pipeline (E4.1): after "
+                             "release, export a machine-readable submission artifact "
+                             "per regime, submit it to an honestly-stubbed regulator "
+                             "endpoint that validates the required-field contract, and "
+                             "seal the modeled filed receipt into the signed chain. Its "
+                             "own scenario: the four default sealed captures are "
+                             "unchanged")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -4655,10 +4845,11 @@ def main() -> int:
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
             args.inject_claims, args.reportability, args.cross_border,
-            args.affected_party, args.deficiency, args.legal_hold]) > 1:
+            args.affected_party, args.deficiency, args.legal_hold,
+            args.submit]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
               "--inject-claims, --reportability, --cross-border, "
-              "--affected-party, --deficiency, or --legal-hold.")
+              "--affected-party, --deficiency, --legal-hold, or --submit.")
         return 1
     if args.reportability and args.materiality:
         print("--reportability and --materiality are separate beats; pick one.")
@@ -4675,6 +4866,9 @@ def main() -> int:
     if args.legal_hold and args.materiality:
         print("--legal-hold and --materiality are separate beats; pick one.")
         return 1
+    if args.submit and args.materiality:
+        print("--submit and --materiality are separate beats; pick one.")
+        return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
         return 1
@@ -4689,7 +4883,8 @@ def main() -> int:
            "cross_border" if args.cross_border else \
            "affected_party" if args.affected_party else \
            "deficiency" if args.deficiency else \
-           "legal_hold" if args.legal_hold else "normal"
+           "legal_hold" if args.legal_hold else \
+           "submit" if args.submit else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 

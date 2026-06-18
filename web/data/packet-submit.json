@@ -1,0 +1,1249 @@
+{
+  "incident": {
+    "incident_id": "inc-8842",
+    "band_room_id": "fake-room-1",
+    "mode": "submit",
+    "provider_set": "dev",
+    "fact_record": {
+      "incident_id": "inc-8842",
+      "incident_start_utc": "2026-06-16T02:14:00+00:00",
+      "records_affected": 48211,
+      "attacker": "LockBit 3.0",
+      "containment": "partially_contained",
+      "systems": [
+        "core banking ledger",
+        "customer KYC store"
+      ],
+      "data_categories": [
+        "name",
+        "address",
+        "account_number"
+      ],
+      "regulated_entity": "Meridian Trust Bank N.V.",
+      "competent_authority": "national CSIRT (NIS2)",
+      "blast_radius": [
+        "EU: Meridian Trust Bank N.V."
+      ]
+    }
+  },
+  "providers": {
+    "provider_set": "dev",
+    "aiml_drafters": {},
+    "featherless_heroes": {},
+    "aiml_validation": {}
+  },
+  "trace": [
+    "[0] Provider set: DEV (every role on Featherless, zero AI/ML credit spent).",
+    "[1] Warden identity:  warden-id",
+    "    Triage identity:  triage-id",
+    "    NIS2 Drafter:  nis2-id (featherless:deepseek-ai/DeepSeek-V3.2)",
+    "    SEC Drafter:  sec-id (featherless:deepseek-ai/DeepSeek-V3-0324)",
+    "    DORA Drafter:  dora-id (featherless:Qwen/Qwen2.5-72B-Instruct)",
+    "[2] Warden created incident room fake-room-1 and recruited Triage + 3 drafters",
+    "[3] Started 4 statutory clocks: NIS2/DORA from T0 2026-06-16T02:14:00+00:00, SEC from the materiality determination 2026-06-16T02:31:00+00:00",
+    "[4] Triage posted the fact-record, @mentioned all drafters (msg m1)",
+    "[5.nis2] NIS2 Drafter draining /next for the mention ...",
+    "    NIS2 Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    NIS2 Drafter drafted 562 chars, posted back @mention Warden (msg m2)",
+    "[6.nis2] Warden draining /next for the NIS2 draft ...",
+    "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg m2)",
+    "    [Warden -> room] @NIS2 Drafter: recorded NIS2 filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m3)",
+    "[5.sec] SEC Drafter draining /next for the mention ...",
+    "    SEC Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    SEC Drafter drafted 745 chars, posted back @mention Warden (msg m4)",
+    "[6.sec] Warden draining /next for the SEC draft ...",
+    "    Warden parsed sec claims, recorded DRAFT_POSTED (msg m4)",
+    "    [Warden -> room] @SEC Drafter: recorded SEC filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m5)",
+    "[5.dora] DORA Drafter draining /next for the mention ...",
+    "    DORA Drafter saw the mention (msg m1); calling its assigned model ...",
+    "    DORA Drafter drafted 416 chars, posted back @mention Warden (msg m6)",
+    "[6.dora] Warden draining /next for the DORA draft ...",
+    "    Warden parsed dora claims, recorded DRAFT_POSTED (msg m6)",
+    "    [Warden -> room] @DORA Drafter: recorded DORA filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m7)",
+    "[R1] Triage fact-record reveals a UK entity in the blast radius. Warden discovering the UK ICO Drafter over the live peer list ...",
+    "[R2] Found UK ICO Drafter peer uk-ico-agent-id by token-match; recruiting into room fake-room-1 via add_participant ...",
+    "[R3] UK ICO / GDPR personal-data breach (72h) started at the recruit moment 2026-06-16T03:40:00+00:00 (NOT incident T0).",
+    "    [Warden -> room] @UK ICO Drafter recruited. Blast radius names a UK entity, so the fifth clock (UK ICO / GDPR personal-data breach (72h), 72h) starts now at the recruit moment 2026-06-16T03:40:00+00:00, not incident T0. File your UK ICO notification. (msg m8)",
+    "[R4] UK ICO Drafter (recruited at runtime) filed on featherless:MiniMaxAI/MiniMax-M2.7.",
+    "[7] Contradiction diff: GREEN (no conflicts across 4 filings)",
+    "    [Warden -> room] Contradiction diff GREEN across 4 filings. Load-bearing facts agree. Opening signoff. (msg m10)",
+    "    [release] inc-8842:nis2: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:nis2: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [release] inc-8842:sec: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:sec: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [release] inc-8842:dora: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:dora: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [release] inc-8842:uk: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
+    "    [release] inc-8842:uk: head_of_ir (lena) signed; both keys present, release admitted",
+    "    [Warden -> room] GC (general_counsel) signed NIS2, SEC, DORA, UK. First of two keys on each. Awaiting LENA. (msg m11)",
+    "    [Warden -> room] LENA (head_of_ir) signed NIS2, SEC, DORA, UK. Both keys present on all 4. RELEASED, clocks stopped. (msg m12)",
+    "[8] Warden opened signoff; two-key release (GC + Lena); clocks stopped",
+    "[SUB] SEC: exported the EDGAR-8K-modeled artifact (sha 8d09eb8d669b), submitted to the modeled endpoint, contract VALIDATED (4 mandated field(s)), sealed receipt MODELED-SEC-8d09eb8d669b.",
+    "    [Warden -> room] SEC submission FILED (modeled channel EDGAR-8K-modeled). Required-field contract validated; modeled filing id MODELED-SEC-8d09eb8d669b, artifact sha 8d09eb8d669b. Receipt sealed into the signed chain. Modeled endpoint: the format and validation are real, the network hop is modeled, no real accession number is assigned. (msg m13)",
+    "[SUB] NIS2: exported the NIS2-CSIRT-modeled artifact (sha f9f4422dfd62), submitted to the modeled endpoint, contract VALIDATED (3 mandated field(s)), sealed receipt MODELED-NIS2-f9f4422dfd62.",
+    "    [Warden -> room] NIS2 submission FILED (modeled channel NIS2-CSIRT-modeled). Required-field contract validated; modeled filing id MODELED-NIS2-f9f4422dfd62, artifact sha f9f4422dfd62. Receipt sealed into the signed chain. Modeled endpoint: the format and validation are real, the network hop is modeled, no real accession number is assigned. (msg m14)",
+    "[SUB] ICO: exported the ICO-breach-portal-modeled artifact (sha f245d7a2bf88), submitted to the modeled endpoint, contract VALIDATED (4 mandated field(s)), sealed receipt MODELED-ICO-f245d7a2bf88.",
+    "    [Warden -> room] ICO submission FILED (modeled channel ICO-breach-portal-modeled). Required-field contract validated; modeled filing id MODELED-ICO-f245d7a2bf88, artifact sha f245d7a2bf88. Receipt sealed into the signed chain. Modeled endpoint: the format and validation are real, the network hop is modeled, no real accession number is assigned. (msg m15)",
+    "[9] Replay byte-identical: True (sha 13b675f99242...)",
+    "    Signed by Deadline Warden (ed25519, key fp 46e30f5bff8c221d) over sha256 + chain_head + attestation_sha + fact_record_hash; the signature is detached, the run-log sha is unchanged.",
+    "    Operability: 4 filing(s), nearest deadline 2026-06-17T02:14:00+00:00, min statutory margin 69.23h, 0 breach(es)."
+  ],
+  "handoff_trace": [
+    {
+      "from": "Triage",
+      "to": "NIS2 Drafter",
+      "kind": "fact_record",
+      "message_id": "m1"
+    },
+    {
+      "from": "Triage",
+      "to": "SEC Drafter",
+      "kind": "fact_record",
+      "message_id": "m1"
+    },
+    {
+      "from": "Triage",
+      "to": "DORA Drafter",
+      "kind": "fact_record",
+      "message_id": "m1"
+    },
+    {
+      "from": "NIS2 Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "m2"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m3"
+    },
+    {
+      "from": "SEC Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "m4"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m5"
+    },
+    {
+      "from": "DORA Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": "m6"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m7"
+    },
+    {
+      "from": "Warden",
+      "to": "UK ICO Drafter",
+      "kind": "runtime_recruit",
+      "message_id": ""
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m8"
+    },
+    {
+      "from": "UK ICO Drafter",
+      "to": "Warden",
+      "kind": "draft",
+      "message_id": ""
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m10"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m11"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m12"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m13"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m14"
+    },
+    {
+      "from": "Warden",
+      "to": "Room",
+      "kind": "warden_decision",
+      "message_id": "m15"
+    }
+  ],
+  "state_transitions": [
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T02:31:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "nis2_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "nis2_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "sec_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "sec_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "dora_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:11:00+00:00",
+      "actor": "dora_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "fact_record_posted",
+      "ts": "2026-06-16T03:41:00+00:00",
+      "actor": "triage",
+      "actor_role": "triage",
+      "admitted": true,
+      "to_state": "fact_record_ready",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "draft_started",
+      "ts": "2026-06-16T03:55:00+00:00",
+      "actor": "uk_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "drafting",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "draft_posted",
+      "ts": "2026-06-16T03:55:00+00:00",
+      "actor": "uk_drafter",
+      "actor_role": "drafter",
+      "admitted": true,
+      "to_state": "draft_submitted",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "diff_passed",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "contradiction_checked",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:nis2",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:sec",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:dora",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "signoff_opened",
+      "ts": "2026-06-16T04:00:00+00:00",
+      "actor": "warden",
+      "actor_role": "warden",
+      "admitted": true,
+      "to_state": "awaiting_human_signoff",
+      "reason": null
+    },
+    {
+      "correlation_id": "inc-8842:uk",
+      "event": "human_released",
+      "ts": "2026-06-16T05:00:00+00:00",
+      "actor": "lena",
+      "actor_role": "human_owner",
+      "admitted": true,
+      "to_state": "released",
+      "reason": null
+    }
+  ],
+  "message_lifecycle": [
+    {
+      "message_id": "m1",
+      "states": [
+        "processing",
+        "processed",
+        "processing",
+        "processed",
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m2",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m4",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    },
+    {
+      "message_id": "m6",
+      "states": [
+        "processing",
+        "processed"
+      ]
+    }
+  ],
+  "clocks": [
+    {
+      "name": "NIS2 early warning (24h)",
+      "correlation_id": "inc-8842:nis2-early",
+      "trigger_event": "becoming aware",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-17T02:14:00+00:00",
+      "deadline_local": "2026-06-17 04:14:00 CEST (Europe/Brussels)",
+      "holiday_calendar": "",
+      "stopped": "",
+      "breached": false
+    },
+    {
+      "name": "NIS2 full notification (72h)",
+      "correlation_id": "inc-8842:nis2",
+      "trigger_event": "becoming aware",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-19T02:14:00+00:00",
+      "deadline_local": "2026-06-19 04:14:00 CEST (Europe/Brussels)",
+      "holiday_calendar": "",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    },
+    {
+      "name": "DORA major-incident (72h)",
+      "correlation_id": "inc-8842:dora",
+      "trigger_event": "incident occurrence",
+      "started": "2026-06-16T02:14:00+00:00",
+      "deadline": "2026-06-19T02:14:00+00:00",
+      "deadline_local": "2026-06-19 04:14:00 CEST (Europe/Brussels)",
+      "holiday_calendar": "",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    },
+    {
+      "name": "SEC 8-K (4 business days)",
+      "correlation_id": "inc-8842:sec",
+      "trigger_event": "materiality determination",
+      "started": "2026-06-16T02:31:00+00:00",
+      "deadline": "2026-06-23T23:59:59+00:00",
+      "deadline_local": "2026-06-23 19:59:59 EDT (America/New_York)",
+      "holiday_calendar": "US_FEDERAL",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    },
+    {
+      "name": "UK ICO / GDPR personal-data breach (72h)",
+      "correlation_id": "inc-8842:uk",
+      "trigger_event": "becoming aware",
+      "started": "2026-06-16T03:40:00+00:00",
+      "deadline": "2026-06-19T03:40:00+00:00",
+      "deadline_local": "2026-06-19 04:40:00 BST (Europe/London)",
+      "holiday_calendar": "",
+      "stopped": "2026-06-16T05:00:00+00:00",
+      "breached": false
+    }
+  ],
+  "diff": {
+    "blocked_conflicts": [],
+    "resolution": null,
+    "final_claims": {
+      "nis2": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained"
+      },
+      "sec": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained"
+      },
+      "dora": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained"
+      },
+      "uk": {
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained"
+      }
+    },
+    "green": true
+  },
+  "filings": [
+    {
+      "regime": "NIS2",
+      "by": "NIS2 Drafter",
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3.2 holds NIS2 in dev because it is a strong open reasoning model that handles structured statutory prose at flat rate, so the day-to-day build burns no metered credit.",
+      "text": "Article 23(4)(b) incident notification\n\nInitial severity and impact assessment: A significant incident affecting 48,211 records of Meridian Trust Bank N.V. was assessed as high severity; the core banking ledger, customer KYC store were impacted.\n\nIndicators of compromise: Known indicators: threat actor LockBit 3.0; affected systems core banking ledger, customer KYC store.\n\nSuspected unlawful or malicious act and cross-border impact: The incident is suspected to be a malicious act; cross-border impact is possible given the entity's EU and UK establishments.\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "SEC",
+      "by": "SEC Drafter",
+      "model": "deepseek-ai/DeepSeek-V3-0324",
+      "provider": "featherless",
+      "rationale": "DeepSeek-V3-0324 holds SEC in dev as a separate open checkpoint from the NIS2 drafter, so two branches draft from genuinely different model state even before the prod split.",
+      "text": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "DORA",
+      "by": "DORA Drafter",
+      "model": "Qwen/Qwen2.5-72B-Instruct",
+      "provider": "featherless",
+      "rationale": "Qwen2.5-72B-Instruct holds DORA in dev because its long instruction-following is a good fit for DORA's incident-report field skeleton, and it is a third open family on flat rate.",
+      "text": "Major incident notification (Article 19, RTS classification)\n\nClients, financial counterparts, and transactions affected: Stated from the fact-record for this field.\n\nDuration and service downtime: Stated from the fact-record for this field.\n\nGeographical spread and critical services affected: Stated from the fact-record for this field.\n\nData losses and economic impact: Stated from the fact-record for this field.\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+    },
+    {
+      "regime": "UK ICO",
+      "by": "UK ICO Drafter",
+      "model": "MiniMaxAI/MiniMax-M2.7",
+      "provider": "featherless",
+      "rationale": "MiniMax-M2.7 holds UK ICO because the UK 72-hour GDPR filing is the data-sovereignty story: a bank can self-host the open model that drafts its regulator notice instead of sending facts to a third-party API.",
+      "text": "Article 33(3) personal data breach notification\n\nNature of the breach: A personal data breach at Meridian Trust Bank N.V. attributed to LockBit 3.0 affected the core banking ledger, customer KYC store.\n\nCategories and approximate number of data subjects and records: Approximately 48,211 records and their data subjects (name, address, account_number) were concerned.\n\nLikely consequences: The likely consequences include risk to the affected individuals from exposure of the categories of personal data involved.\n\nMeasures taken or proposed: Containment is partially contained; remediation and notification measures are underway to mitigate the breach's adverse effects.\n\n[CLAIMS]\nbranch=uk\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]",
+      "recruited_at_runtime": true
+    }
+  ],
+  "grounding": {
+    "threshold": 1.0,
+    "filings": [
+      {
+        "branch": "NIS2",
+        "grounded": 2,
+        "total": 2,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "NIS2",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "SEC",
+        "grounded": 3,
+        "total": 3,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "SEC",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "DORA",
+        "grounded": 0,
+        "total": 0,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "DORA",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      },
+      {
+        "branch": "UK ICO",
+        "grounded": 2,
+        "total": 2,
+        "score": 1.0,
+        "ungrounded": [],
+        "regime": "UK ICO",
+        "citations": {
+          "cited_fields": [],
+          "valid": [],
+          "invalid": [],
+          "all_valid": true
+        }
+      }
+    ],
+    "all_pass": true
+  },
+  "adversarial_review": {},
+  "chaos": {
+    "events": [],
+    "duplicates_dropped": 0,
+    "ledger": [
+      {
+        "key": "draft:nis2:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:sec:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:dora:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      },
+      {
+        "key": "draft:uk:inc-8842:round-1",
+        "attempt": 1,
+        "disposition": "accepted"
+      }
+    ]
+  },
+  "security": {},
+  "breached_clocks": [],
+  "replay": {
+    "original_sha256": "13b675f992423a71a16911b6ad604cb91e0d8065dd60f5167808c7fa87e3173b",
+    "replayed_sha256": "13b675f992423a71a16911b6ad604cb91e0d8065dd60f5167808c7fa87e3173b",
+    "byte_identical": true,
+    "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+    "attestation_sha": "0fe3db4d67ec68b02b1ee039961a47fc5dca02bec66d404cf6c82d5afb90fae1",
+    "fact_record_hash": "235727614ebe1cf388bdba7722f4d818ca7163e8198284c3b4052bab65dde06f",
+    "signature": {
+      "algorithm": "ed25519",
+      "detached": true,
+      "signed_payload": "canonical_json{sha256,chain_head,attestation_sha,fact_record_hash}",
+      "sha256": "13b675f992423a71a16911b6ad604cb91e0d8065dd60f5167808c7fa87e3173b",
+      "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+      "attestation_sha": "0fe3db4d67ec68b02b1ee039961a47fc5dca02bec66d404cf6c82d5afb90fae1",
+      "fact_record_hash": "235727614ebe1cf388bdba7722f4d818ca7163e8198284c3b4052bab65dde06f",
+      "signature": "db4298f0615c9b9a68ff11ad7e972d8c842c63a96ea6809dfa0047e68d09dc9c715153e06bbfd8315b896f2798667dd65d9534311924bdae009ebcb0dedadd0f",
+      "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+      "pubkey_fingerprint": "46e30f5bff8c221d",
+      "signer": "Deadline Warden",
+      "demo_key": true,
+      "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+    }
+  },
+  "pending": [],
+  "submission": {
+    "submissions": [
+      {
+        "regime": "SEC",
+        "branch": "sec",
+        "artifact": {
+          "regime": "SEC",
+          "channel": "EDGAR-8K-modeled",
+          "form_title": "Form 8-K, Item 1.05 Material Cybersecurity Incidents",
+          "fields": [
+            {
+              "label": "Nature of the incident",
+              "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+            },
+            {
+              "label": "Scope of the incident",
+              "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+            },
+            {
+              "label": "Timing of the incident",
+              "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+            },
+            {
+              "label": "Material impact or reasonably likely material impact",
+              "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+            }
+          ],
+          "payload": {
+            "regime": "SEC",
+            "channel": "EDGAR-8K-modeled",
+            "form_type": "8-K",
+            "item": "1.05",
+            "form_title": "Form 8-K, Item 1.05 Material Cybersecurity Incidents",
+            "period_of_report": "2026-06-16",
+            "cover": {
+              "Name of registrant as specified in its charter": "Meridian Trust Bank N.V.",
+              "State or other jurisdiction of incorporation": "[to be supplied by filer at submission]",
+              "Commission file number": "[to be supplied by filer at submission]",
+              "Central Index Key (CIK)": "[to be supplied by filer at submission]",
+              "Date of report (date of earliest event reported)": "2026-06-16"
+            },
+            "content_elements": [
+              {
+                "label": "Nature of the incident",
+                "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+              },
+              {
+                "label": "Scope of the incident",
+                "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+              },
+              {
+                "label": "Timing of the incident",
+                "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+              },
+              {
+                "label": "Material impact or reasonably likely material impact",
+                "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+              }
+            ],
+            "facts": {
+              "incident_id": "inc-8842",
+              "incident_start_utc": "2026-06-16T02:14:00+00:00",
+              "records_affected": 48211,
+              "attacker": "lockbit",
+              "containment": "partially_contained",
+              "materiality_determination_utc": "2026-06-16T02:31:00+00:00",
+              "statutory_deadline_utc": "2026-06-23T23:59:59+00:00"
+            }
+          },
+          "artifact_sha256": "8d09eb8d669b379ad20b63d506e23432384efea9addc820ac9b50c212ea2c7ad"
+        },
+        "receipt": {
+          "status": "accepted",
+          "regime": "SEC",
+          "channel": "EDGAR-8K-modeled",
+          "modeled_filing_id": "MODELED-SEC-8d09eb8d669b",
+          "accepted_at": "2026-06-16T06:00:00+00:00",
+          "artifact_sha256": "8d09eb8d669b379ad20b63d506e23432384efea9addc820ac9b50c212ea2c7ad",
+          "validated_fields": [
+            "Nature of the incident",
+            "Scope of the incident",
+            "Timing of the incident",
+            "Material impact or reasonably likely material impact"
+          ],
+          "stub_endpoint": true,
+          "caveat": "Modeled submission channel (local stub), not a live regulator endpoint. The submission FORMAT and the required-field contract validation are real; the network hop to the actual regulator is modeled. The filing id is a modeled accession-style id derived from the artifact bytes, not a real EDGAR accession number, and no government acknowledgement is fabricated."
+        }
+      },
+      {
+        "regime": "NIS2",
+        "branch": "nis2",
+        "artifact": {
+          "regime": "NIS2",
+          "channel": "NIS2-CSIRT-modeled",
+          "form_title": "NIS2 Article 23 incident notification",
+          "fields": [
+            {
+              "label": "Initial severity and impact assessment",
+              "body": "A significant incident affecting 48,211 records of Meridian Trust Bank N.V. was assessed as high severity; the core banking ledger, customer KYC store were impacted."
+            },
+            {
+              "label": "Indicators of compromise",
+              "body": "Known indicators: threat actor LockBit 3.0; affected systems core banking ledger, customer KYC store."
+            },
+            {
+              "label": "Suspected unlawful or malicious act and cross-border impact",
+              "body": "The incident is suspected to be a malicious act; cross-border impact is possible given the entity's EU and UK establishments."
+            }
+          ],
+          "payload": {
+            "regime": "NIS2",
+            "channel": "NIS2-CSIRT-modeled",
+            "form_title": "NIS2 Article 23 incident notification",
+            "cover_tag": "Article 23(4)(b) incident notification",
+            "fields": [
+              {
+                "label": "Initial severity and impact assessment",
+                "body": "A significant incident affecting 48,211 records of Meridian Trust Bank N.V. was assessed as high severity; the core banking ledger, customer KYC store were impacted."
+              },
+              {
+                "label": "Indicators of compromise",
+                "body": "Known indicators: threat actor LockBit 3.0; affected systems core banking ledger, customer KYC store."
+              },
+              {
+                "label": "Suspected unlawful or malicious act and cross-border impact",
+                "body": "The incident is suspected to be a malicious act; cross-border impact is possible given the entity's EU and UK establishments."
+              }
+            ],
+            "facts": {
+              "incident_start_utc": "2026-06-16T02:14:00+00:00",
+              "records_affected": 48211,
+              "attacker": "lockbit",
+              "containment": "partially_contained"
+            }
+          },
+          "artifact_sha256": "f9f4422dfd62bc9de9b3ff2ec550d2dfce999a758626effab824f592d24634d4"
+        },
+        "receipt": {
+          "status": "accepted",
+          "regime": "NIS2",
+          "channel": "NIS2-CSIRT-modeled",
+          "modeled_filing_id": "MODELED-NIS2-f9f4422dfd62",
+          "accepted_at": "2026-06-16T06:00:00+00:00",
+          "artifact_sha256": "f9f4422dfd62bc9de9b3ff2ec550d2dfce999a758626effab824f592d24634d4",
+          "validated_fields": [
+            "Initial severity and impact assessment",
+            "Indicators of compromise",
+            "Suspected unlawful or malicious act and cross-border impact"
+          ],
+          "stub_endpoint": true,
+          "caveat": "Modeled submission channel (local stub), not a live regulator endpoint. The submission FORMAT and the required-field contract validation are real; the network hop to the actual regulator is modeled. The filing id is a modeled accession-style id derived from the artifact bytes, not a real EDGAR accession number, and no government acknowledgement is fabricated."
+        }
+      },
+      {
+        "regime": "ICO",
+        "branch": "uk",
+        "artifact": {
+          "regime": "ICO",
+          "channel": "ICO-breach-portal-modeled",
+          "form_title": "UK GDPR Article 33 personal data breach notification to the ICO",
+          "fields": [
+            {
+              "label": "Nature of the breach",
+              "body": "A personal data breach at Meridian Trust Bank N.V. attributed to LockBit 3.0 affected the core banking ledger, customer KYC store."
+            },
+            {
+              "label": "Categories and approximate number of data subjects and records",
+              "body": "Approximately 48,211 records and their data subjects (name, address, account_number) were concerned."
+            },
+            {
+              "label": "Likely consequences",
+              "body": "The likely consequences include risk to the affected individuals from exposure of the categories of personal data involved."
+            },
+            {
+              "label": "Measures taken or proposed",
+              "body": "Containment is partially contained; remediation and notification measures are underway to mitigate the breach's adverse effects."
+            }
+          ],
+          "payload": {
+            "regime": "ICO",
+            "channel": "ICO-breach-portal-modeled",
+            "form_title": "UK GDPR Article 33 personal data breach notification to the ICO",
+            "cover_tag": "Article 33(3) personal data breach notification",
+            "fields": [
+              {
+                "label": "Nature of the breach",
+                "body": "A personal data breach at Meridian Trust Bank N.V. attributed to LockBit 3.0 affected the core banking ledger, customer KYC store."
+              },
+              {
+                "label": "Categories and approximate number of data subjects and records",
+                "body": "Approximately 48,211 records and their data subjects (name, address, account_number) were concerned."
+              },
+              {
+                "label": "Likely consequences",
+                "body": "The likely consequences include risk to the affected individuals from exposure of the categories of personal data involved."
+              },
+              {
+                "label": "Measures taken or proposed",
+                "body": "Containment is partially contained; remediation and notification measures are underway to mitigate the breach's adverse effects."
+              }
+            ],
+            "facts": {
+              "incident_start_utc": "2026-06-16T02:14:00+00:00",
+              "records_affected": 48211,
+              "attacker": "lockbit",
+              "containment": "partially_contained"
+            }
+          },
+          "artifact_sha256": "f245d7a2bf88b895233aa723f5a806daf9ff05b698b3cb2789daffd9e966233a"
+        },
+        "receipt": {
+          "status": "accepted",
+          "regime": "ICO",
+          "channel": "ICO-breach-portal-modeled",
+          "modeled_filing_id": "MODELED-ICO-f245d7a2bf88",
+          "accepted_at": "2026-06-16T06:00:00+00:00",
+          "artifact_sha256": "f245d7a2bf88b895233aa723f5a806daf9ff05b698b3cb2789daffd9e966233a",
+          "validated_fields": [
+            "Nature of the breach",
+            "Categories and approximate number of data subjects and records",
+            "Likely consequences",
+            "Measures taken or proposed"
+          ],
+          "stub_endpoint": true,
+          "caveat": "Modeled submission channel (local stub), not a live regulator endpoint. The submission FORMAT and the required-field contract validation are real; the network hop to the actual regulator is modeled. The filing id is a modeled accession-style id derived from the artifact bytes, not a real EDGAR accession number, and no government acknowledgement is fabricated."
+        }
+      }
+    ],
+    "regimes": [
+      "SEC",
+      "NIS2",
+      "ICO"
+    ],
+    "caveat": "Modeled submission channel (local stub), not a live regulator endpoint. The submission FORMAT and the required-field contract validation are real; the network hop to the actual regulator is modeled. The filing id is a modeled accession-style id derived from the artifact bytes, not a real EDGAR accession number, and no government acknowledgement is fabricated.",
+    "accepted_at": "2026-06-16T06:00:00+00:00"
+  },
+  "recruit": {
+    "recruited": true,
+    "in_scope": true,
+    "blast_radius": [
+      "EU: Meridian Trust Bank N.V.",
+      "UK: Meridian Trust UK Ltd (London subsidiary)"
+    ],
+    "jurisdiction": "UK",
+    "regime": "UK ICO",
+    "branch": "uk",
+    "ordinal": "fifth",
+    "peer_id": "uk-ico-agent-id",
+    "recruit_ts": "2026-06-16T03:40:00+00:00",
+    "clock_name": "UK ICO / GDPR personal-data breach (72h)",
+    "clock_started_at": "2026-06-16T03:40:00+00:00"
+  },
+  "release": {
+    "required_roles": [
+      "general_counsel",
+      "head_of_ir"
+    ],
+    "signoffs": [
+      {
+        "correlation_id": "inc-8842:nis2",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T04:50:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:nis2",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T05:00:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:sec",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T04:50:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:sec",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T05:00:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:dora",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T04:50:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:dora",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T05:00:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:uk",
+        "role": "general_counsel",
+        "actor": "gc",
+        "ts": "2026-06-16T04:50:00+00:00"
+      },
+      {
+        "correlation_id": "inc-8842:uk",
+        "role": "head_of_ir",
+        "actor": "lena",
+        "ts": "2026-06-16T05:00:00+00:00"
+      }
+    ],
+    "released_branches": [
+      "nis2",
+      "sec",
+      "dora",
+      "uk"
+    ]
+  },
+  "operability": {
+    "mode": "submit",
+    "clock_set": "NIS2 early warning (24h), NIS2 full notification (72h), DORA major-incident (72h), SEC 8-K (4 business days), UK ICO / GDPR personal-data breach (72h)",
+    "slo_line": "All 4 filings landed with at least 69.23h of statutory margin; 0 breach(es). Replay byte-identical.",
+    "phase_timings": [
+      {
+        "phase": "drafting",
+        "duration_hours": 0.67,
+        "start": "2026-06-16T02:31:00+00:00",
+        "end": "2026-06-16T03:11:00+00:00"
+      },
+      {
+        "phase": "contradiction_round_trip",
+        "duration_hours": 0.82,
+        "start": "2026-06-16T03:11:00+00:00",
+        "end": "2026-06-16T04:00:00+00:00"
+      },
+      {
+        "phase": "two_key_release",
+        "duration_hours": 1.0,
+        "start": "2026-06-16T04:00:00+00:00",
+        "end": "2026-06-16T05:00:00+00:00"
+      }
+    ],
+    "total_duration_hours": 2.48,
+    "throughput": {
+      "drafted": 4,
+      "filings": 4,
+      "released": 4,
+      "suppressed": 0,
+      "diff_conflicts": 0
+    },
+    "reliability": {
+      "recovered_retries": 0,
+      "duplicates_dropped": 0,
+      "chaos_events": 0,
+      "rejected_transitions": 0
+    },
+    "liveness": null,
+    "deadline_margins": [
+      {
+        "clock": "NIS2 early warning (24h)",
+        "correlation_id": "inc-8842:nis2-early",
+        "trigger_event": "becoming aware",
+        "deadline_utc": "2026-06-17T02:14:00+00:00",
+        "filed_utc": null,
+        "filed": false,
+        "margin_hours": null,
+        "breached": false
+      },
+      {
+        "clock": "NIS2 full notification (72h)",
+        "correlation_id": "inc-8842:nis2",
+        "trigger_event": "becoming aware",
+        "deadline_utc": "2026-06-19T02:14:00+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 69.23,
+        "breached": false
+      },
+      {
+        "clock": "DORA major-incident (72h)",
+        "correlation_id": "inc-8842:dora",
+        "trigger_event": "incident occurrence",
+        "deadline_utc": "2026-06-19T02:14:00+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 69.23,
+        "breached": false
+      },
+      {
+        "clock": "UK ICO / GDPR personal-data breach (72h)",
+        "correlation_id": "inc-8842:uk",
+        "trigger_event": "becoming aware",
+        "deadline_utc": "2026-06-19T03:40:00+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 70.67,
+        "breached": false
+      },
+      {
+        "clock": "SEC 8-K (4 business days)",
+        "correlation_id": "inc-8842:sec",
+        "trigger_event": "materiality determination",
+        "deadline_utc": "2026-06-23T23:59:59+00:00",
+        "filed_utc": "2026-06-16T05:00:00+00:00",
+        "filed": true,
+        "margin_hours": 187.0,
+        "breached": false
+      }
+    ],
+    "nearest_deadline": {
+      "clock": "NIS2 early warning (24h)",
+      "deadline_utc": "2026-06-17T02:14:00+00:00",
+      "margin_hours": null,
+      "filed": false
+    },
+    "min_filed_margin_hours": 69.23,
+    "any_breached": false,
+    "filings_landed": 4
+  },
+  "attestation": {
+    "regimes": [
+      {
+        "regime": "DORA major-incident (72h)",
+        "correlation_id": "inc-8842:dora",
+        "trigger_event": "incident occurrence",
+        "statutory_deadline": "2026-06-19T02:14:00+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 249240,
+        "margin_human": "2d 21h 14m",
+        "met": true
+      },
+      {
+        "regime": "NIS2 full notification (72h)",
+        "correlation_id": "inc-8842:nis2",
+        "trigger_event": "becoming aware",
+        "statutory_deadline": "2026-06-19T02:14:00+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 249240,
+        "margin_human": "2d 21h 14m",
+        "met": true
+      },
+      {
+        "regime": "NIS2 early warning (24h)",
+        "correlation_id": "inc-8842:nis2-early",
+        "trigger_event": "becoming aware",
+        "statutory_deadline": "2026-06-17T02:14:00+00:00",
+        "filed": false,
+        "filed_at": null,
+        "margin_seconds": null,
+        "margin_human": null,
+        "met": null
+      },
+      {
+        "regime": "SEC 8-K (4 business days)",
+        "correlation_id": "inc-8842:sec",
+        "trigger_event": "materiality determination",
+        "statutory_deadline": "2026-06-23T23:59:59+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 673199,
+        "margin_human": "7d 18h 59m",
+        "met": true
+      },
+      {
+        "regime": "UK ICO / GDPR personal-data breach (72h)",
+        "correlation_id": "inc-8842:uk",
+        "trigger_event": "becoming aware",
+        "statutory_deadline": "2026-06-19T03:40:00+00:00",
+        "filed": true,
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "margin_seconds": 254400,
+        "margin_human": "2d 22h 40m",
+        "met": true
+      }
+    ],
+    "filed_count": 4,
+    "met_count": 4,
+    "all_met": true
+  },
+  "edgar_export": {
+    "edgar_8k": {
+      "form_type": "8-K",
+      "item": "1.05",
+      "item_heading": "Item 1.05 Material Cybersecurity Incidents",
+      "form_title": "Form 8-K, Item 1.05 Material Cybersecurity Incidents",
+      "period_of_report": "2026-06-16",
+      "cover": {
+        "Name of registrant as specified in its charter": "Meridian Trust Bank N.V.",
+        "State or other jurisdiction of incorporation": "[to be supplied by filer at submission]",
+        "Commission file number": "[to be supplied by filer at submission]",
+        "Central Index Key (CIK)": "[to be supplied by filer at submission]",
+        "Date of report (date of earliest event reported)": "2026-06-16"
+      },
+      "cover_field_order": [
+        "Name of registrant as specified in its charter",
+        "State or other jurisdiction of incorporation",
+        "Commission file number",
+        "Date of report (date of earliest event reported)",
+        "Item 1.05 Material Cybersecurity Incidents"
+      ],
+      "content_elements": [
+        {
+          "label": "Nature of the incident",
+          "instruction": "State the material aspects of the NATURE of the cybersecurity incident from the fact-record (what occurred, the threat actor, the systems and data categories involved).",
+          "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+        },
+        {
+          "label": "Scope of the incident",
+          "instruction": "State the material aspects of the SCOPE of the incident from the fact-record (the number of records affected and the breadth across systems). Do not speculate beyond the fact-record.",
+          "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+        },
+        {
+          "label": "Timing of the incident",
+          "instruction": "State the material aspects of the TIMING of the incident from the fact-record (when it began, when it was discovered, and the current containment status as of a stated time).",
+          "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+        },
+        {
+          "label": "Material impact or reasonably likely material impact",
+          "instruction": "State the material impact, or reasonably likely material impact, on the registrant, including on financial condition and results of operations. Do not speculate beyond the fact-record.",
+          "body": "Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports."
+        }
+      ],
+      "facts": {
+        "incident_id": "inc-8842",
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 48211,
+        "attacker": "lockbit",
+        "containment": "partially_contained",
+        "materiality_determination_utc": "2026-06-16T02:31:00+00:00",
+        "statutory_deadline_utc": "2026-06-23T23:59:59+00:00"
+      },
+      "edgar_accession_number": null,
+      "export_note": "EDGAR-shaped Form 8-K Item 1.05 export of the real mandated fields. This is not a filed EDGAR submission: no accession number is assigned and the filer-identifying fields marked as placeholders are supplied by the registrant at submission. The Item 1.05 content elements and the CYD/iXBRL tagging use the real SEC concept names."
+    },
+    "ixbrl": "<ix:fragment xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\" form=\"8-K\" item=\"1.05\" period-of-report=\"2026-06-16\">\n<ix:header xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:xbrli=\"http://www.xbrl.org/2003/instance\" xmlns:xbrldi=\"http://xbrl.org/2006/xbrldi\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\">\n  <ix:references>\n    <link:schemaRef xmlns:link=\"http://www.xbrl.org/2003/linkbase\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" xlink:href=\"https://xbrl.sec.gov/cyd/2024/cyd-2024.xsd\"/>\n  </ix:references>\n  <ix:resources>\n    <xbrli:context id=\"C-inc-8842\">\n      <xbrli:entity>\n        <xbrli:identifier scheme=\"http://www.sec.gov/CIK\">0000000000</xbrli:identifier>\n        <xbrli:segment>\n          <xbrldi:explicitMember dimension=\"cyd:MaterialCybersecurityIncidentAxis\">cyd:Inc8842Member</xbrldi:explicitMember>\n        </xbrli:segment>\n      </xbrli:entity>\n      <xbrli:period>\n        <xbrli:instant>2026-06-16</xbrli:instant>\n      </xbrli:period>\n    </xbrli:context>\n  </ix:resources>\n</ix:header>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentTextBlock\" contextRef=\"C-inc-8842\">Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentNatureScopeTimingTextBlock\" contextRef=\"C-inc-8842\">Nature of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.\n\nScope of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.\n\nTiming of the incident: Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentMaterialImpactOrReasonablyLikelyMaterialImpactTextBlock\" contextRef=\"C-inc-8842\">Item 1.05 Material Cybersecurity Incidents\n\nNature of the incident: Meridian Trust Bank N.V. experienced a cybersecurity incident attributed to the threat actor LockBit 3.0, affecting its core banking ledger, customer KYC store.\n\nScope of the incident: The incident affected approximately 48,211 records across the affected systems (core banking ledger, customer KYC store).\n\nTiming of the incident: The incident began 2026-06-16T02:14:00+00:00; containment status is partially contained as of this filing.\n\nMaterial impact or reasonably likely material impact: The registrant is assessing the material impact, or reasonably likely material impact, on its financial condition and results of operations, confined to what the fact-record supports.</ix:nonNumeric>\n</ix:fragment>"
+  }
+}
