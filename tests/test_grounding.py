@@ -333,3 +333,65 @@ def test_eval_mode_runs_and_default_report_is_unchanged():
     assert proc_default.returncode == 0, proc_default.stdout + proc_default.stderr
     assert "VERDICT: PASS" in proc_default.stdout
     assert "Confusion matrix" not in proc_default.stdout
+
+
+# --- E5.1: the --ci and --ablation modes, and the default stays byte-identical
+# These pin that the two new additive flags run and exit 0, that they carry the
+# interval-with-n and the guard-on-vs-off delta, and CRITICALLY that the default
+# no-flag report is BYTE-IDENTICAL to itself across two runs and still exits 0,
+# so the new flags did not perturb the frozen judge receipt.
+def _run_report(*flags):
+    return subprocess.run(
+        [sys.executable, str(REPORT_SCRIPT), *flags],
+        capture_output=True, text=True)
+
+
+def test_ci_mode_runs_and_prints_intervals_with_n():
+    proc = _run_report("--ci")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = proc.stdout
+    assert "confidence intervals" in out.lower()
+    assert "Wilson 95%" in out
+    assert "bootstrap 95%" in out
+    # The point estimates and their n are reported (precision n=7, recall n=10).
+    assert "Precision point 0.857" in out
+    assert "(n=7)" in out
+    assert "Recall    point 0.600" in out
+    assert "(n=10)" in out
+
+
+def test_ci_mode_output_is_byte_identical_across_runs():
+    # The bootstrap is seeded, so the printed interval is the same every run.
+    a = _run_report("--ci")
+    b = _run_report("--ci")
+    assert a.returncode == 0 and b.returncode == 0
+    assert a.stdout == b.stdout
+
+
+def test_ablation_mode_runs_and_prints_the_delta():
+    proc = _run_report("--ablation")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = proc.stdout
+    assert "ablation" in out.lower()
+    assert "guard ON" in out
+    assert "guard OFF" in out
+    # Guard ON beats guard OFF on recall, reported as a positive delta.
+    assert "recall delta    +0.600" in out
+    # The guard-on confusion row (6/1/9/4) and the pass-everything row (0/0/10/10)
+    # are both present, so the ablation is visible, not summarized away.
+    assert "0.857     0.600     6     1     9     4" in out
+    assert "1.000     0.000     0     0    10    10" in out
+
+
+def test_new_flags_do_not_perturb_the_default_report():
+    # The default no-flag report exits 0 and is byte-identical to itself, the
+    # frozen judge receipt the new flags must not touch.
+    a = _run_report()
+    b = _run_report()
+    assert a.returncode == 0, a.stdout + a.stderr
+    assert b.returncode == 0
+    assert a.stdout == b.stdout
+    assert "VERDICT: PASS" in a.stdout
+    # The new modes' headings never leak into the default output.
+    assert "confidence intervals" not in a.stdout.lower()
+    assert "ablation" not in a.stdout.lower()

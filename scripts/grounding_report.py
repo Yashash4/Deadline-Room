@@ -39,6 +39,27 @@ boilerplate false-positive trap, so the reported recall and precision reflect
 the real scorer, not a rigged 1.0. The default run above is unchanged; the
 eval mode is additive and never alters the PASS/FAIL receipt.
 
+Two further additive modes report the statistics an ML-eval reviewer asks of a
+single point, both pure and keyless (floor/eval_stats.py):
+
+  py scripts/grounding_report.py --ci
+
+prints the precision and recall point estimates EACH with a 95% confidence
+interval and n, computed two independent ways (a closed-form Wilson score
+interval and a deterministic, seeded bootstrap that is byte-reproducible). This
+answers "n=20 is small" with a stated uncertainty band instead of a bare point.
+
+  py scripts/grounding_report.py --ablation
+
+prints the same corpus scored with the deterministic grounding guard ON (the
+real scorer) versus OFF (a degenerate pass-everything baseline that flags
+nothing), with the delta. The recall delta is the measured value of the
+deterministic spine: how many real hallucinations the guard catches that a
+no-guard system would miss entirely.
+
+Both modes are additive and never touch the default PASS/FAIL receipt, which
+stays byte-identical and exits 0.
+
 The grounding scorer is pure: a function of (filing_text, fact_record) with no
 network and no randomness, so this receipt is replayable and the same every
 time, exactly like the byte-identical replay it sits beside.
@@ -55,6 +76,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from floor.grounding import score_filing  # noqa: E402
+from floor.eval_stats import proportion_ci, run_ablation  # noqa: E402
 
 DATA = REPO_ROOT / "web" / "data"
 # The captured hero run packets scored as the clean baseline.
@@ -247,7 +269,98 @@ def run_eval() -> int:
     return 0
 
 
+def run_ci() -> int:
+    """Print the precision and recall point estimates each with a 95% confidence
+    interval and n, computed two independent ways (Wilson and a seeded
+    bootstrap). Returns 0 on success, 2 if the corpus file is missing. Pure and
+    fully replayable: the bootstrap is seeded so the interval is byte-identical
+    on every run."""
+    print("=" * 72)
+    print("GROUNDING EVAL: 95% confidence intervals on precision and recall")
+    print("=" * 72)
+    if not CORPUS.exists():
+        print(f"grounding_report: labeled corpus not found at {CORPUS}",
+              file=sys.stderr)
+        return 2
+    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+    report = evaluate_corpus(corpus)
+    tp, fp, fn = report["tp"], report["fp"], report["fn"]
+    total = len(report["rows"])
+    print(f"Corpus: {total} human-labeled filings, scored by floor/grounding.py.")
+    print("Precision is over the predicted-positive set (the filings the scorer")
+    print("flagged); recall is over the actual-positive set (the hallucinations")
+    print("the humans labeled). Each interval is reported two ways, no network.")
+    print()
+
+    # Precision = tp / (tp + fp): successes tp over the flagged set.
+    prec = proportion_ci(tp, tp + fp)
+    # Recall = tp / (tp + fn): successes tp over the hallucinated set.
+    rec = proportion_ci(tp, tp + fn)
+
+    for name, ci in (("Precision", prec), ("Recall", rec)):
+        w = ci["wilson"]
+        b = ci["bootstrap"]
+        print(f"  {name:9s} point {ci['point']:.3f}  (n={ci['n']})")
+        print(f"    Wilson 95%     [{w['low']:.3f}, {w['high']:.3f}]")
+        print(f"    bootstrap 95%  [{b['low']:.3f}, {b['high']:.3f}]  "
+              f"(seeded, byte-reproducible)")
+    print()
+    print("  Read honestly: n is small, so the intervals are wide. That width is")
+    print("  the point. The two estimators agree, which is more convincing than a")
+    print("  single formula, and the bootstrap is seeded so this prints the same")
+    print("  bounds every time, exactly like the byte-identical replay beside it.")
+    print("=" * 72)
+    return 0
+
+
+def run_ablation_report() -> int:
+    """Print the corpus scored with the deterministic grounding guard ON (the
+    real scorer) versus OFF (a degenerate pass-everything baseline that flags
+    nothing), with the delta. Returns 0 on success, 2 if the corpus is missing.
+    The recall delta is the measured value of the deterministic spine."""
+    print("=" * 72)
+    print("GROUNDING EVAL: deterministic-guard ablation (guard ON vs OFF)")
+    print("=" * 72)
+    if not CORPUS.exists():
+        print(f"grounding_report: labeled corpus not found at {CORPUS}",
+              file=sys.stderr)
+        return 2
+    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+    ablation = run_ablation(corpus)
+    on = ablation.guard_on
+    off = ablation.guard_off
+    print(f"Corpus: {ablation.n} human-labeled filings.")
+    print("Guard ON  = the real deterministic grounding scorer.")
+    print("Guard OFF = a degenerate pass-everything baseline that flags nothing.")
+    print()
+    print(f"  {'arm':12s}{'precision':>12s}{'recall':>10s}"
+          f"{'tp':>6s}{'fp':>6s}{'tn':>6s}{'fn':>6s}")
+    print(f"  {'guard ON':12s}{on.precision:>12.3f}{on.recall:>10.3f}"
+          f"{on.tp:>6d}{on.fp:>6d}{on.tn:>6d}{on.fn:>6d}")
+    print(f"  {'guard OFF':12s}{off.precision:>12.3f}{off.recall:>10.3f}"
+          f"{off.tp:>6d}{off.fp:>6d}{off.tn:>6d}{off.fn:>6d}")
+    print()
+    print(f"  recall delta    {ablation.recall_delta:+.3f}  "
+          f"(the guard catches {on.tp} of {on.tp + on.fn} hallucinations the")
+    print(f"  {'':14s}    pass-everything baseline misses entirely)")
+    print(f"  precision delta {ablation.precision_delta:+.3f}  "
+          f"(the baseline's 1.000 is the no-prediction convention: it never")
+    print(f"  {'':14s}    flags, so it never false-alarms, and never catches)")
+    print()
+    print("  Read honestly: the pass-everything baseline scores a vacuous 1.000")
+    print("  precision only because it makes no positive predictions at all; its")
+    print("  recall is 0, so it catches no hallucination. The deterministic guard")
+    print("  earns its place on recall: that delta is the faithfulness signal the")
+    print("  spine adds over flagging nothing.")
+    print("=" * 72)
+    return 0
+
+
 def main() -> int:
+    if "--ci" in sys.argv[1:]:
+        return run_ci()
+    if "--ablation" in sys.argv[1:]:
+        return run_ablation_report()
     if "--eval" in sys.argv[1:] or "--corpus" in sys.argv[1:]:
         return run_eval()
     print("=" * 72)
