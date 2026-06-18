@@ -2124,6 +2124,203 @@ def _render_cover(p: dict) -> str:
 </section>"""
 
 
+def _render_privilege(pr: dict) -> str:
+    """Render the privilege / work-product designation (E4.10): the war-room record
+    split into a DISCLOSABLE set (the filings + the statutory-required content) and
+    a PRIVILEGED set (the internal legal deliberation: the materiality /
+    reportability rationale, the determination memos, the reconciliation, the
+    Challenger critique, the legal-hold counsel direction), each item tagged with
+    its privilege basis (privileged legal advice / attorney work-product).
+
+    This is the latent malpractice trap a lawyer thinks of and an engineer does
+    not: after Capital One / Clark Hill / Rutter's, courts pierce privilege when the
+    incident record looks like ordinary business work. The split lets counsel hand a
+    regulator the disclosable set WITHOUT waiving privilege over the deliberation. It
+    is a PURE DERIVED classification keyed entirely by the run-log EVENT TYPE
+    (floor/privilege.py), never an LLM judging privilege: zero LLM, no now(); it
+    never enters the hashed run-log and gates nothing. The renderer never leaks the
+    privileged set into the disclosable set."""
+    if not pr or not pr.get("all_items"):
+        return ""
+    disclosable = pr.get("disclosable", [])
+    privileged = pr.get("privileged", [])
+    parts = [
+        "<h2>14. Privilege / work-product designation (the disclosable vs. "
+        "privileged split)</h2>",
+        f"<p class='sub'><strong>{_esc(pr.get('verdict', ''))}</strong></p>",
+        "<p class='sub'>A breach war-room record is a litigation goldmine for "
+        "plaintiffs unless it is structured to support attorney-client privilege and "
+        "attorney work-product protection. After Capital One, Clark Hill, and "
+        "Rutter's, courts pierce privilege when the incident record looks like "
+        "ordinary business / IR work rather than counsel-directed legal analysis. "
+        "Each artifact this run produced is classified by its event type into a "
+        "DISCLOSABLE set (the filings and the statutory-required content, produced to "
+        "a regulator) and a PRIVILEGED set (the internal legal deliberation, "
+        "withheld). The classification is a pure derived lookup on the event type, "
+        "never an LLM judging privilege; it never enters the hashed run-log and "
+        "gates nothing.</p>",
+    ]
+    # The disclosable set: what counsel hands a regulator.
+    parts.append("<h3>Disclosable set (produced to the regulator)</h3>")
+    if disclosable:
+        parts.append(_rows(
+            ["Artifact", "Privilege basis", "Records"],
+            [[i.get("description"), i.get("basis_label"), i.get("count")]
+             for i in disclosable]))
+    else:
+        parts.append("<p class='sub'>No disclosable artifact in this run.</p>")
+    # The privileged set: what counsel withholds, under the work-product banner.
+    parts.append("<h3>Privileged set (withheld: legal advice and attorney "
+                 "work-product)</h3>")
+    if privileged:
+        parts.append(
+            f"<p class='bad'><strong>{_esc(pr.get('banner', ''))}</strong></p>")
+        parts.append(_rows(
+            ["Artifact", "Privilege basis", "Records"],
+            [[i.get("description"), i.get("basis_label"), i.get("count")]
+             for i in privileged]))
+    else:
+        parts.append("<p class='sub'>No privileged artifact in this run.</p>")
+    return "".join(parts)
+
+
+def _render_timeline(t: dict) -> str:
+    """Render the unified incident timeline (E4.10): the single chronological
+    incident timeline reconstructed from the sealed run (every clock start, draft,
+    gate, veto, release, recruit, with its UTC timestamp + actor), the first
+    artifact the board and the examiner ask for.
+
+    It is a PURE DERIVED reconstruction over the assembled packet's events
+    (floor/timeline.py), ordered deterministically. Because every row comes from the
+    same events the run-log sha and the per-entry hash chain cover, the timeline is
+    tamper-evident: each entry is tied to the run's chain head, so re-ordering or
+    dropping a log entry re-orders or breaks the timeline and moves the head. Zero
+    LLM, no now(); it never enters the hashed run-log and gates nothing."""
+    if not t or not t.get("entries"):
+        return ""
+    chain_head = t.get("chain_head", "")
+    parts = [
+        "<h2>15. Unified incident timeline (reconstructed from the sealed log)</h2>",
+        "<p class='sub'>The first artifact a board or an examiner asks for is a "
+        "single authoritative timeline: when did we detect, when did each statutory "
+        "clock start, when did each draft post, when did the diff gate, when was a "
+        "contradiction vetoed, when did the fact change, when did each filing "
+        "release. This is that timeline, reconstructed purely from the sealed run's "
+        "events and ordered chronologically. It is derived read-only from the same "
+        "events the run-log sha and the per-entry hash chain cover, so it is itself "
+        "tamper-evident: re-ordering or dropping a log entry re-orders or breaks this "
+        "timeline and moves the chain head.</p>",
+    ]
+    if chain_head:
+        parts.append(
+            f"<p class='sub'>Sealed at the per-entry hash chain head "
+            f"<span class='hash'>{_esc(chain_head)}</span>.</p>")
+    rows = []
+    for e in t.get("entries", []):
+        actor = e.get("actor") or "(system)"
+        note = e.get("deadline_note") or ""
+        rows.append([e.get("ts"), actor, e.get("description"),
+                     e.get("branch") or "(global)", note])
+    parts.append(_rows(
+        ["UTC timestamp", "Actor", "Event", "Branch", "Deadline context"], rows))
+    return "".join(parts)
+
+
+def _render_after_action(a: dict) -> str:
+    """Render the after-action artifact (E4.10): a structured post-incident summary
+    derived from the run (the response-time margin per clock, where the facts
+    changed, what the Challenger caught, the controls that operated, any breaches),
+    the stub a NIS2 / DORA final report or an internal lessons-learned starts from.
+
+    It is a PURE DERIVED assembly over the same sealed run (floor/timeline.py); no
+    LLM 'lessons' prose is generated, the Warden stays deterministic. Zero LLM, no
+    now(); it never enters the hashed run-log and gates nothing."""
+    if not a or not a.get("clock_margins"):
+        return ""
+    filed = a.get("deadlines_filed", 0)
+    met = a.get("deadlines_met", 0)
+    breached = a.get("deadlines_breached", 0)
+    top_cls = "ok" if breached == 0 and filed else "bad"
+    parts = [
+        "<h2>16. After-action review (post-incident summary)</h2>",
+        f"<p class='{top_cls}'><strong>{met} of {filed} filed statutory deadline(s) "
+        f"met"
+        + (f"; {breached} breached." if breached else "; no breaches.")
+        + "</strong></p>",
+        "<p class='sub'>Every regulated incident triggers a formal post-incident "
+        "review (the NIS2 final report at one month, the DORA final report, the "
+        "internal lessons-learned). This is the auto-assembled stub: the "
+        "response-time margin per statutory clock, where the facts changed, what the "
+        "adversarial Challenger caught, and the controls that operated, derived "
+        "purely from the sealed run. No LLM lessons prose is generated here; it is a "
+        "pure read over the run's own evidence.</p>",
+    ]
+    # The per-clock response-time margins.
+    rows = []
+    for m in a.get("clock_margins", []):
+        if m.get("filed"):
+            status = "MET" if m.get("met") else "BREACHED"
+        else:
+            status = "running"
+        rows.append([m.get("clock"), m.get("deadline"),
+                     m.get("filed_at") or "(running)",
+                     m.get("margin_human"), status])
+    parts.append("<p class='sub'>Response-time margin per statutory clock "
+                 "(deadline minus filed-at):</p>")
+    parts.append(_rows(
+        ["Clock", "Statutory deadline", "Filed (UTC)", "Margin", "Status"], rows))
+    # The narrative findings.
+    findings = a.get("findings", [])
+    if findings:
+        parts.append("<p class='sub'>Findings:</p>")
+        parts.append("<ul>" + "".join(
+            f"<li>{_esc(f)}</li>" for f in findings) + "</ul>")
+    # Where the facts changed.
+    fc = a.get("fact_change")
+    if fc:
+        parts.append(
+            f"<p class='sub'>Facts changed mid-incident: "
+            f"<code>{_esc(fc.get('fact_key'))}</code> revised from "
+            f"<code>{_esc(fc.get('old_value'))}</code> to "
+            f"<code>{_esc(fc.get('new_value'))}</code>; "
+            f"{len(fc.get('reopened_branches', []))} branch(es) reopened and "
+            f"reconciled before re-filing.</p>")
+    return "".join(parts)
+
+
+def _render_policy_version(pv: dict) -> str:
+    """Render the render-time policy / config version stamp (E4.10): which policy
+    version governed this run.
+
+    The stamp is a composite sha over the governing catalogs (regimes.yaml,
+    controls.yaml) and the Warden rule set (the transition-authority table). It is
+    derived at packet RENDER time and is deliberately NOT folded into the hashed
+    run-log, so the sealed run-log sha and byte-identical replay are untouched. A
+    reader knows which policy version produced this run; an edit to any policy
+    component moves the composite sha."""
+    if not pv or not pv.get("policy_version"):
+        return ""
+    composite = pv.get("policy_version", "")
+    parts = [
+        "<h2>17. Governing policy version (render-time stamp)</h2>",
+        "<p class='sub'>Regulation in this system is configuration: the statutory "
+        "clocks and mandated fields (regimes.yaml), the control mapping "
+        "(controls.yaml), and the Warden rule set (the transition-authority table) "
+        "are declarative. So a reader knows which policy version governed THIS run, "
+        "the packet stamps a composite version sha over the exact governing policy "
+        "bytes. The stamp is derived at RENDER time and is deliberately NOT folded "
+        "into the hashed run-log: the run-log seals the run that occurred, the policy "
+        "version is metadata about the policy that governed it, so the sealed "
+        "run-log sha and byte-identical replay are untouched. An edit to any policy "
+        "component moves this composite sha.</p>",
+        f"<p class='sub'>Governing policy version: "
+        f"<span class='hash'>{_esc(composite)}</span></p>",
+    ]
+    rows = [[c.get("name"), c.get("sha256")] for c in pv.get("components", [])]
+    parts.append(_rows(["Policy component", "Component sha256"], rows))
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -2197,6 +2394,10 @@ def _render_html(p: dict) -> str:
     timestamp_block = _render_timestamp(p.get("timestamp", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
     operability_block = _render_operability(p.get("operability", {}))
+    privilege_block = _render_privilege(p.get("privilege", {}))
+    timeline_block = _render_timeline(p.get("timeline", {}))
+    after_action_block = _render_after_action(p.get("after_action", {}))
+    policy_version_block = _render_policy_version(p.get("policy_version", {}))
     pending = p.get("pending", [])
     pending_section = (
         "<h2>9. Pending (more Band agent keys required)</h2><ul>"
@@ -2414,6 +2615,14 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {reliability_block}
 
 {operability_block}
+
+{privilege_block}
+
+{timeline_block}
+
+{after_action_block}
+
+{policy_version_block}
 
 <h2>8. Byte-identical replay</h2>
 <p>Run-log SHA-256: <span class="hash">{_esc(replay.get('original_sha256', ''))}</span></p>

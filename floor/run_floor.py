@@ -149,6 +149,9 @@ from floor.completeness import completeness_record  # noqa: E402
 from floor.consistency import consistency_record  # noqa: E402
 from floor.controls import controls_record  # noqa: E402
 from floor.sod import sod_record  # noqa: E402
+from floor.privilege import privilege_record  # noqa: E402
+from floor.timeline import after_action_record, timeline_record  # noqa: E402
+from floor.policy_version import policy_version_record  # noqa: E402
 from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
@@ -4634,6 +4637,43 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         pass
     if ecosystem_exports:
         packet["ecosystem_exports"] = ecosystem_exports
+    # ---- E4.10: privilege / work-product designation, unified timeline,
+    # after-action, and the render-time policy version. All four are PURE DERIVED
+    # over the packet just assembled, computed AFTER every other block so they see
+    # the full run. None enters the hashed run-log; each is omitted cleanly when its
+    # input is absent. ----
+    #
+    # Privilege: the war-room record split into a DISCLOSABLE set (the filings +
+    # statutory content) and a PRIVILEGED set (the legal deliberation: the
+    # materiality / reportability rationale, the determination memos, the
+    # reconciliation, the Challenger critique, the legal-hold direction), each tagged
+    # with its basis (privileged legal advice / attorney work-product). Classified
+    # ENTIRELY by event type, never an LLM judging privilege; the post-Capital-One
+    # discovery trap. Read-only over the packet; never in the hashed run-log.
+    privilege = privilege_record(packet)
+    if privilege:
+        packet["privilege"] = privilege
+    # Unified incident timeline: the single chronological incident timeline
+    # reconstructed from the sealed run's events (every clock start, draft, gate,
+    # veto, release, recruit, with its UTC timestamp + actor), ordered
+    # deterministically. Tied to the run's chain head so it is tamper-evident.
+    # Read-only over the packet; never in the hashed run-log.
+    timeline = timeline_record(packet)
+    if timeline:
+        packet["timeline"] = timeline
+    # After-action: the structured post-incident summary (response-time margin per
+    # clock, where the facts changed, what the Challenger caught, the controls that
+    # operated, any breaches), the stub a NIS2 / DORA final report starts from. No
+    # LLM lessons prose; pure read. Read-only over the packet; never in the run-log.
+    after_action = after_action_record(packet)
+    if after_action:
+        packet["after_action"] = after_action
+    # Policy version: a RENDER-TIME composite sha over the governing catalogs
+    # (regimes.yaml, controls.yaml) and the Warden rule set, so a reader knows which
+    # policy version governed this run. It is RENDER-TIME ONLY: it is NEVER folded
+    # into the hashed run-log JSONL (that would move the sealed sha), so the four
+    # sealed captures' run-log shas and byte-identical replay are untouched.
+    packet["policy_version"] = policy_version_record(packet)
     return packet
 
 
