@@ -1321,6 +1321,58 @@ def _render_grounding(g: dict) -> str:
     return "".join(parts)
 
 
+def _render_rag_grounding(r: dict) -> str:
+    """Render the RAG-grounding section (E5.9): per filing, the REAL regulation
+    passages a pure deterministic retriever fetched to ground the drafting, and which
+    of them the drafter actually cited with a [cite: <id>] tag.
+
+    This is a derive-at-render-time receipt over the OUT-OF-LOG retrieval trace, the
+    same posture as the grounding receipt. The retriever is pure and deterministic
+    (hand-rolled BM25 over the committed corpus index); nothing it produced reached a
+    gate, a clock, the diff, or the hashed run-log, so byte-identical replay is
+    untouched. It makes visible that each filing was drafted against the real
+    statutory text, not the model's memory of it, and that an examiner can trace a
+    cited sentence to the clause id."""
+    if not r or not r.get("retrievals"):
+        return ""
+    retriever = r.get("retriever", "bm25")
+    retrieved = r.get("passages_retrieved", 0)
+    cited = r.get("passages_cited", 0)
+    parts = [
+        "<h2>7e. Regulation passages that grounded each filing (RAG)</h2>",
+        "<p class='sub'>Before drafting, a pure deterministic retriever "
+        f"(<code>{_esc(retriever)}</code> over the committed regulation corpus) "
+        "fetched the real statutory passages that ground each regime, and the "
+        "drafter wrote against them and cited them inline with [cite: id] tags. The "
+        "retriever is a pure function of (corpus, regime, fact-record): no network, "
+        "no clock, no randomness. It feeds only the drafting prompt and this "
+        "receipt, never a gate or the hashed run-log, so replay stays "
+        "byte-identical.</p>",
+        f"<p class='ok'><strong>Retrieved {_esc(retrieved)} passage(s) across "
+        f"{_esc(len(r['retrievals']))} filing(s); the drafters cited "
+        f"{_esc(cited)} of them.</strong></p>",
+    ]
+    for rec in r["retrievals"]:
+        regime = rec.get("regime") or rec.get("branch")
+        parts.append(f"<h3>{_esc(regime)} filing</h3>")
+        rows = []
+        for p in rec.get("passages", []):
+            was_cited = p.get("cited")
+            badge_cls = "ok" if was_cited else "na"
+            badge = "CITED" if was_cited else "retrieved"
+            rows.append(
+                "<tr><td><code>" + _esc(p.get("id")) + "</code></td>"
+                "<td>" + _esc(p.get("citation")) + "</td>"
+                "<td>" + _esc(p.get("title")) + "</td>"
+                "<td>" + _esc(f"{p.get('score', 0.0):.3f}") + "</td>"
+                f"<td class='{badge_cls}'>" + badge + "</td></tr>")
+        parts.append(
+            "<table><thead><tr><th>Citation id</th><th>Citation</th>"
+            "<th>Title</th><th>BM25 score</th><th>Drafter</th></tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table>")
+    return "".join(parts)
+
+
 def _render_calibration(c: dict) -> str:
     """Render the per-claim confidence + calibration receipt (E5.5): per filing,
     each load-bearing claim the drafter self-reported a CONFIDENCE on (low / medium
@@ -2508,6 +2560,7 @@ def _render_html(p: dict) -> str:
     security_block = _render_security(p.get("security", {}))
     regime_expert_block = _render_regime_expert(p.get("regime_expert", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
+    rag_grounding_block = _render_rag_grounding(p.get("rag_grounding", {}))
     calibration_block = _render_calibration(p.get("calibration", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
@@ -2723,6 +2776,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {regime_expert_block}
 
 {grounding_block}
+
+{rag_grounding_block}
 
 {calibration_block}
 

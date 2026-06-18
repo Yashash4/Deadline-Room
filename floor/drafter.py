@@ -225,6 +225,41 @@ _CITATION_INSTRUCTION = (
 )
 
 
+# The one system-prompt instruction added when grounding chunks are injected
+# (E5.9). It tells the model the GROUNDING CONTEXT block carries the real regulation
+# text and asks it to write against the cited requirements and add trailing
+# [cite: <id>] tags resolving to the passage ids in that block. Deterministic text;
+# it changes only the prose, never the [CLAIMS] block (attached after sanitization),
+# and the [cite: id] tags are validated out-of-log by floor/citation_check.py.
+_GROUNDING_INSTRUCTION = (
+    "You are given a GROUNDING CONTEXT block of authoritative regulation passages, "
+    "each prefixed with its citation id as [id: <id>]. Write the filing against "
+    "those real statutory requirements, not from memory. After a sentence that "
+    "satisfies one of the cited requirements, add a trailing tag [cite: <id>] naming "
+    "the passage id (for example [cite: GDPR-Art33]). Cite only ids that appear in "
+    "the grounding block; do not invent a citation id."
+)
+
+
+def _grounding_context_block(grounding_chunks) -> str:
+    """Render the injected GROUNDING CONTEXT block from a list of retrieved chunks,
+    or "" when none are supplied. Each chunk is expected to carry id, citation,
+    title, and text attributes (a floor.rag.RetrievedChunk). Pure string work; it
+    carries no Warden control fence and states no incident facts, so it changes only
+    the human-readable prose, exactly like the format skeleton. A trailing blank line
+    separates it from the drafting instruction that follows in the user message."""
+    if not grounding_chunks:
+        return ""
+    lines = [
+        "GROUNDING CONTEXT (authoritative regulation text, cite these ids):",
+    ]
+    for c in grounding_chunks:
+        lines.append("")
+        lines.append(f"[id: {c.id}] {c.citation} ({c.title})")
+        lines.append(c.text)
+    return "\n".join(lines) + "\n\n"
+
+
 def _citation_fields_hint(fact_record: dict) -> str:
     """A one-line reminder listing the exact citeable field names, so the model
     cites real keys. Deterministic from the record; affects only the prose tags,
@@ -434,7 +469,7 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
                  regime: str = "NIS2", format_profile=None, expert_profile=None,
-                 emit_confidence: bool = False,
+                 emit_confidence: bool = False, grounding_chunks=None,
                  max_tokens: int = 700, timeout: int = 90,
                  max_attempts: int = 1) -> str:
     """Draft the regulatory notification body for one regime from the canonical
@@ -466,12 +501,27 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     ungrounded is a loud calibration miss). It DEFAULTS OFF, and even when on it rides
     in the prose half exactly like the rationale: the [CLAIMS] block is appended after
     sanitization and is never affected, and the confidence is out-of-log, so a fresh
-    run reproduces the sealed sha and replay stays byte-identical."""
+    run reproduces the sealed sha and replay stays byte-identical.
+
+    grounding_chunks, when supplied, is the list of floor.rag.RetrievedChunk records
+    a pure deterministic retriever fetched for this regime from the regulation corpus
+    (E5.9). They are injected as a "GROUNDING CONTEXT (authoritative regulation text,
+    cite these ids)" block ahead of the fact-record, plus one system-prompt
+    instruction to write against the cited requirements and add trailing [cite: <id>]
+    tags. This grounds the filing in the REAL statutory text instead of the model's
+    memory of it, and lets an examiner trace a sentence to the clause it satisfies.
+    Like format_profile and expert_profile it changes ONLY the human-readable prose:
+    the [CLAIMS] block is attached after sanitization and is never affected, the
+    citations ride in the prose half, and the retrieval is out-of-log, so a fresh run
+    reproduces the sealed sha and replay stays byte-identical. It DEFAULTS None, so a
+    caller that passes no chunks is byte-identical to before."""
     expert = (
         "\n\n" + _expert_system_prompt(expert_profile)
         if expert_profile is not None else ""
     )
     confidence = "\n\n" + _confidence_prompt() if emit_confidence else ""
+    grounding_system = "\n\n" + _GROUNDING_INSTRUCTION if grounding_chunks else ""
+    grounding_block = _grounding_context_block(grounding_chunks)
     if format_profile is not None:
         from floor.formats import prompt_for
         structure = prompt_for(format_profile)
@@ -481,10 +531,11 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             "state only what the supplied fact-record supports, never invent "
             "facts, and you fill the exact mandated fields the form requires. No "
             "markdown headers; plain prose under each field label. "
-            + _CITATION_INSTRUCTION + expert + confidence
+            + _CITATION_INSTRUCTION + expert + confidence + grounding_system
         )
         user = (
-            f"Draft the {regime} mandatory incident notification from this "
+            grounding_block
+            + f"Draft the {regime} mandatory incident notification from this "
             f"canonical fact-record. Use ONLY these facts. Keep it under 300 "
             f"words total.\n\n{structure}\n\n"
             f"FACT RECORD (canonical, authoritative):\n"
@@ -503,10 +554,11 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         "what the supplied fact-record supports, never invent facts, and you keep "
         "the structure a regulator expects. No markdown headers, plain prose with "
         "short labelled sections. "
-        + _CITATION_INSTRUCTION + expert + confidence
+        + _CITATION_INSTRUCTION + expert + confidence + grounding_system
     )
     user = (
-        f"Draft the {regime} mandatory incident notification (the 72-hour "
+        grounding_block
+        + f"Draft the {regime} mandatory incident notification (the 72-hour "
         f"notification where applicable) from this canonical fact-record. "
         f"Use ONLY these facts. Keep it under 300 words.\n\n"
         f"FACT RECORD (canonical, authoritative):\n{json.dumps(fact_record, indent=2)}\n\n"

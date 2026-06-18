@@ -96,11 +96,34 @@ def _parse_confidence(text: str) -> float | None:
     return value
 
 
+def _grounding_context_block(grounding_chunks) -> str:
+    """Render the SEC Item 1.05 materiality-standard passages as a GROUNDING CONTEXT
+    block injected ahead of the fact-record (E5.9), or "" when none are supplied.
+
+    Putting the REAL materiality standard (the Item 1.05 determination anchor and
+    the CorpFin C&DIs) in front of the assessor makes it apply the actual SEC test,
+    not the model's memory of it. Pure string work; it carries no Warden control
+    fence and states no incident facts, so the [MATERIALITY] verdict block the gate
+    consumes is unchanged whether grounding is on or off."""
+    if not grounding_chunks:
+        return ""
+    lines = [
+        "GROUNDING CONTEXT (authoritative SEC materiality standard, apply this "
+        "standard):",
+    ]
+    for c in grounding_chunks:
+        lines.append("")
+        lines.append(f"[id: {c.id}] {c.citation} ({c.title})")
+        lines.append(c.text)
+    return "\n".join(lines) + "\n\n"
+
+
 def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.FEATHERLESS,
                        api_key: str | None = None, branch: str = "sec",
                        max_tokens: int = 500, timeout: int = 90,
                        max_attempts: int = 1,
-                       emit_confidence: bool = False):
+                       emit_confidence: bool = False,
+                       grounding_chunks=None):
     """Run the LLM materiality assessment on the named provider and return a typed
     verdict. The boolean is parsed off the fenced block; the memo is the prose
     above it. Raises DrafterError on transport or unparsable verdict.
@@ -119,10 +142,20 @@ def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.
     (MaterialityVerdict, confidence_or_None) tuple instead. The confidence is
     eval/calibration metadata only; the Warden never reads it, and the verdict
     block it gates on is unchanged either way. The return-type switch is
-    deliberate so the default path's return value is byte-identical to today."""
+    deliberate so the default path's return value is byte-identical to today.
+
+    grounding_chunks, when supplied (E5.9), is the list of floor.rag.RetrievedChunk
+    SEC Item 1.05 materiality-standard passages a pure deterministic retriever
+    fetched from the regulation corpus. They are injected as a GROUNDING CONTEXT
+    block ahead of the fact-record so the assessor applies the REAL standard rather
+    than its memory of it. Like emit_confidence it changes only the prose half: the
+    fenced [MATERIALITY] verdict block the Warden gate consumes is unchanged, the
+    retrieval is out-of-log, and grounding_chunks DEFAULTS None so the default path
+    is byte-identical to before."""
     system = _SYSTEM + _CONFIDENCE_SUFFIX if emit_confidence else _SYSTEM
     user = (
-        "Assess the materiality of this cybersecurity incident for an SEC Item "
+        _grounding_context_block(grounding_chunks)
+        + "Assess the materiality of this cybersecurity incident for an SEC Item "
         "1.05 8-K determination. Use ONLY these facts. Write a short memo (under "
         "150 words) explaining your reasoning, then the fenced verdict block.\n\n"
         f"FACT RECORD (canonical):\n{json.dumps(fact_record, indent=2)}"

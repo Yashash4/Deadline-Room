@@ -156,10 +156,32 @@ def _parse_objection_line(line: str) -> tuple[str, str, str] | None:
     return (parts.get("target", ""), parts.get("claim", ""), parts.get("reason", ""))
 
 
+def _grounding_context_block(grounding_chunks) -> str:
+    """Render the regime requirement passages as a GROUNDING CONTEXT block injected
+    ahead of the fact-record (E5.9), or "" when none are supplied.
+
+    With the real requirement clause in front of the Challenger, an objection can
+    cite the specific statutory requirement the filing fails to meet, not just "this
+    feels unsupported". Pure string work; it carries no Warden control fence and
+    states no incident facts, so the [CHALLENGE] block the adjudicator parses and the
+    deterministic grounding-oracle cross-check are unchanged whether grounding is on
+    or off."""
+    if not grounding_chunks:
+        return ""
+    lines = [
+        "GROUNDING CONTEXT (authoritative regulation text the filing must satisfy):",
+    ]
+    for c in grounding_chunks:
+        lines.append("")
+        lines.append(f"[id: {c.id}] {c.citation} ({c.title})")
+        lines.append(c.text)
+    return "\n".join(lines) + "\n\n"
+
+
 def challenge_filing(filing_text: str, fact_record: dict, *, model: str,
                      provider: str = roster.FEATHERLESS, api_key: str | None = None,
                      branch: str = "", max_tokens: int = 600, timeout: int = 90,
-                     max_attempts: int = 1) -> Challenge:
+                     max_attempts: int = 1, grounding_chunks=None) -> Challenge:
     """Run the LLM adversarial review of one drafted filing and return a parsed
     Challenge. The objections are CONTENT, never a gate. Raises DrafterError on a
     transport failure or an unparsable [CHALLENGE] block.
@@ -168,10 +190,20 @@ def challenge_filing(filing_text: str, fact_record: dict, *, model: str,
     the challenge is over the human-readable filing the regulator would read, and
     the structured claims envelope is the Warden's deterministic concern, not the
     Challenger's. max_attempts threads to llm_complete (default 1, so offline
-    behavior and byte-identical replay are unchanged)."""
+    behavior and byte-identical replay are unchanged).
+
+    grounding_chunks, when supplied (E5.9), is the list of floor.rag.RetrievedChunk
+    requirement passages a pure deterministic retriever fetched from the regulation
+    corpus. They are injected as a GROUNDING CONTEXT block ahead of the fact-record
+    so an objection can cite the specific clause the filing fails. It changes only
+    the prompt prose: the parsed [CHALLENGE] block and the deterministic
+    floor/challenge_adjudicate.py cross-check are UNCHANGED (the adjudicator still
+    cross-checks every objection against the pure grounding scorer), the retrieval is
+    out-of-log, and grounding_chunks DEFAULTS None so the default path is unchanged."""
     prose = strip_citations(_strip_claims(filing_text or "")).strip()
     user = (
-        "Challenge this regulatory breach-notification filing. Object only where "
+        _grounding_context_block(grounding_chunks)
+        + "Challenge this regulatory breach-notification filing. Object only where "
         "the prose is not supported by the fact-record. Use ONLY these facts as "
         "the ground truth.\n\n"
         f"FACT RECORD (canonical, authoritative):\n{json.dumps(fact_record, indent=2)}\n\n"

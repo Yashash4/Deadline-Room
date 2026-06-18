@@ -485,6 +485,18 @@ AMENDMENT_BRANCHES = ("sec", "nis2")
 # scripts/grounding_report.py, NEVER by the Warden and never as a release
 # condition. 1.0 means every load-bearing span in the prose must trace to a fact.
 GROUNDING_THRESHOLD = 1.0
+
+# RAG grounding (E5.9). When ON, each content-producing draft retrieves the real
+# regulation passages for its regime from the committed corpus (floor/rag.py, a pure
+# deterministic BM25 retriever) and injects them into the drafting prompt so the
+# filing is written against, and cites, the real statutory text. It DEFAULTS OFF so
+# the existing run path and the four SEALED captures stay byte-identical: grounding
+# only ever changes human-readable prose (the [CLAIMS] block is attached after
+# sanitization and is never affected) and the retrieval is recorded OUT-OF-LOG on the
+# trace, so even with it ON the hashed run-log and replay are byte-identical; the
+# flag's only purpose is to keep the committed captures from re-drafting their prose.
+RAG_ENABLED = False
+RAG_K = 4
 TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
 TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
 # The amendment re-release runs the SAME two-key gate as the initial release:
@@ -688,6 +700,15 @@ class StepTrace:
         # the hashed run-log event stream, so byte-identical replay and the
         # run-log sha are untouched.
         self.injections: list[dict] = []
+        # RAG retrieval records, one per grounded drafting call (E5.9). Like the
+        # challenges and the Warden-in-room posts, these are an ADDITIVE visibility
+        # artifact: the retriever is pure and deterministic, the chunks it fetched
+        # feed only the content-producing LLM prompt and this trace, and NOTHING here
+        # is ever appended to the hashed run-log event stream. So byte-identical
+        # replay and the sealed run-log sha are untouched. Each entry records which
+        # regime retrieved, the ordered citation ids + titles retrieved, and (filled
+        # at packet-derive time) which the drafter actually cited.
+        self.retrievals: list[dict] = []
 
     def say(self, line: str) -> None:
         self.lines.append(line)
@@ -716,6 +737,21 @@ class StepTrace:
         visibility receipt for the packet and is NEVER written to the hashed
         run-log, so replay stays byte-identical."""
         self.injections.append(event)
+
+    def record_retrieval(self, branch: str, regime: str, chunks: list) -> None:
+        """Record one RAG retrieval (E5.9) as OUT-OF-LOG derived trace, exactly the
+        recovered_retries pattern. The retriever is pure; the chunks feed the
+        content-producing prompt and this trace only. NEVER written to the hashed
+        run-log, so byte-identical replay and the sealed sha are untouched."""
+        self.retrievals.append({
+            "branch": branch,
+            "regime": regime,
+            "retrieved": [
+                {"id": c.id, "citation": c.citation, "title": c.title,
+                 "score": round(c.score, 6)}
+                for c in chunks
+            ],
+        })
 
 
 def _proto(sm: ProtocolStateMachine, trace: StepTrace, corr: str, event: Event,
@@ -1217,7 +1253,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         # The facts this drafter asserts. In inject_contradiction the SEC drafter
         # carries a perturbed incident_start; everyone else carries canonical.
         claim_facts = _claim_facts_for(branch, base_mode, corrupted=True)
-        fn = _draft_fn_for(branch, r, draft_fns, draft_timeout, provider_set)
+        fn = _draft_fn_for(branch, r, draft_fns, draft_timeout, provider_set,
+                           trace=trace)
         _provider, _model = roster.resolve(r, provider_set)
 
         # Begin liveness tracking for this drafter at its first heartbeat (the
@@ -3959,7 +3996,8 @@ def _recruit_phase(target, *, role, ts_recruit, ts_facts, ts_draft, actor,
     client.join(room_id)
     recruit_facts = {k: fact_record[k] for k in
                      ("incident_start_utc", "records_affected", "attacker", "containment")}
-    fn = _recruit_draft_fn(target, role, draft_fns, draft_timeout, provider_set)
+    fn = _recruit_draft_fn(target, role, draft_fns, draft_timeout, provider_set,
+                           trace=trace)
 
     _proto(sm, trace, corr, Event.DRAFT_STARTED, ts_draft, actor, "drafter")
     prose = fn(recruit_facts)
@@ -4041,7 +4079,7 @@ def _recruit_client(target, role, clients):
                     dedup_namespace=f"draft:{target.branch}")
 
 
-def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set):
+def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set, trace=None):
     if draft_fns is not None and target.branch in draft_fns:
         return draft_fns[target.branch]
     provider, model = roster.resolve(role, provider_set)
@@ -4058,8 +4096,10 @@ def _recruit_draft_fn(target, role, draft_fns, timeout, provider_set):
         # extra tokens cost nothing on the dev plan. format_profile gives the
         # recruited drafter its real per-regime field skeleton (ICO Art. 33,
         # NYDFS 500.17).
+        grounding = _rag_grounding(target.branch, role.regime, body_facts, trace)
         return draft_filing(body_facts, model=model, provider=provider,
                             regime=role.regime, format_profile=profile,
+                            grounding_chunks=grounding,
                             timeout=timeout, max_tokens=2000)
     return fn
 
@@ -4240,7 +4280,26 @@ def _format_profile_for_branch(branch: str):
     return format_profile_for(pid) if pid else None
 
 
-def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER_DEV):
+def _rag_grounding(branch, regime, fact_record, trace):
+    """Retrieve the regime's grounding chunks for a draft and record the retrieval
+    out-of-log on the trace (E5.9). Returns the chunk list to inject, or None when
+    RAG is off, no trace is in scope, or the regime is ungrounded (so the caller
+    passes grounding_chunks=None and drafts exactly as before).
+
+    The retriever (floor/rag.py) is pure and deterministic, and record_retrieval
+    appends ONLY to the out-of-log trace, so this never touches the hashed run-log."""
+    if not RAG_ENABLED or trace is None:
+        return None
+    from floor import rag
+    chunks = rag.retrieve(branch, fact_record, k=RAG_K)
+    if not chunks:
+        return None
+    trace.record_retrieval(branch, regime, chunks)
+    return chunks
+
+
+def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER_DEV,
+                  trace=None):
     if draft_fns is not None:
         return draft_fns[branch]
 
@@ -4256,8 +4315,10 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
         # fill (e.g. SEC 8-K Item 1.05's mandated elements).
         body_facts = dict(CANONICAL_FACTS)
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
+        grounding = _rag_grounding(branch, role.regime, body_facts, trace)
         return draft_filing(body_facts, model=model, provider=provider,
                             regime=role.regime, format_profile=profile,
+                            grounding_chunks=grounding,
                             timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
     return fn
 
@@ -4316,6 +4377,78 @@ def _clock_rows(clocks) -> list[dict]:
     return rows
 
 
+def _strip_cite_for_scoring(filings: list) -> list:
+    """Return copies of the filing dicts with the corpus [cite: <id>] tags (E5.9)
+    removed from `text` before the grounding oracle scores them. A citation id can
+    contain a number (DORA-RTS-2024/1772) that the count-shaped-number check would
+    otherwise mis-read as an ungrounded record count, so the prose the oracle scores
+    must exclude the citation tags exactly as it already ignores the structured
+    [CLAIMS] block. On a non-RAG filing there are no [cite:] tags, so this is a no-op
+    copy and the score (and the four sealed captures, which carry no [cite:] tags)
+    are byte-identical. The [field: <name>] tags are untouched here; they are scored
+    by validate_citations inside score_filings against the original text."""
+    from floor.citation_check import strip_corpus_citations
+    out = []
+    for f in filings:
+        if "[cite:" in f.get("text", ""):
+            g = dict(f)
+            g["text"] = strip_corpus_citations(f["text"])
+            out.append(g)
+        else:
+            out.append(f)
+    return out
+
+
+def _rag_grounding_block(trace, all_filings) -> dict:
+    """Derive the RAG-grounding packet section from the out-of-log retrieval trace
+    and the filing prose (E5.9). For each retrieval, resolve which retrieved chunk
+    ids the matching filing actually cited (a [cite: <id>] tag whose id was among the
+    retrieved set). Pure derive-at-render-time: reads logged DATA, adds nothing to
+    the hashed stream. Returns {} when nothing was retrieved."""
+    if not trace.retrievals:
+        return {}
+    from floor.citation_check import check_citations
+    # Map branch -> the set of cite ids that appear in any of that branch's filings.
+    cited_by_branch: dict[str, set[str]] = {}
+    for f in all_filings:
+        branch = str(f.get("branch") or f.get("regime") or "")
+        text = f.get("text", "")
+        # The full set of corpus ids cited in the prose, regardless of resolution;
+        # the retrieval section only cares which RETRIEVED ids were cited.
+        result = check_citations(text, chunk_ids=set())
+        # check_citations with an empty id set marks every cited id unresolved, but
+        # `cited` is the full ordered list of ids the prose tagged, which is what we
+        # intersect against the retrieved set below.
+        cited_by_branch.setdefault(branch, set()).update(result.cited)
+    retrievals = []
+    total_retrieved = 0
+    total_cited = 0
+    for entry in trace.retrievals:
+        branch = entry["branch"]
+        cited = cited_by_branch.get(branch, set())
+        passages = []
+        for c in entry["retrieved"]:
+            was_cited = c["id"] in cited
+            passages.append({
+                "id": c["id"], "citation": c["citation"],
+                "title": c["title"], "score": c["score"],
+                "cited": was_cited,
+            })
+            total_retrieved += 1
+            if was_cited:
+                total_cited += 1
+        retrievals.append({
+            "branch": branch, "regime": entry["regime"],
+            "passages": passages,
+        })
+    return {
+        "retrievals": retrievals,
+        "retriever": "bm25",
+        "passages_retrieved": total_retrieved,
+        "passages_cited": total_cited,
+    }
+
+
 def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
                      breached, filings, mode, ledger, replay_info,
                      amendment=None, provider_set=roster.PROVIDER_DEV,
@@ -4351,17 +4484,18 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                 if affected_party is not None else None)
     base_regulator = [f for f in base_filings if not f.get("non_regulator")]
     ap_filings = [f for f in base_filings if f.get("non_regulator")]
-    grounding = score_filings(base_regulator, CANONICAL_FACTS)
+    grounding = score_filings(_strip_cite_for_scoring(base_regulator), CANONICAL_FACTS)
     if ap_filings:
         ap_record = dict(CANONICAL_FACTS)
         if ap_scope is not None:
             ap_record["records_affected"] = ap_scope
-        grounding += score_filings(ap_filings, ap_record)
+        grounding += score_filings(_strip_cite_for_scoring(ap_filings), ap_record)
     if amended_count:
         amended_record = dict(CANONICAL_FACTS)
         amended_record["records_affected"] = AMENDED_RECORDS
-        grounding += score_filings(all_filings[len(all_filings) - amended_count:],
-                                   amended_record)
+        grounding += score_filings(
+            _strip_cite_for_scoring(all_filings[len(all_filings) - amended_count:]),
+            amended_record)
     packet = {
         "incident": {
             "incident_id": INCIDENT_ID,
@@ -4423,6 +4557,14 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "neutralized": sum(1 for i in trace.injections
                                if i.get("disposition") == "neutralized"),
         } if trace.injections else {},
+        # RAG grounding receipt (E5.9): the real regulation passages a pure
+        # deterministic retriever fetched for each filing, and which of them the
+        # drafter actually cited with a [cite: <id>] tag. Derived at packet time from
+        # the OUT-OF-LOG retrieval trace (trace.retrievals) and the filing prose; it
+        # is NEVER in the hashed run-log, so the run-log sha and byte-identical replay
+        # are untouched. Omitted entirely when RAG did not run.
+        "rag_grounding": _rag_grounding_block(trace, all_filings)
+        if trace.retrievals else {},
         "breached_clocks": breached,
         "replay": replay_info,
         "pending": [],

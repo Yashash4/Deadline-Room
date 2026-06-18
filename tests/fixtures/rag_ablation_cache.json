@@ -1,0 +1,39 @@
+{
+  "about": "Committed cache for scripts/grounding_report.py --rag-ablation. Per regime it carries two drafted filings over the canonical fact-record: an ungrounded 'baseline' (drafted with no regulation passages injected) and a RAG 'grounded' filing (drafted with the real corpus passages injected, citing them inline with [cite: <id>] tags). The SCORING (the grounding oracle) and the citation_accuracy check always re-run real and keyless over floor/corpus/index.json and floor/grounding.py; only this raw drafted filing text is cached. 'source' is 'live' (real model output) or 'illustrative' (a labeled plausible draft used only when a live call was unavailable). source is 'illustrative' here because no live provider was reachable at record time (the Band room cap, the Featherless concurrency slot held, and the AI/ML gateway flaky); the cited [cite: <id>] tags are the actual ids the pure BM25 retriever returns for each regime, so the citation_accuracy re-runs real against the real corpus. To refresh against live models run py scripts/grounding_report.py --rag-ablation --record (needs FEATHERLESS_API_KEY and AIML_API_KEY).",
+  "source": "illustrative",
+  "fact_record": {
+    "incident_id": "inc-8842",
+    "incident_start_utc": "2026-06-16T02:14:00+00:00",
+    "records_affected": 48211,
+    "attacker": "LockBit 3.0",
+    "containment": "partially_contained",
+    "systems": [
+      "core banking ledger",
+      "customer KYC store"
+    ],
+    "data_categories": [
+      "name",
+      "address",
+      "account_number"
+    ],
+    "regulated_entity": "Meridian Trust Bank N.V.",
+    "competent_authority": "national CSIRT (NIS2)"
+  },
+  "regimes": [
+    {
+      "regime": "nis2_full",
+      "baseline": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. Approximately 48,211 records were affected [field: records_affected]. The affected systems are the core banking ledger and the customer KYC store. The incident is partially contained [field: containment]. The entity is filing this mandatory breach notification and is coordinating with the relevant competent authority.",
+      "grounded": "On 16 June 2026, Meridian Trust Bank N.V. detected a significant cybersecurity incident attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. This notification is submitted under the NIS2 incident-reporting duty [cite: NIS2-Art23(1)]. Approximately 48,211 records were affected [field: records_affected]; the affected services are the core banking ledger and the customer KYC store, and the entity assesses the impact as significant within the meaning of the Directive [cite: NIS2-Recital-101]. The incident is partially contained [field: containment]. An initial notification is provided here within the statutory window and an intermediate update will follow as the assessment matures [cite: NIS2-Art23(4)] [cite: NIS2-Art23(3)]."
+    },
+    {
+      "regime": "uk_ico",
+      "baseline": "On 16 June 2026, Meridian Trust Bank N.V. experienced a personal data breach attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. Approximately 48,211 records were affected [field: records_affected], including name, address, and account number data. The breach is partially contained [field: containment]. The controller is notifying the supervisory authority.",
+      "grounded": "On 16 June 2026, Meridian Trust Bank N.V. experienced a personal data breach attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. This notification is made to the competent supervisory authority without undue delay and within 72 hours of becoming aware [cite: GDPR-Art33], the breach being a breach of security within the meaning of the Regulation [cite: GDPR-Art4(12)]. Approximately 48,211 records were affected [field: records_affected], comprising name, address, and account number data subject to the data-minimisation principle [cite: GDPR-Art5(1)(c)]. The breach is partially contained [field: containment]. The controller's lead supervisory authority is determined by its main establishment [cite: GDPR-Art56(1)]."
+    },
+    {
+      "regime": "dora",
+      "baseline": "On 16 June 2026, Meridian Trust Bank N.V. identified a major ICT-related incident attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. Approximately 48,211 records were affected [field: records_affected]. The affected systems include the core banking ledger. The incident is partially contained [field: containment]. The entity is reporting to the relevant competent authority.",
+      "grounded": "On 16 June 2026, Meridian Trust Bank N.V. identified a major ICT-related incident attributed to LockBit 3.0 [field: incident_start_utc] [field: attacker]. The incident meets the classification thresholds for a major incident [cite: DORA-RTS-2024/1772-Art1] and is reported to the relevant competent authority [cite: DORA-2022/2554-Art19(1)]. Approximately 48,211 records were affected [field: records_affected] across the core banking ledger. The incident is partially contained [field: containment]. This is the initial notification within the reporting time limit; an intermediate report and a final report will follow [cite: DORA-RTS-2024/1772-Art19] [cite: DORA-2022/2554-Art19(4)]."
+    }
+  ]
+}
