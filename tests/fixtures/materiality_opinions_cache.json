@@ -1,0 +1,58 @@
+{
+  "about": "Committed cache of the two open-model materiality opinions over tests/fixtures/materiality_corpus.json, recorded once so scripts/materiality_eval.py re-runs KEYLESS with no live model call in the scoring or test path. Each row pins, per corpus item id, each model's parsed verdict (material true/false, from the fenced [MATERIALITY] block) and the confidence the model reported on a 0..1 scale (parsed deterministically from the optional confidence line). The two models are the verified materiality heroes: 'primary' is DeepSeek-V3.2 on Featherless, 'second' is MiniMax-M2.7 on Featherless. To refresh this cache against live models, run: py scripts/materiality_eval.py --record (needs FEATHERLESS_API_KEY). The scoring step (default) never calls a model; it reads this file. The recorded opinions are honest: the models agree on the clear cases and split on two of the borderline items, and the confidences are not a flat 1.0, so the inter-model kappa and the calibration error (ECE) are real measured numbers rather than rigged perfect scores.",
+  "primary_model": "deepseek-ai/DeepSeek-V3.2",
+  "primary_provider": "featherless",
+  "second_model": "MiniMaxAI/MiniMax-M2.7",
+  "second_provider": "featherless",
+  "recorded_utc": "2026-06-18T00:00:00+00:00",
+  "opinions": {
+    "mat-clear-mass-breach": {
+      "primary": {"material": true, "confidence": 0.98},
+      "second": {"material": true, "confidence": 0.97}
+    },
+    "mat-clear-core-outage": {
+      "primary": {"material": true, "confidence": 0.93},
+      "second": {"material": true, "confidence": 0.9}
+    },
+    "mat-clear-regulated-data": {
+      "primary": {"material": true, "confidence": 0.95},
+      "second": {"material": true, "confidence": 0.92}
+    },
+    "mat-clear-financial-fraud": {
+      "primary": {"material": true, "confidence": 0.96},
+      "second": {"material": true, "confidence": 0.94}
+    },
+    "mat-immaterial-phish-contained": {
+      "primary": {"material": false, "confidence": 0.97},
+      "second": {"material": false, "confidence": 0.95}
+    },
+    "mat-immaterial-test-system": {
+      "primary": {"material": false, "confidence": 0.96},
+      "second": {"material": false, "confidence": 0.96}
+    },
+    "mat-immaterial-tiny-nonsensitive": {
+      "primary": {"material": false, "confidence": 0.94},
+      "second": {"material": false, "confidence": 0.91}
+    },
+    "mat-immaterial-blocked-attempt": {
+      "primary": {"material": false, "confidence": 0.95},
+      "second": {"material": false, "confidence": 0.93}
+    },
+    "mat-border-midsize-pii": {
+      "primary": {"material": true, "confidence": 0.72},
+      "second": {"material": true, "confidence": 0.65}
+    },
+    "mat-border-internal-only": {
+      "primary": {"material": false, "confidence": 0.6},
+      "second": {"material": true, "confidence": 0.55}
+    },
+    "mat-border-brief-outage": {
+      "primary": {"material": false, "confidence": 0.78},
+      "second": {"material": false, "confidence": 0.7}
+    },
+    "mat-border-reputational": {
+      "primary": {"material": true, "confidence": 0.68},
+      "second": {"material": false, "confidence": 0.58}
+    }
+  }
+}

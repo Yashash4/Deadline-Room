@@ -1,0 +1,211 @@
+{
+  "about": "Labeled materiality corpus for the SEC Item 1.05 cross-check. Each entry is a cybersecurity-incident fact summary, the human GROUND-TRUTH material/immaterial label, and a short rationale for that label. The label is what a careful securities-law reviewer says about the incident under the SEC 'substantial likelihood that a reasonable investor would consider it important' standard, NOT what any model says. The corpus deliberately spans (a) clear-material incidents (large record counts, regulated data, core systems, financial exposure), (b) clear-immaterial incidents (tiny, contained, non-sensitive, no operational or reputational harm), and (c) borderline cases where the qualitative and quantitative factors pull in different directions. scripts/materiality_eval.py scores TWO open models against the human label, reports Cohen's kappa between the two model opinions, each model's accuracy vs the human label, and the confidence calibration (ECE). The model opinions are recorded once (live) into materiality_opinions_cache.json so the scoring re-runs keyless with no model call in the test path. The two model ids match the verified materiality heroes: the primary is DeepSeek-V3.2 on Featherless, the second is MiniMax-M2.7 on Featherless.",
+  "primary_source": "featherless:deepseek-ai/DeepSeek-V3.2",
+  "second_source": "featherless:MiniMaxAI/MiniMax-M2.7",
+  "entries": [
+    {
+      "id": "mat-clear-mass-breach",
+      "label": "material",
+      "rationale": "2.1 million customer records of regulated KYC and account data exfiltrated from a core banking ledger by a named ransomware actor. The scale, the regulated data, and the core-system compromise all point the same way: a reasonable investor would plainly consider this important.",
+      "fact_record": {
+        "incident_id": "inc-9001",
+        "incident_start_utc": "2026-06-16T02:14:00+00:00",
+        "records_affected": 2100000,
+        "attacker": "LockBit 3.0",
+        "containment": "partially_contained",
+        "systems": ["core banking ledger", "customer KYC store"],
+        "data_categories": ["name", "address", "account_number", "ssn"],
+        "regulated_entity": "Meridian Trust Bank N.V.",
+        "financial_exposure_usd": 42000000,
+        "operational_disruption": "online banking offline 18 hours"
+      }
+    },
+    {
+      "id": "mat-clear-core-outage",
+      "label": "material",
+      "rationale": "A trading-platform outage of more than a full business day during market hours, with a public regulator notification and direct revenue loss. Even with modest record exposure, the operational disruption and financial impact are clearly investor-relevant.",
+      "fact_record": {
+        "incident_id": "inc-9002",
+        "incident_start_utc": "2026-05-02T13:00:00+00:00",
+        "records_affected": 1200,
+        "attacker": "unattributed DDoS",
+        "containment": "contained",
+        "systems": ["retail trading platform", "order matching engine"],
+        "data_categories": [],
+        "regulated_entity": "Atlas Securities LLC",
+        "financial_exposure_usd": 9800000,
+        "operational_disruption": "trading halted 27 hours during market hours"
+      }
+    },
+    {
+      "id": "mat-clear-regulated-data",
+      "label": "material",
+      "rationale": "Roughly 310,000 records including health and government-id data exfiltrated. The sensitivity of the regulated data categories carries the materiality even though the record count is well below the mass-breach tier.",
+      "fact_record": {
+        "incident_id": "inc-9003",
+        "incident_start_utc": "2026-03-11T08:40:00+00:00",
+        "records_affected": 310000,
+        "attacker": "BlackCat",
+        "containment": "contained",
+        "systems": ["claims processing", "member portal"],
+        "data_categories": ["name", "ssn", "health_record", "government_id"],
+        "regulated_entity": "Northwind Health Holdings Inc.",
+        "financial_exposure_usd": 6500000,
+        "operational_disruption": "claims intake delayed 3 days"
+      }
+    },
+    {
+      "id": "mat-clear-financial-fraud",
+      "label": "material",
+      "rationale": "An eight-figure fraudulent wire driven by a compromised treasury workstation, disclosed to the audit committee. The direct financial loss alone clears the bar a reasonable investor would weigh.",
+      "fact_record": {
+        "incident_id": "inc-9004",
+        "incident_start_utc": "2026-01-22T19:05:00+00:00",
+        "records_affected": 0,
+        "attacker": "BEC actor (unnamed)",
+        "containment": "contained",
+        "systems": ["treasury workstation", "payment initiation gateway"],
+        "data_categories": [],
+        "regulated_entity": "Cascade Industrial Corp.",
+        "financial_exposure_usd": 31000000,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-immaterial-phish-contained",
+      "label": "immaterial",
+      "rationale": "A single phished mailbox caught within the hour, no data exfiltration, no regulated data, no operational impact, no financial loss. Small, contained, and non-sensitive: not material.",
+      "fact_record": {
+        "incident_id": "inc-9101",
+        "incident_start_utc": "2026-04-09T11:20:00+00:00",
+        "records_affected": 0,
+        "attacker": "commodity phishing kit",
+        "containment": "contained",
+        "systems": ["one employee mailbox"],
+        "data_categories": [],
+        "regulated_entity": "Cascade Industrial Corp.",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-immaterial-test-system",
+      "label": "immaterial",
+      "rationale": "A non-production test environment with synthetic data was probed and isolated. No real customer data, no production system, no business impact. Not investor-relevant.",
+      "fact_record": {
+        "incident_id": "inc-9102",
+        "incident_start_utc": "2026-02-18T03:50:00+00:00",
+        "records_affected": 0,
+        "attacker": "automated scanner",
+        "containment": "contained",
+        "systems": ["staging sandbox (synthetic data only)"],
+        "data_categories": [],
+        "regulated_entity": "Atlas Securities LLC",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-immaterial-tiny-nonsensitive",
+      "label": "immaterial",
+      "rationale": "Forty marketing-list email addresses exposed through a misconfigured form, already public-facing data, no sensitive categories, negligible scale. Not material.",
+      "fact_record": {
+        "incident_id": "inc-9103",
+        "incident_start_utc": "2026-06-01T15:10:00+00:00",
+        "records_affected": 40,
+        "attacker": "none (misconfiguration)",
+        "containment": "contained",
+        "systems": ["marketing newsletter form"],
+        "data_categories": ["email"],
+        "regulated_entity": "Northwind Health Holdings Inc.",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-immaterial-blocked-attempt",
+      "label": "immaterial",
+      "rationale": "An intrusion attempt blocked at the perimeter with zero records touched and zero downtime. A defended attack that never landed is not a material incident.",
+      "fact_record": {
+        "incident_id": "inc-9104",
+        "incident_start_utc": "2026-05-27T22:30:00+00:00",
+        "records_affected": 0,
+        "attacker": "credential-stuffing botnet",
+        "containment": "contained",
+        "systems": ["customer login (WAF blocked)"],
+        "data_categories": [],
+        "regulated_entity": "Meridian Trust Bank N.V.",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-border-midsize-pii",
+      "label": "material",
+      "rationale": "Borderline: ~55,000 records with names and account numbers (a regulated category) from a customer-facing system, contained but exfiltrated. The regulated data and customer-facing exposure tip a mid-size count over the line for a bank.",
+      "fact_record": {
+        "incident_id": "inc-9201",
+        "incident_start_utc": "2026-04-30T07:15:00+00:00",
+        "records_affected": 55000,
+        "attacker": "unattributed",
+        "containment": "contained",
+        "systems": ["customer KYC store"],
+        "data_categories": ["name", "account_number"],
+        "regulated_entity": "Meridian Trust Bank N.V.",
+        "financial_exposure_usd": 750000,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-border-internal-only",
+      "label": "immaterial",
+      "rationale": "Borderline the other way: ~70,000 records exposed but they are internal employee directory entries (names and work emails), no customer or regulated data, contained, no operational or financial impact. The internal, non-sensitive nature keeps it immaterial despite the count.",
+      "fact_record": {
+        "incident_id": "inc-9202",
+        "incident_start_utc": "2026-03-19T09:00:00+00:00",
+        "records_affected": 70000,
+        "attacker": "insider misconfiguration",
+        "containment": "contained",
+        "systems": ["internal staff directory"],
+        "data_categories": ["employee_name", "work_email"],
+        "regulated_entity": "Cascade Industrial Corp.",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "none"
+      }
+    },
+    {
+      "id": "mat-border-brief-outage",
+      "label": "immaterial",
+      "rationale": "Borderline: a 40-minute degradation of a non-critical reporting dashboard outside market hours, no data exposure, no customer impact. The disruption is too brief and too peripheral to be investor-relevant.",
+      "fact_record": {
+        "incident_id": "inc-9203",
+        "incident_start_utc": "2026-05-15T02:05:00+00:00",
+        "records_affected": 0,
+        "attacker": "unattributed",
+        "containment": "contained",
+        "systems": ["internal analytics dashboard"],
+        "data_categories": [],
+        "regulated_entity": "Atlas Securities LLC",
+        "financial_exposure_usd": 0,
+        "operational_disruption": "reporting dashboard slow 40 minutes off-hours"
+      }
+    },
+    {
+      "id": "mat-border-reputational",
+      "label": "material",
+      "rationale": "Borderline: only ~8,000 records, but they are high-net-worth client portfolios leaked publicly with active press coverage. The reputational and qualitative harm to a wealth manager makes a small-count incident material.",
+      "fact_record": {
+        "incident_id": "inc-9204",
+        "incident_start_utc": "2026-02-04T16:45:00+00:00",
+        "records_affected": 8000,
+        "attacker": "hacktivist leak",
+        "containment": "contained",
+        "systems": ["private wealth client portal"],
+        "data_categories": ["name", "portfolio_holdings", "net_worth"],
+        "regulated_entity": "Atlas Securities LLC",
+        "financial_exposure_usd": 1200000,
+        "operational_disruption": "none, but public leak with national press coverage"
+      }
+    }
+  ]
+}

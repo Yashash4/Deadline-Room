@@ -355,3 +355,124 @@ def _tally(tp: int, fp: int, tn: int, fn: int,
     else:
         tn += 1
     return tp, fp, tn, fn
+
+
+# ---------------------------------------------------------------------------
+# Inter-rater agreement (Cohen's kappa) and calibration (expected calibration
+# error). The materiality cross-check (scripts/materiality_eval.py) runs two
+# different open models on the same labeled corpus; these two helpers turn the
+# bare "agree/disagree" into the numbers an eval scientist asks for: kappa
+# separates agree-because-the-case-is-easy from agree-informatively, and ECE
+# measures whether a model's stated confidence matches how often it is right.
+# Both are pure functions of their inputs, no LLM, no clock, no network.
+# ---------------------------------------------------------------------------
+
+
+def cohen_kappa(rater_a: list, rater_b: list) -> float:
+    """Cohen's kappa: chance-corrected agreement between two raters.
+
+    `rater_a` and `rater_b` are equal-length sequences of categorical labels
+    (the two models' material/immaterial verdicts, for instance). Kappa is
+
+        kappa = (p_observed - p_chance) / (1 - p_chance)
+
+    where p_observed is the fraction of items the two raters agree on and
+    p_chance is the agreement expected if each rater assigned labels
+    independently at their own observed marginal rates. Kappa is 1.0 for perfect
+    agreement, 0.0 for agreement no better than chance, and negative when the
+    raters agree LESS than chance would predict. It is the right statistic when
+    one label dominates: two raters who both call almost everything "material"
+    will share a high raw agreement that kappa correctly discounts.
+
+    Pure function of the two label sequences. Conventions at the edges: an empty
+    input is a ValueError (no agreement is defined over zero items); when the
+    raters agree on every item AND only one label ever appears, p_chance is 1.0
+    and the (1 - p_chance) denominator is 0, which is the degenerate
+    perfect-agreement-on-a-constant case, reported as kappa 1.0.
+    """
+    if len(rater_a) != len(rater_b):
+        raise ValueError(
+            f"cohen_kappa needs equal-length raters, got "
+            f"{len(rater_a)} and {len(rater_b)}")
+    n = len(rater_a)
+    if n == 0:
+        raise ValueError("cohen_kappa is undefined over zero items")
+    agree = sum(1 for a, b in zip(rater_a, rater_b) if a == b)
+    p_observed = agree / n
+    labels = set(rater_a) | set(rater_b)
+    p_chance = 0.0
+    for label in labels:
+        pa = sum(1 for a in rater_a if a == label) / n
+        pb = sum(1 for b in rater_b if b == label) / n
+        p_chance += pa * pb
+    denom = 1.0 - p_chance
+    if denom == 0.0:
+        # Both raters assigned the same single label to every item: they agree
+        # perfectly on a constant. Chance-correction is undefined (any split is
+        # "expected"), so report the perfect raw agreement as kappa 1.0.
+        return 1.0
+    return (p_observed - p_chance) / denom
+
+
+def expected_calibration_error(confidences: list[float],
+                               correctness: list[int], *,
+                               bins: int = 10) -> float:
+    """The expected calibration error (ECE) of a set of confident predictions.
+
+    `confidences` are the model's stated confidences in [0, 1], one per
+    prediction; `correctness` is the matching 0/1 outcome (1 = the prediction
+    was right against the ground-truth label). ECE partitions the predictions
+    into `bins` equal-width confidence buckets over [0, 1], and for each
+    non-empty bucket compares the AVERAGE stated confidence against the ACTUAL
+    accuracy in that bucket. The ECE is the count-weighted mean of those gaps:
+
+        ECE = sum over bins of (n_bin / N) * |mean_confidence_bin - accuracy_bin|
+
+    ECE is 0.0 when the model is perfectly calibrated (in every bucket where it
+    says 80% it is right 80% of the time) and grows as the stated confidence
+    drifts from the realised accuracy. It is the standard single-number summary
+    of a reliability diagram. Pure function of the two sequences and the bin
+    count.
+
+    Bin assignment uses left-closed, right-open buckets [k/bins, (k+1)/bins),
+    with the maximal confidence 1.0 folded into the top bucket so it is never
+    dropped. Conventions at the edges: empty input is a ValueError; a confidence
+    outside [0, 1] or a non-0/1 correctness value is a ValueError, because a
+    silently clamped bad input would corrupt the receipt.
+    """
+    if len(confidences) != len(correctness):
+        raise ValueError(
+            f"expected_calibration_error needs equal-length inputs, got "
+            f"{len(confidences)} confidences and {len(correctness)} outcomes")
+    if not confidences:
+        raise ValueError("expected_calibration_error is undefined over zero items")
+    if bins < 1:
+        raise ValueError(f"expected_calibration_error needs bins >= 1, got {bins}")
+    for c in confidences:
+        if not 0.0 <= c <= 1.0:
+            raise ValueError(
+                f"expected_calibration_error confidences must be in [0, 1], "
+                f"got {c!r}")
+    for y in correctness:
+        if y not in (0, 1):
+            raise ValueError(
+                f"expected_calibration_error correctness must be 0/1, got {y!r}")
+    n = len(confidences)
+    bin_conf_sum = [0.0] * bins
+    bin_correct_sum = [0] * bins
+    bin_count = [0] * bins
+    for c, y in zip(confidences, correctness):
+        idx = int(math.floor(c * bins))
+        if idx == bins:  # fold the exact 1.0 into the top bucket
+            idx = bins - 1
+        bin_conf_sum[idx] += c
+        bin_correct_sum[idx] += y
+        bin_count[idx] += 1
+    ece = 0.0
+    for k in range(bins):
+        if bin_count[k] == 0:
+            continue
+        mean_conf = bin_conf_sum[k] / bin_count[k]
+        accuracy = bin_correct_sum[k] / bin_count[k]
+        ece += (bin_count[k] / n) * abs(mean_conf - accuracy)
+    return ece

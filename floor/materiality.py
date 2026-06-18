@@ -40,6 +40,26 @@ _SYSTEM = (
     "[MATERIALITY]\nmaterial=yes|no\n[/MATERIALITY]"
 )
 
+# OPTIONAL confidence add (E5.3). This single sentence is appended to the system
+# prompt ONLY when assess_materiality is called with emit_confidence=True. The
+# DEFAULT path never appends it, so _SYSTEM and the whole request are
+# byte-identical to today and replay is unaffected. The instruction asks for a
+# SEPARATE confidence line that lives OUTSIDE the fenced [MATERIALITY] block, so
+# the verdict block the Warden gate consumes is unchanged whether confidence is
+# on or off. The confidence is calibration metadata for the eval receipt only;
+# the Warden never reads it.
+_CONFIDENCE_SUFFIX = (
+    " On the line immediately before the [MATERIALITY] block, also emit your "
+    "confidence in this verdict as a single line exactly: confidence=0.NN (a "
+    "number from 0 to 1, where 1 is fully certain). The verdict block itself "
+    "stays exactly as specified above."
+)
+
+# Parses the optional confidence line. Deliberately anchored to its own
+# 'confidence=' key so it never collides with the 'material=' line inside the
+# fenced block. Returns None when absent (the default, no-confidence path).
+_CONFIDENCE = re.compile(r"(?im)^\s*confidence\s*=\s*([+-]?[0-9]*\.?[0-9]+)\s*$")
+
 
 def _parse_verdict_bool(text: str) -> bool:
     m = _VERDICT.search(text or "")
@@ -56,17 +76,51 @@ def _parse_verdict_bool(text: str) -> bool:
     raise DrafterError("materiality verdict block has no parsable material= line")
 
 
+def _parse_confidence(text: str) -> float | None:
+    """Deterministically parse the optional confidence line from a reply, or None.
+
+    Looks ONLY at confidence lines OUTSIDE the fenced [MATERIALITY] block (the
+    block is stripped first), so the gate's verdict block is never read for this.
+    A value outside [0, 1] is clamped into range. Returns None when the model
+    emitted no parsable confidence line, which is the default path. Pure function
+    of the reply text."""
+    outside = _VERDICT.sub("", text or "")
+    m = _CONFIDENCE.search(outside)
+    if not m:
+        return None
+    value = float(m.group(1))
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
 def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.FEATHERLESS,
                        api_key: str | None = None, branch: str = "sec",
                        max_tokens: int = 500, timeout: int = 90,
-                       max_attempts: int = 1) -> MaterialityVerdict:
+                       max_attempts: int = 1,
+                       emit_confidence: bool = False):
     """Run the LLM materiality assessment on the named provider and return a typed
     verdict. The boolean is parsed off the fenced block; the memo is the prose
     above it. Raises DrafterError on transport or unparsable verdict.
 
     max_attempts threads straight through to llm_complete: default 1 (no retry,
     unchanged offline behavior); the live runner raises it so a transient 429/5xx
-    on the materiality call is retried with backoff."""
+    on the materiality call is retried with backoff.
+
+    emit_confidence DEFAULTS OFF (False). With it off, the system prompt, the user
+    prompt, the request to llm_complete, and the returned MaterialityVerdict are
+    byte-identical to the historical behavior: this function returns a bare
+    MaterialityVerdict exactly as before, the fenced [MATERIALITY] gate block is
+    parsed exactly as before, and replay is unaffected. With it ON, a single
+    sentence is appended to the system prompt asking the model for a separate
+    confidence line OUTSIDE the verdict block, and the function returns a
+    (MaterialityVerdict, confidence_or_None) tuple instead. The confidence is
+    eval/calibration metadata only; the Warden never reads it, and the verdict
+    block it gates on is unchanged either way. The return-type switch is
+    deliberate so the default path's return value is byte-identical to today."""
+    system = _SYSTEM + _CONFIDENCE_SUFFIX if emit_confidence else _SYSTEM
     user = (
         "Assess the materiality of this cybersecurity incident for an SEC Item "
         "1.05 8-K determination. Use ONLY these facts. Write a short memo (under "
@@ -75,14 +129,17 @@ def assess_materiality(fact_record: dict, *, model: str, provider: str = roster.
     )
     text = llm_complete(
         provider, model,
-        [{"role": "system", "content": _SYSTEM},
+        [{"role": "system", "content": system},
          {"role": "user", "content": user}],
         api_key=api_key, max_tokens=max_tokens, temperature=0.1, timeout=timeout,
         max_attempts=max_attempts)
     material = _parse_verdict_bool(text)
     memo = _VERDICT.sub("", text).strip()
-    return MaterialityVerdict(branch=branch, material=material, memo=memo,
-                              source=f"{provider}:{model}")
+    verdict = MaterialityVerdict(branch=branch, material=material, memo=memo,
+                                 source=f"{provider}:{model}")
+    if emit_confidence:
+        return verdict, _parse_confidence(text)
+    return verdict
 
 
 def assess_materiality_two_opinions(fact_record: dict, *,
