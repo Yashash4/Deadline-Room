@@ -143,6 +143,7 @@ from floor.shell_adapter import LiveBand  # noqa: E402
 from floor.completeness import completeness_record  # noqa: E402
 from floor.consistency import consistency_record  # noqa: E402
 from floor.controls import controls_record  # noqa: E402
+from floor.sod import sod_record  # noqa: E402
 from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
@@ -4531,6 +4532,21 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             ],
             "released_branches": released_branches or [],
         }
+    # ---- E4.5: the separation-of-duties matrix, proven across the WHOLE run ----
+    # The two-key gate proves SoD at release; this proves it ACROSS the entire run. A
+    # PURE DERIVED render over the run's events: from packet["state_transitions"] (each
+    # admitted transition carries actor + actor_role) and packet["release"]["signoffs"]
+    # (the two-key release keys) it builds the actor x action matrix and ASSERTS the
+    # segregation invariants on every path: the two release keys are distinct roles AND
+    # actors per branch; no single actor both drafted a filing and released it; the
+    # Warden (gatekeeper) never authored a filing it gated; the human release roles are
+    # disjoint from the drafter roles. It reads only the assembled packet (must run
+    # AFTER the release block above is set), makes zero LLM calls and no now(), and
+    # never enters the hashed run-log or gates a transition. The invariants are the real
+    # check: a genuine violation makes one FAIL and names the violating actor.
+    sod = sod_record(packet)
+    if sod:
+        packet["sod"] = sod
     # Reliability receipt: how many transient network failures a later attempt
     # recovered this run. Additive, rendered only when nonzero (a clean run, and
     # every offline test, has zero and omits the field). It is read from the live

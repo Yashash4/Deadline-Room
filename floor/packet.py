@@ -567,6 +567,87 @@ def _render_controls(c: dict) -> str:
     return "".join(parts)
 
 
+def _render_sod(s: dict) -> str:
+    """Render the SEPARATION-OF-DUTIES MATRIX (E4.5): the segregation of duties proven
+    across the WHOLE run, not only at the two-key release gate.
+
+    The two-key gate proves SoD on ONE action (release). An auditor's SoD question is
+    broader: prove no single identity ever spanned a pair of duties that must stay
+    separated (author a filing AND release it; gate a filing AND author it). This
+    matrix answers it from the run's own events: per identity, the role(s) it acted as
+    and every protocol action it performed, plus the named SoD invariants (distinct
+    release keys, no draft-and-release by one actor, the Warden never authors what it
+    gates, release roles disjoint from drafter roles), each PASS / FAIL with the
+    evidence events. It is a PURE DERIVED render over the assembled packet
+    (floor/sod.py over packet["state_transitions"] + packet["release"]["signoffs"]):
+    zero LLM, no now(); it never enters the hashed run-log and gates nothing. A FAIL
+    is not green-washed: a genuine SoD violation names the violating actor."""
+    if not s or not s.get("invariants"):
+        return ""
+    all_hold = s.get("all_hold", False)
+    top_cls = "ok" if all_hold else "bad"
+    total = s.get("total_invariants", 0)
+    headline = (
+        f"Separation of duties PROVEN across the whole run: all {total} SoD invariants "
+        "hold; no identity spanned a conflicting pair of duties."
+        if all_hold else
+        f"Separation of duties VIOLATION: {s.get('failed_count', 0)} of {total} SoD "
+        "invariants FAILED. An identity spanned a conflicting pair of duties (named "
+        "below).")
+    parts = [
+        "<h2>12. Separation-of-duties matrix (proven across the whole run)</h2>",
+        f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+        "<p class='sub'>The two-key release gate proves segregation of duties on ONE "
+        "action: a filing cannot release without two distinct human keys. An auditor's "
+        "SoD question is broader: prove that across the ENTIRE run no single identity "
+        "ever spanned a pair of duties that must stay separated, authoring a filing AND "
+        "releasing it, or gating a filing AND authoring it. This matrix proves it from "
+        "the run's own events: every state-machine transition carries the actor and the "
+        "role it acted as, and every two-key release records its keys. It is a pure "
+        "derived read over the assembled packet (the same role vocabulary the Warden's "
+        "authority table defines); it never enters the hashed run-log and gates "
+        "nothing. A failing invariant names the violating actor: it is the real check, "
+        "not a decoration.</p>",
+        f"<p class='{top_cls}'><strong>{_esc(s.get('verdict', ''))}.</strong></p>",
+    ]
+    # The named SoD invariants, each PASS / FAIL with its basis.
+    inv_rows = []
+    for inv in s.get("invariants", []):
+        if inv.get("status") == "PASS":
+            badge = "<span class='cstat cstat-ok'>PASS</span>"
+        else:
+            badge = "<span class='cstat cstat-bad'>FAIL</span>"
+        inv_rows.append(
+            "<tr><td><strong>" + _esc(inv.get("id")) + "</strong></td>"
+            "<td>" + _esc(inv.get("title")) + "</td>"
+            "<td>" + _esc(inv.get("detail")) + "</td>"
+            "<td>" + badge + "</td></tr>")
+    parts.append("<p class='sub'>The named segregation invariants, each asserted on "
+                 "every path through the run:</p>")
+    parts.append(
+        "<table><thead><tr><th>Invariant</th><th>Segregation property</th>"
+        "<th>Basis</th><th>Status</th></tr></thead><tbody>"
+        + "".join(inv_rows) + "</tbody></table>")
+    # The observed actor x action matrix: per identity, its role(s), duty class(es),
+    # and the protocol actions it performed.
+    actor_rows = []
+    for a in s.get("actors", []):
+        actor_rows.append(
+            "<tr><td><strong>" + _esc(a.get("actor")) + "</strong></td>"
+            "<td>" + _esc(", ".join(a.get("roles", []))) + "</td>"
+            "<td>" + _esc(", ".join(a.get("duties", []))) + "</td>"
+            "<td><code>" + _esc(", ".join(a.get("actions", []))) + "</code></td></tr>")
+    parts.append("<p class='sub'>The observed actor x action matrix (each identity, the "
+                 "role(s) it acted as, the duty class it performed, and its protocol "
+                 "actions):</p>")
+    parts.append(
+        "<table><thead><tr><th>Actor (identity)</th><th>Role(s)</th>"
+        "<th>Duty class</th><th>Protocol actions performed</th>"
+        "</tr></thead><tbody>"
+        + "".join(actor_rows) + "</tbody></table>")
+    return "".join(parts)
+
+
 def _render_legal_hold(h: dict) -> str:
     """Render the legal-hold / preservation obligation (E3.10), if the legal-hold
     beat ran: the trigger (incident detection) and the attached-at timestamp, the
@@ -1943,6 +2024,7 @@ def _render_html(p: dict) -> str:
     completeness_block = _render_completeness(p.get("completeness", {}))
     submission_block = _render_submission(p.get("submission", {}))
     controls_block = _render_controls(p.get("controls", {}))
+    sod_block = _render_sod(p.get("sod", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
@@ -2163,6 +2245,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {submission_block}
 
 {controls_block}
+
+{sod_block}
 
 {attestation_block}
 
