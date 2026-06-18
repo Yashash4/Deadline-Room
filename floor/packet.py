@@ -1047,6 +1047,96 @@ def _render_release(rel: dict) -> str:
     return "".join(parts)
 
 
+def _render_edgar_export(ex: dict) -> str:
+    """Render the EDGAR-shaped Form 8-K Item 1.05 + Inline-XBRL export sidecar.
+
+    The SEC filing is shown in its real machine-readable form: the EDGAR Form 8-K
+    cover-page header (registrant, jurisdiction, commission file number, the date
+    of the earliest event reported), the Item 1.05 heading and its four mandated
+    content elements, and the Inline-XBRL fragment that tags the Item 1.05 facts
+    with the real SEC Cybersecurity Disclosure (CYD) taxonomy concepts. The whole
+    export is a pure DERIVED transform of the packet (the canonical fact-record +
+    the SEC claims + the SEC clock); no LLM, no now(), never in the hashed run-log,
+    so byte-identical replay and every sealed sha are untouched. Honest: this is an
+    EDGAR-shaped export of the real fields, not a filed submission, so no accession
+    number is invented. Rendered only when the SEC branch produced a filing."""
+    if not ex or not ex.get("edgar_8k"):
+        return ""
+    edgar = ex["edgar_8k"]
+    ixbrl = ex.get("ixbrl", "")
+    parts = ["<h2>8g. EDGAR-shaped Form 8-K Item 1.05 + Inline-XBRL export</h2>",
+             "<p class='sub'>An examiner's intake system does not read the HTML "
+             "packet: it ingests a STRUCTURED submission. This is the SEC filing in "
+             "its real machine-readable form: a Form 8-K Item 1.05 with the real "
+             "EDGAR cover-page header and the four mandated content elements (the "
+             "material aspects of the nature, the scope, and the timing of the "
+             "incident, and the material impact or reasonably likely material "
+             "impact), plus an Inline-XBRL fragment that tags the Item 1.05 facts "
+             "with the SEC's own Cybersecurity Disclosure (CYD) taxonomy concepts. "
+             "It is a pure deterministic export of the typed facts (no LLM); the "
+             "prose is the drafter's, the structure and the tags are deterministic. "
+             "This is an EDGAR-SHAPED export of the real fields and the real CYD "
+             "concept names, NOT a filed EDGAR submission, so no accession number "
+             "is assigned.</p>"]
+    # The EDGAR cover-page header, in form order.
+    cover = edgar.get("cover", {})
+    cover_rows = [[label, cover.get(label, "")]
+                  for label in edgar.get("cover_field_order", [])
+                  if label in cover]
+    # The Item 1.05 heading is a cover-order entry without a value; render the
+    # remaining filer fields (CIK) that are not in the ordered cover list too.
+    for label, value in cover.items():
+        if label not in edgar.get("cover_field_order", []):
+            cover_rows.append([label, value])
+    parts.append("<h3>EDGAR Form 8-K cover-page header</h3>")
+    parts.append(_rows(["Cover field", "Value"], cover_rows))
+    parts.append(
+        f"<p class='sub'>Form type <code>{_esc(edgar.get('form_type'))}</code>, "
+        f"Item <code>{_esc(edgar.get('item'))}</code> "
+        f"({_esc(edgar.get('item_heading'))}). Period of report (date of earliest "
+        f"event reported): <code>{_esc(edgar.get('period_of_report'))}</code>, the "
+        f"SEC materiality-determination date the four-business-day clock anchors "
+        f"at.</p>")
+    # The four mandated Item 1.05 content elements.
+    parts.append("<h3>Item 1.05 mandated content elements</h3>")
+    for e in edgar.get("content_elements", []):
+        body = e.get("body", "") or (
+            "(the structured facts below; no narrative was drafted for this "
+            "element)")
+        parts.append(f"<p class='sub'><strong>{_esc(e.get('label'))}</strong> "
+                     f"<em>({_esc(e.get('instruction'))})</em></p>")
+        parts.append(f"<pre>{_esc(body)}</pre>")
+    # The typed facts that drive the tagging.
+    facts = edgar.get("facts", {})
+    parts.append("<h3>Tagged facts (from the SEC claims and the statutory clock)</h3>")
+    parts.append(_rows(
+        ["Fact", "Value"],
+        [["records_affected", facts.get("records_affected")],
+         ["incident_start_utc", facts.get("incident_start_utc")],
+         ["attacker", facts.get("attacker")],
+         ["containment", facts.get("containment")],
+         ["materiality_determination_utc",
+          facts.get("materiality_determination_utc")],
+         ["statutory_deadline_utc", facts.get("statutory_deadline_utc")]]))
+    # The Inline-XBRL fragment, tagging the Item 1.05 facts with the CYD concepts.
+    if ixbrl:
+        parts.append("<h3>Inline-XBRL fragment (SEC CYD taxonomy)</h3>")
+        parts.append(
+            "<p class='sub'>The Item 1.05 facts tagged with the SEC Cybersecurity "
+            "Disclosure (CYD) taxonomy under "
+            "<code>http://xbrl.sec.gov/cyd/2024</code>: the material-cybersecurity-"
+            "incident text block, the nature/scope/timing text block, and the "
+            "material-impact text block, each dimensioned by the "
+            "<code>MaterialCybersecurityIncidentAxis</code> with a custom member "
+            "identifying this incident (more than one incident can be reported on a "
+            "single 8-K). The fragment is well-formed XML and tags the real CYD "
+            "concept names.</p>")
+        parts.append(f"<pre>{_esc(ixbrl)}</pre>")
+    if edgar.get("export_note"):
+        parts.append(f"<p class='sub'><em>{_esc(edgar.get('export_note'))}</em></p>")
+    return "".join(parts)
+
+
 def _clock_status(c: dict) -> tuple[str, str]:
     """Map one clock row to (label, css class) for the jurisdictions strip.
     Pure: reads only c['stopped'] and c['breached'], both already in the dict.
@@ -1420,6 +1510,7 @@ def _render_html(p: dict) -> str:
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
     release_block = _render_release(p.get("release", {}))
+    edgar_block = _render_edgar_export(p.get("edgar_export", {}))
     attestation_block = _render_attestation(p.get("attestation", {}))
     timestamp_block = _render_timestamp(p.get("timestamp", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
@@ -1608,6 +1699,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {adversarial_block}
 
 {release_block}
+
+{edgar_block}
 
 {attestation_block}
 

@@ -26,9 +26,16 @@ def test_sec_8k_has_item_105_cover_tag_and_four_elements():
     p = formats.format_profile_for("sec_8k")
     assert "Item 1.05" in p.cover_tag
     labels = [f.label for f in p.fields]
-    # The mandated content elements: nature/scope/timing, and material impact.
-    assert any("Nature, scope, and timing" in lbl for lbl in labels)
+    # The four mandated Item 1.05 content elements, broken out as the rule states
+    # them: the material aspects of the NATURE, the SCOPE, and the TIMING of the
+    # incident, and the MATERIAL IMPACT or reasonably likely material impact.
+    assert any("Nature of the incident" in lbl for lbl in labels)
+    assert any("Scope of the incident" in lbl for lbl in labels)
+    assert any("Timing of the incident" in lbl for lbl in labels)
     assert any("Material impact" in lbl for lbl in labels)
+    # The real EDGAR Form 8-K cover-page header fields the export renders.
+    assert "Commission file number" in p.cover_fields
+    assert any("Date of report" in cf for cf in p.cover_fields)
 
 
 def test_nis2_early_has_unlawful_and_cross_border_flags():
@@ -121,7 +128,8 @@ def test_draft_filing_injects_profile_when_given(monkeypatch):
     d.draft_filing(facts, regime="SEC", format_profile=profile)
     joined = " ".join(m["content"] for m in captured["messages"])
     assert "Item 1.05" in joined
-    assert "Nature, scope, and timing" in joined
+    assert "Nature of the incident" in joined
+    assert "Material impact" in joined
 
     captured.clear()
     d.draft_filing(facts, regime="SEC")  # no profile -> generic path

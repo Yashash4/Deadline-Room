@@ -102,6 +102,8 @@ from warden.state_machine import Event, ProtocolStateMachine  # noqa: E402
 
 from floor import regimes, roster  # noqa: E402
 from floor.attestation import attestation_sha, build_attestation  # noqa: E402
+from floor.exports_edgar import (  # noqa: E402
+    EdgarExportError, to_edgar_8k, to_edgar_ixbrl)
 from floor.challenger import challenge_filing  # noqa: E402
 from floor.fact_record import fact_record_hash  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
@@ -3832,6 +3834,21 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # JSONL, so the run-log sha and byte-identical replay are untouched.
     if attestation is not None:
         packet["attestation"] = attestation
+    # EDGAR-shaped Form 8-K Item 1.05 + Inline-XBRL export sidecar (E3.8). A pure
+    # DERIVED transform of the packet just assembled (the canonical fact-record +
+    # the SEC claims + the SEC clock): no LLM, no now(). It is computed at packet
+    # ASSEMBLY time, reads only the packet (never the hashed run-log), and is never
+    # written back into the log, so the run-log sha, byte-identical replay, and
+    # every sealed capture are untouched. Present only when the SEC branch produced
+    # a filing; a suppressed-SEC run carries no 8-K and the export is omitted
+    # cleanly (EdgarExportError surfaces the missing SEC facts structurally).
+    try:
+        packet["edgar_export"] = {
+            "edgar_8k": to_edgar_8k(packet),
+            "ixbrl": to_edgar_ixbrl(packet),
+        }
+    except EdgarExportError:
+        pass
     return packet
 
 

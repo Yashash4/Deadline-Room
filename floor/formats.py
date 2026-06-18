@@ -58,32 +58,68 @@ class FormatField:
 @dataclass(frozen=True)
 class FormatProfile:
     """A real per-regime filing skeleton: a form title, an optional cover tag
-    (e.g. the EDGAR Item 1.05 tag), and the ordered mandated fields."""
+    (e.g. the EDGAR Item 1.05 tag), and the ordered mandated fields.
+
+    cover_fields is the OPTIONAL ordered list of the EDGAR cover-page header
+    labels a form carries above its item body (registrant name, the commission
+    file number, the 8-K event date, the item heading). It is empty for the
+    regimes that do not have an EDGAR-style cover page; only the SEC 8-K profile
+    populates it, so the deterministic EDGAR export (floor/exports_edgar.py) can
+    render the real Form 8-K cover skeleton. It is render/export-time metadata: it
+    never enters the hashed run-log, the [CLAIMS] block, or any deterministic
+    gate, so byte-identical replay and every sealed sha are untouched."""
     profile_id: str
     form_title: str
     cover_tag: str
     fields: tuple[FormatField, ...]
+    cover_fields: tuple[str, ...] = ()
 
+
+# The real EDGAR Form 8-K cover-page header labels, in the order they appear at
+# the top of the form above Item 1.05. These are the registrant-identifying
+# fields an examiner reads first on every 8-K. They drive the deterministic
+# EDGAR-shaped export's cover block (floor/exports_edgar.py); the prose drafter
+# never sees them (the LLM fills the four mandated content elements below).
+SEC_8K_COVER_FIELDS = (
+    "Name of registrant as specified in its charter",
+    "State or other jurisdiction of incorporation",
+    "Commission file number",
+    "Date of report (date of earliest event reported)",
+    "Item 1.05 Material Cybersecurity Incidents",
+)
 
 SEC_8K = FormatProfile(
     profile_id="sec_8k",
     form_title="Form 8-K, Item 1.05 Material Cybersecurity Incidents",
     cover_tag="Item 1.05 Material Cybersecurity Incidents",
+    # The four mandated Item 1.05 content elements, in the order the rule states
+    # them: the registrant must describe the material aspects of the nature, the
+    # scope, and the timing of the incident, and the material impact or reasonably
+    # likely material impact on the registrant (including on its financial
+    # condition and results of operations). 17 CFR 229.105 / Form 8-K Item 1.05.
     fields=(
         FormatField(
-            "Nature, scope, and timing of the incident",
-            "State the material aspects of the nature, scope, and timing of the "
-            "cybersecurity incident from the fact-record."),
+            "Nature of the incident",
+            "State the material aspects of the NATURE of the cybersecurity "
+            "incident from the fact-record (what occurred, the threat actor, the "
+            "systems and data categories involved)."),
+        FormatField(
+            "Scope of the incident",
+            "State the material aspects of the SCOPE of the incident from the "
+            "fact-record (the number of records affected and the breadth across "
+            "systems). Do not speculate beyond the fact-record."),
+        FormatField(
+            "Timing of the incident",
+            "State the material aspects of the TIMING of the incident from the "
+            "fact-record (when it began, when it was discovered, and the current "
+            "containment status as of a stated time)."),
         FormatField(
             "Material impact or reasonably likely material impact",
             "State the material impact, or reasonably likely material impact, on "
             "the registrant, including on financial condition and results of "
             "operations. Do not speculate beyond the fact-record."),
-        FormatField(
-            "Status of remediation and containment",
-            "State the current containment and remediation status from the "
-            "fact-record."),
     ),
+    cover_fields=SEC_8K_COVER_FIELDS,
 )
 
 NIS2_EARLY = FormatProfile(
