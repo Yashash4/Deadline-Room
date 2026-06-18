@@ -1,0 +1,246 @@
+{
+  "about": "Committed cache of the raw OPEN vs CLOSED model outputs on the two gate judgments (materiality verdicts over the materiality corpus, drafted filings over the grounding-corpus fact-records), recorded so scripts/open_vs_closed.py re-runs KEYLESS. The SCORING (both oracles, the tallies, the intervals) is always real and keyless; only the raw model output is cached. Each model carries a 'source' of 'live' (real model output) or 'illustrative' (a labeled plausible draft used only when a live call was unavailable). All 5 models are honestly-labeled illustrative filings because no live provider was reachable at record time (the Featherless concurrency slot was held and the AI/ML API gateway was unavailable); every model's 'source' field reads 'illustrative'. To refresh against live models run py scripts/open_vs_closed.py --record (needs FEATHERLESS_API_KEY and AIML_API_KEY).",
+  "faithfulness_regime": "NIS2",
+  "models": {
+    "deepseek-ai/DeepSeek-V3.2": {
+      "label": "DeepSeek-V3.2",
+      "provider": "featherless",
+      "side": "open",
+      "source": "illustrative",
+      "materiality": {
+        "mat-clear-mass-breach": {
+          "material": true
+        },
+        "mat-clear-core-outage": {
+          "material": true
+        },
+        "mat-clear-regulated-data": {
+          "material": true
+        },
+        "mat-clear-financial-fraud": {
+          "material": true
+        },
+        "mat-immaterial-phish-contained": {
+          "material": false
+        },
+        "mat-immaterial-test-system": {
+          "material": false
+        },
+        "mat-immaterial-tiny-nonsensitive": {
+          "material": false
+        },
+        "mat-immaterial-blocked-attempt": {
+          "material": false
+        },
+        "mat-border-midsize-pii": {
+          "material": true
+        },
+        "mat-border-internal-only": {
+          "material": false
+        },
+        "mat-border-brief-outage": {
+          "material": false
+        },
+        "mat-border-reputational": {
+          "material": true
+        }
+      },
+      "faithfulness": {
+        "fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 48,211 records were affected [field: records_affected]. The incident is partially contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds.",
+        "amended_fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 2,100,000 records were affected [field: records_affected]. The incident is contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds."
+      }
+    },
+    "MiniMaxAI/MiniMax-M2.7": {
+      "label": "MiniMax-M2.7",
+      "provider": "featherless",
+      "side": "open",
+      "source": "illustrative",
+      "materiality": {
+        "mat-clear-mass-breach": {
+          "material": true
+        },
+        "mat-clear-core-outage": {
+          "material": true
+        },
+        "mat-clear-regulated-data": {
+          "material": true
+        },
+        "mat-clear-financial-fraud": {
+          "material": true
+        },
+        "mat-immaterial-phish-contained": {
+          "material": false
+        },
+        "mat-immaterial-test-system": {
+          "material": false
+        },
+        "mat-immaterial-tiny-nonsensitive": {
+          "material": false
+        },
+        "mat-immaterial-blocked-attempt": {
+          "material": false
+        },
+        "mat-border-midsize-pii": {
+          "material": true
+        },
+        "mat-border-internal-only": {
+          "material": false
+        },
+        "mat-border-brief-outage": {
+          "material": false
+        },
+        "mat-border-reputational": {
+          "material": true
+        }
+      },
+      "faithfulness": {
+        "fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 48,211 records were affected [field: records_affected]. The incident is partially contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds.",
+        "amended_fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 2,100,000 records were affected [field: records_affected]. The incident is contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds."
+      }
+    },
+    "Qwen/Qwen2.5-72B-Instruct": {
+      "label": "Qwen2.5-72B",
+      "provider": "featherless",
+      "side": "open",
+      "source": "illustrative",
+      "materiality": {
+        "mat-clear-mass-breach": {
+          "material": true
+        },
+        "mat-clear-core-outage": {
+          "material": true
+        },
+        "mat-clear-regulated-data": {
+          "material": true
+        },
+        "mat-clear-financial-fraud": {
+          "material": true
+        },
+        "mat-immaterial-phish-contained": {
+          "material": false
+        },
+        "mat-immaterial-test-system": {
+          "material": false
+        },
+        "mat-immaterial-tiny-nonsensitive": {
+          "material": false
+        },
+        "mat-immaterial-blocked-attempt": {
+          "material": false
+        },
+        "mat-border-midsize-pii": {
+          "material": true
+        },
+        "mat-border-internal-only": {
+          "material": false
+        },
+        "mat-border-brief-outage": {
+          "material": false
+        },
+        "mat-border-reputational": {
+          "material": true
+        }
+      },
+      "faithfulness": {
+        "fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 48,211 records were affected [field: records_affected]. The incident is partially contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds.",
+        "amended_fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 2,100,000 records were affected [field: records_affected]. The incident is contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds."
+      }
+    },
+    "claude-opus-4-1-20250805": {
+      "label": "claude-opus-4-1",
+      "provider": "aimlapi",
+      "side": "closed",
+      "source": "illustrative",
+      "materiality": {
+        "mat-clear-mass-breach": {
+          "material": true
+        },
+        "mat-clear-core-outage": {
+          "material": true
+        },
+        "mat-clear-regulated-data": {
+          "material": true
+        },
+        "mat-clear-financial-fraud": {
+          "material": true
+        },
+        "mat-immaterial-phish-contained": {
+          "material": false
+        },
+        "mat-immaterial-test-system": {
+          "material": false
+        },
+        "mat-immaterial-tiny-nonsensitive": {
+          "material": false
+        },
+        "mat-immaterial-blocked-attempt": {
+          "material": false
+        },
+        "mat-border-midsize-pii": {
+          "material": true
+        },
+        "mat-border-internal-only": {
+          "material": false
+        },
+        "mat-border-brief-outage": {
+          "material": false
+        },
+        "mat-border-reputational": {
+          "material": true
+        }
+      },
+      "faithfulness": {
+        "fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 48,211 records were affected [field: records_affected]. The incident is partially contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds.",
+        "amended_fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 2,100,000 records were affected [field: records_affected]. The incident is contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds."
+      }
+    },
+    "gpt-5-chat-latest": {
+      "label": "gpt-5-chat-latest",
+      "provider": "aimlapi",
+      "side": "closed",
+      "source": "illustrative",
+      "materiality": {
+        "mat-clear-mass-breach": {
+          "material": true
+        },
+        "mat-clear-core-outage": {
+          "material": true
+        },
+        "mat-clear-regulated-data": {
+          "material": true
+        },
+        "mat-clear-financial-fraud": {
+          "material": true
+        },
+        "mat-immaterial-phish-contained": {
+          "material": false
+        },
+        "mat-immaterial-test-system": {
+          "material": false
+        },
+        "mat-immaterial-tiny-nonsensitive": {
+          "material": false
+        },
+        "mat-immaterial-blocked-attempt": {
+          "material": false
+        },
+        "mat-border-midsize-pii": {
+          "material": true
+        },
+        "mat-border-internal-only": {
+          "material": false
+        },
+        "mat-border-brief-outage": {
+          "material": false
+        },
+        "mat-border-reputational": {
+          "material": true
+        }
+      },
+      "faithfulness": {
+        "fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 48,211 records were affected [field: records_affected]. The incident is partially contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds.",
+        "amended_fact_record": "On 16 June 2026, Meridian Trust Bank N.V. detected a cybersecurity incident attributed to LockBit 3.0 affecting core banking ledger and customer KYC store [field: incident_start_utc]. Approximately 2,100,000 records were affected [field: records_affected]. The incident is contained [field: containment]. This notification is filed under the NIS2 mandatory breach-notification timeline, and the entity is coordinating with the relevant competent authority. Further forensic detail will follow as the investigation proceeds."
+      }
+    }
+  }
+}
