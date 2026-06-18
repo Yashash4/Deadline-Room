@@ -205,6 +205,60 @@ _EU_TARGET: dict[int, frozenset[date]] = {
     }),
 }
 
+# Brazilian nationwide public holidays (feriados nacionais), the federal set
+# observed across the whole country (state and municipal holidays are not
+# included; a nationwide LGPD reporting count uses the national set). Like
+# Germany, Brazil has NO substitute-day rule: a holiday on a Saturday or Sunday is
+# simply lost, it does not move to a weekday. So a holiday already on a weekend is
+# omitted here (it never affects a Mon-Fri business-day walk), and the listed
+# dates are the real calendar dates, not observed shifts. The movable feasts
+# (Good Friday = Easter - 2 days, Corpus Christi = Easter + 60 days) are resolved
+# to the real dates for each year. Black Awareness Day (Nov 20) became a national
+# holiday under Law 14.759/2024. This backs the Brazil LGPD / ANPD 3-business-day
+# notification clock (Regulation CD/ANPD 15/2024).
+_BR_FEDERAL: dict[int, frozenset[date]] = {
+    2026: frozenset({
+        date(2026, 1, 1),    # Confraternizacao Universal (New Year, Thursday)
+        date(2026, 4, 3),    # Sexta-feira Santa (Good Friday)
+        date(2026, 4, 21),   # Tiradentes (Tuesday)
+        date(2026, 5, 1),    # Dia do Trabalho (Labour Day, Friday)
+        date(2026, 6, 4),    # Corpus Christi (Thursday)
+        date(2026, 9, 7),    # Independencia do Brasil (Independence Day, Monday)
+        date(2026, 10, 12),  # Nossa Senhora Aparecida (Monday)
+        date(2026, 11, 2),   # Finados (All Souls' Day, Monday)
+        date(2026, 11, 20),  # Dia da Consciencia Negra (Black Awareness, Friday)
+        date(2026, 12, 25),  # Natal (Christmas Day, Friday)
+        # Proclamacao da Republica (Nov 15) falls on a Sunday in 2026 and does not
+        # move under Brazilian law, so it never touches a Mon-Fri walk.
+    }),
+    2027: frozenset({
+        date(2027, 1, 1),    # Confraternizacao Universal (Friday)
+        date(2027, 3, 26),   # Sexta-feira Santa (Good Friday)
+        date(2027, 4, 21),   # Tiradentes (Wednesday)
+        date(2027, 5, 27),   # Corpus Christi (Thursday)
+        date(2027, 9, 7),    # Independencia do Brasil (Tuesday)
+        date(2027, 10, 12),  # Nossa Senhora Aparecida (Tuesday)
+        date(2027, 11, 2),   # Finados (Tuesday)
+        date(2027, 11, 15),  # Proclamacao da Republica (Monday)
+        # Labour Day (May 1), Black Awareness Day (Nov 20), and Christmas (Dec 25)
+        # all fall on a Saturday in 2027 and do not move, so they never touch a
+        # Mon-Fri walk.
+    }),
+    2028: frozenset({
+        date(2028, 4, 14),   # Sexta-feira Santa (Good Friday)
+        date(2028, 4, 21),   # Tiradentes (Friday)
+        date(2028, 5, 1),    # Dia do Trabalho (Labour Day, Monday)
+        date(2028, 6, 15),   # Corpus Christi (Thursday)
+        date(2028, 9, 7),    # Independencia do Brasil (Thursday)
+        date(2028, 10, 12),  # Nossa Senhora Aparecida (Thursday)
+        date(2028, 11, 2),   # Finados (Thursday)
+        date(2028, 11, 15),  # Proclamacao da Republica (Wednesday)
+        date(2028, 11, 20),  # Dia da Consciencia Negra (Black Awareness, Monday)
+        date(2028, 12, 25),  # Natal (Christmas Day, Monday)
+        # New Year's Day (Jan 1) is a Saturday in 2028 and does not move.
+    }),
+}
+
 # The registry: calendar id -> {year -> observed holidays}. The default id is
 # DEFAULT_CALENDAR; passing it (or omitting the calendar argument) reproduces the
 # pre-registry US-federal behavior byte-for-byte.
@@ -214,6 +268,7 @@ HOLIDAY_CALENDARS: dict[str, dict[int, frozenset[date]]] = {
     "UK_BANK": _UK_BANK,
     "DE_FEDERAL": _DE_FEDERAL,
     "EU_TARGET": _EU_TARGET,
+    "BR_FEDERAL": _BR_FEDERAL,
 }
 
 # The full US-federal set across every covered year, exposed as a flat frozenset.

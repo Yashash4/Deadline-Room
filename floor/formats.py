@@ -258,10 +258,52 @@ GDPR_ART34 = FormatProfile(
     ),
 )
 
+# A generic data-protection-authority breach-notification skeleton, reused by the
+# global-catalog recruit regimes whose statutory notification content follows the
+# same near-universal shape (nature of the breach, categories and approximate
+# number of data subjects and records, likely consequences, measures taken). This
+# is the field set shared, with only label variation, by India DPDP Act 2023 (DPDP
+# Rules 2025 breach intimation to the Data Protection Board), Singapore PDPA (PDPC
+# notifiable data breach), Australia Privacy Act Notifiable Data Breaches scheme
+# (OAIC eligible data breach statement, Privacy Act s 26WK), Canada PIPEDA (OPC
+# report of a breach of security safeguards, PIPEDA s 10.1 and the Breach of
+# Security Safeguards Regulations), Brazil LGPD (ANPD security-incident
+# communication, Regulation CD/ANPD 15/2024), and South Korea PIPA (notification to
+# the PIPC, PIPA Art 34). A bespoke per-form profile for each is overkill when the
+# content elements are this consistent; the regime label and authority differ, so
+# the cover tag is generic and each regime carries its own authority in the
+# catalog. Field basis: the four elements common across these regimes' notice
+# requirements, mirroring GDPR Art 33(3) which most of them are modelled on.
+DP_BREACH_GENERIC = FormatProfile(
+    profile_id="dp_breach_generic",
+    form_title="Data-protection-authority personal-data breach notification",
+    cover_tag="Personal-data breach notification to the competent authority",
+    fields=(
+        FormatField(
+            "Nature of the breach",
+            "Describe the nature of the personal-data breach from the fact-record "
+            "(what occurred, the threat actor, the systems and data categories "
+            "involved)."),
+        FormatField(
+            "Categories and approximate number of data subjects and records",
+            "State the categories and approximate number of data subjects "
+            "concerned and of personal-data records concerned, from the "
+            "fact-record."),
+        FormatField(
+            "Likely consequences",
+            "Describe the likely consequences of the personal-data breach for the "
+            "affected individuals, confined to what the fact-record supports."),
+        FormatField(
+            "Measures taken or proposed",
+            "Describe the measures taken or proposed to address the breach and "
+            "mitigate its possible adverse effects."),
+    ),
+)
+
 _PROFILES = {
     p.profile_id: p
     for p in (SEC_8K, NIS2_EARLY, NIS2_FULL, DORA, ICO_ART33, NYDFS_50017,
-              GDPR_ART34)
+              GDPR_ART34, DP_BREACH_GENERIC)
 }
 
 

@@ -106,6 +106,26 @@ def test_eu_target_calendar_skips_a_pan_eu_holiday():
     assert eu.date().isoformat() == "2026-04-08"
 
 
+def test_brazil_count_skips_a_brazilian_national_holiday():
+    # The Brazil LGPD 3-business-day clock (Regulation CD/ANPD 15/2024) counts
+    # against BR_FEDERAL. Independencia do Brasil is Monday 2026-09-07, a Brazilian
+    # national holiday and NOT a US federal one. A Brazilian count starting Friday
+    # 2026-09-04 must skip it: weekend, Mon 7 (Independence, SKIPPED), Tue 8 (1),
+    # Wed 9 (2), Thu 10 (3). Under US_FEDERAL Sep 7 2026 is Labor Day (also a
+    # holiday), so for an honest contrast we use a Brazil-only holiday: Tiradentes,
+    # Tuesday 2026-04-21, which BR_FEDERAL skips and US_FEDERAL does not.
+    assert not is_business_day(datetime(2026, 4, 21).date(), "BR_FEDERAL")
+    assert is_business_day(datetime(2026, 4, 21).date(), "US_FEDERAL")
+    # Count 3 business days from Friday 2026-04-17: weekend, Mon 20 (1), Tue 21
+    # (Tiradentes, SKIPPED), Wed 22 (2), Thu 23 (3).
+    start = parse_ts("2026-04-17T09:00:00+00:00")
+    br = add_business_days(start, 3, "BR_FEDERAL")
+    us = add_business_days(start, 3, "US_FEDERAL")
+    assert br.date().isoformat() == "2026-04-23"
+    assert us.date().isoformat() == "2026-04-22"
+    assert br != us  # the Brazilian holiday genuinely moves the deadline
+
+
 # --- a deadline renders in the regulator's local zone; the instant is UTC ------
 
 def test_render_local_shows_regulator_wall_clock_without_changing_the_instant():

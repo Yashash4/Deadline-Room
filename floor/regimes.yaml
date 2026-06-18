@@ -20,9 +20,10 @@
 #     business_days  true when the count is in business days (SEC), false otherwise
 #     holiday_calendar  the named holiday-calendar id a business-day clock counts
 #                       against (warden.clocks.HOLIDAY_CALENDARS): "US_FEDERAL"
-#                       (SEC), "UK_BANK", "DE_FEDERAL", "EU_TARGET". A calendar
-#                       (flat-hour) clock names "none". A business-day count skips
-#                       THAT jurisdiction's public holidays, not US ones.
+#                       (SEC), "UK_BANK", "DE_FEDERAL", "EU_TARGET", "BR_FEDERAL"
+#                       (Brazil LGPD). A calendar (flat-hour) clock names "none". A
+#                       business-day count skips THAT jurisdiction's public
+#                       holidays, not US ones.
 #     display_timezone  the IANA zone the regulator reads this deadline in
 #                       (America/New_York for the SEC, Europe/Brussels for
 #                       NIS2/DORA, Europe/London for the UK ICO). RENDER-ONLY: the
@@ -340,6 +341,223 @@ regimes:
         or when notice of it is required to be provided to any other government
         body, self-regulatory agency, or supervisory body.
       rule: not reportable under NYDFS 23 NYCRR 500.17 material-harm
+
+  # ------------------------------------------------------------------------
+  # Global catalog (E3.7): real, cited breach-notification regimes spanning
+  # legal families beyond the EU/US core above. Each is a recruit-mode regime:
+  # its clock starts ONLY when its jurisdiction is named in the incident's blast
+  # radius (the same content-driven recruit seam the UK ICO and NYDFS clocks use),
+  # so the four DEFAULT scenarios, whose blast radius does not name these
+  # jurisdictions, are untouched. Adding each was appending a data block here, with
+  # ZERO edits to any warden/ gate or clock algorithm (the BR_FEDERAL holiday set
+  # is pure data in warden.clocks.HOLIDAY_CALENDARS, not gate logic). Every clock
+  # length and trigger below is the real statutory rule, cited in its standard.
+
+  - key: india_dpdp
+    authority: Data Protection Board of India (DPDP Act 2023)
+    branch: india
+    regime_label: India DPDP
+    trigger_event: becoming aware
+    clock:
+      # DPDP Act 2023 s 8(6) read with the Digital Personal Data Protection Rules
+      # 2025 (notified 2025-11-13), Rule 7: on becoming aware of a personal-data
+      # breach the Data Fiduciary intimates the affected Data Principals and the
+      # Board without delay, and gives the Board a detailed report within 72 hours
+      # (extendable on written request). 72 flat calendar hours, no business-day or
+      # holiday arithmetic.
+      name: India DPDP detailed breach report to the Board (72h)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: Asia/Kolkata
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: IN
+      name_tokens: [india]
+    reportability:
+      standard: >-
+        India DPDP Act 2023 (s 8(6)) read with DPDP Rules 2025 (Rule 7): on any
+        personal-data breach a Data Fiduciary must intimate the affected Data
+        Principals and the Data Protection Board; the duty attaches to a personal-
+        data breach (any unauthorised processing, or accidental disclosure,
+        acquisition, sharing, use, alteration, destruction, or loss of access, that
+        compromises the confidentiality, integrity, or availability of personal
+        data), without a separate materiality threshold.
+      rule: not reportable under India DPDP Act 2023 personal-data-breach intimation
+
+  - key: singapore_pdpa
+    authority: Personal Data Protection Commission (PDPC), Singapore
+    branch: singapore
+    regime_label: Singapore PDPA
+    trigger_event: determination (recruit moment)
+    clock:
+      # PDPA (as amended) s 26D read with the Personal Data Protection (Notification
+      # of Data Breaches) Regulations: once an organisation assesses that a data
+      # breach is NOTIFIABLE, it must notify the PDPC as soon as practicable, and in
+      # any case no later than 3 CALENDAR days after making that determination. The
+      # 3-day clock runs from the notifiability determination (the recruit moment
+      # here), not from discovery, and counts calendar days including weekends and
+      # public holidays: 72 flat calendar hours.
+      name: Singapore PDPA notifiable data breach to the PDPC (3 calendar days)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: Asia/Singapore
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: SG
+      name_tokens: [singapore, pdpc]
+    reportability:
+      standard: >-
+        Singapore PDPA s 26B notifiable data breach: a data breach is notifiable
+        when it results in, or is likely to result in, significant harm to an
+        affected individual, OR is of a significant scale (affecting 500 or more
+        individuals). A breach below both limbs is not notifiable to the PDPC.
+      rule: not reportable under Singapore PDPA s 26B notifiable-data-breach test
+
+  - key: australia_ndb
+    authority: Office of the Australian Information Commissioner (OAIC)
+    branch: australia
+    regime_label: Australia NDB
+    trigger_event: becoming aware
+    clock:
+      # Privacy Act 1988 (Cth) Part IIIC, the Notifiable Data Breaches scheme
+      # (s 26WK). On becoming aware of reasonable grounds to SUSPECT an eligible
+      # data breach, an APP entity has up to 30 CALENDAR days to assess; on
+      # reasonable grounds to BELIEVE an eligible data breach has occurred it must
+      # prepare and give a statement to the OAIC and notify affected individuals as
+      # soon as practicable. We model the outer 30-day assessment-and-notify window
+      # as 720 flat calendar hours from awareness (calendar days, weekends and
+      # public holidays included).
+      name: Australia OAIC eligible data breach statement (30 calendar days)
+      length: 720
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: Australia/Sydney
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: AU
+      name_tokens: [australia, oaic]
+    reportability:
+      standard: >-
+        Australia Privacy Act 1988 (Cth) s 26WE eligible data breach: there is
+        unauthorised access to or disclosure of, or loss of, personal information
+        an entity holds, and a reasonable person would conclude the access,
+        disclosure, or loss is likely to result in SERIOUS HARM to any of the
+        individuals to whom the information relates, and the entity has not been
+        able to prevent that likely serious harm by remedial action.
+      rule: not reportable under Australia Privacy Act NDB serious-harm test
+
+  - key: canada_osfi
+    authority: Office of the Superintendent of Financial Institutions (OSFI), Canada
+    branch: canada
+    regime_label: Canada OSFI
+    trigger_event: incident occurrence
+    clock:
+      # OSFI Technology and Cyber Security Incident Reporting advisory (in force with
+      # Guideline B-13, 2024-01-01): a federally regulated financial institution must
+      # report a reportable technology or cyber security incident to OSFI's
+      # Technology Risk Division and its Lead Supervisor within 24 hours, or sooner
+      # if possible. A flat 24 calendar hours from the incident, no business-day or
+      # holiday arithmetic (the supervisor is reachable around the clock).
+      name: Canada OSFI technology/cyber incident report (24h)
+      length: 24
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: America/Toronto
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: CA
+      name_tokens: [canada, osfi]
+    reportability:
+      standard: >-
+        OSFI Technology and Cyber Security Incident Reporting advisory: a
+        federally regulated financial institution must report a technology or cyber
+        security incident assessed as having a HIGH or CRITICAL severity, or that
+        has a material impact on the institution's operations (including
+        operational, reputational, or financial impact, or impact to customers).
+      rule: not reportable under OSFI technology/cyber incident severity threshold
+
+  - key: brazil_lgpd
+    authority: Autoridade Nacional de Protecao de Dados (ANPD), Brazil
+    branch: brazil
+    regime_label: Brazil LGPD
+    trigger_event: becoming aware
+    clock:
+      # LGPD (Law 13.709/2018) Art 48 read with Regulation CD/ANPD 15/2024
+      # (2024-04-24): the controller communicates a security incident that may
+      # result in relevant risk or harm to data subjects to the ANPD and to the
+      # data subjects within 3 BUSINESS days counted from awareness that the
+      # incident affected personal data. This is a genuine business-day clock: it
+      # skips weekends AND Brazilian national holidays via the BR_FEDERAL calendar
+      # (the deliberate contrast with the calendar-hour APAC clocks above).
+      name: Brazil LGPD security-incident communication to the ANPD (3 business days)
+      length: 3
+      unit: business_days
+      business_days: true
+      holiday_calendar: BR_FEDERAL
+      display_timezone: America/Sao_Paulo
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: BR
+      name_tokens: [brazil, anpd]
+    reportability:
+      standard: >-
+        Brazil LGPD (Law 13.709/2018) Art 48 read with Regulation CD/ANPD 15/2024:
+        the controller must communicate a security incident to the ANPD and to the
+        affected data subjects when the incident may result in RELEVANT RISK OR
+        HARM to the data subjects. An incident that does not present relevant risk
+        or harm need not be communicated, though it must still be recorded.
+      rule: not reportable under Brazil LGPD Art 48 relevant-risk-or-harm test
+
+  - key: korea_pipa
+    authority: Personal Information Protection Commission (PIPC), South Korea
+    branch: korea
+    regime_label: South Korea PIPA
+    trigger_event: becoming aware
+    clock:
+      # PIPA (Personal Information Protection Act) Art 34 read with its Enforcement
+      # Decree: on becoming aware of a personal-information breach a controller must
+      # notify the affected data subjects without delay, and report to the PIPC (or
+      # KISA) within 72 hours where the breach reaches the reporting thresholds
+      # (1,000+ data subjects, or sensitive / unique-identifying information, or an
+      # external unauthorised-access breach). 72 flat calendar hours from awareness.
+      name: South Korea PIPA breach report to the PIPC (72h)
+      length: 72
+      unit: hours
+      business_days: false
+      holiday_calendar: none
+      display_timezone: Asia/Seoul
+    format_profile: dp_breach_generic
+    start:
+      mode: recruit
+    recruit:
+      jurisdiction: KR
+      name_tokens: [korea, pipc]
+    reportability:
+      standard: >-
+        South Korea PIPA Art 34: a personal-information controller must report a
+        breach to the PIPC (or KISA) when the personal information of 1,000 or more
+        data subjects has been leaked, OR sensitive information or unique
+        identifying information has been leaked, OR personal information has been
+        leaked through external unauthorised access. No PIPC report is required
+        where the controller can take measures that significantly reduce the risk
+        of harm to the affected data subjects.
+      rule: not reportable under South Korea PIPA Art 34 report threshold
 
   - key: data_subject
     authority: affected individuals (data subjects)

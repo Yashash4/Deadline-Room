@@ -123,11 +123,18 @@ def test_every_reportability_branch_has_a_standard_in_the_catalog():
         assert spec.reportability.rule.strip()
 
 
-def test_catalog_loads_reportability_for_all_six_regimes():
+def test_every_regulator_regime_declares_a_reportability_threshold():
     catalog = regimes.load_catalog()
     with_threshold = [s for s in catalog if s.reportability is not None]
-    # All six regimes (NIS2 early + full, DORA, SEC, UK ICO, NYDFS) declare one.
-    assert len(with_threshold) == 6
+    # Every REGULATOR regime declares a reportability threshold: the EU/US core
+    # (NIS2 early + full, DORA, SEC, UK ICO, NYDFS) plus the global-catalog
+    # jurisdictions (India DPDP, Singapore PDPA, Australia NDB, Canada OSFI, Brazil
+    # LGPD, South Korea PIPA). The only catalog record WITHOUT a reportability
+    # threshold is the non-regulator data_subject Art 34 communication track (it
+    # carries a high_risk threshold instead), so the count is the twelve regulator
+    # regimes exactly.
+    regulator = [s for s in catalog if not s.is_post_release]
+    assert len(with_threshold) == len(regulator) == 12
     for s in with_threshold:
         assert s.reportability.standard
         assert s.reportability.rule

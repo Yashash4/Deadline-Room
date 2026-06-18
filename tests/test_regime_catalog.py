@@ -30,9 +30,15 @@ def test_startup_and_recruit_partition():
     specs = regimes.load_catalog()
     startup = {s.branch for s in regimes.startup_regimes(specs)}
     recruit = {s.branch for s in regimes.recruit_regimes(specs)}
-    # NIS2 early + full, DORA, SEC start at floor open; UK + NYDFS at recruit.
+    # NIS2 early + full, DORA, SEC start at floor open. The recruit set is the EU/US
+    # core (UK + NYDFS) PLUS the global-catalog jurisdictions (India, Singapore,
+    # Australia, Canada, Brazil, South Korea), each of which starts ONLY when its
+    # jurisdiction is in the incident's blast radius. The four default scenarios
+    # never name those jurisdictions, so they recruit none of them and the sealed
+    # captures are untouched: the startup partition is exactly the four core clocks.
     assert startup == {"nis2-early", "nis2", "dora", "sec"}
-    assert recruit == {"uk", "nydfs"}
+    assert recruit == {"uk", "nydfs", "india", "singapore", "australia", "canada",
+                       "brazil", "korea"}
 
 
 def test_sec_regime_is_four_business_days_from_determination():
@@ -91,3 +97,66 @@ def test_missing_regimes_list_raises(tmp_path):
     except ValueError:
         return
     raise AssertionError("expected ValueError for a catalog with no regimes list")
+
+
+# ----------------------------------------------------------------------------
+# E3.7: the global-catalog regimes (APAC + LATAM + Canada), each asserted with
+# the real, cited authority / clock length / trigger / jurisdiction it declares.
+# Every value below is the actual statutory rule (see floor/regimes.yaml comments
+# for the cited basis), not an invented authority or deadline.
+
+# key -> (authority, clock_length, business_days, holiday_calendar, recruit_token,
+#         name_tokens, trigger_event).
+_GLOBAL_REGIMES = {
+    "india_dpdp": (
+        "Data Protection Board of India (DPDP Act 2023)", 72, False, "none",
+        "IN", ("india",), "becoming aware"),
+    "singapore_pdpa": (
+        "Personal Data Protection Commission (PDPC), Singapore", 72, False, "none",
+        "SG", ("singapore", "pdpc"), "determination (recruit moment)"),
+    "australia_ndb": (
+        "Office of the Australian Information Commissioner (OAIC)", 720, False,
+        "none", "AU", ("australia", "oaic"), "becoming aware"),
+    "canada_osfi": (
+        "Office of the Superintendent of Financial Institutions (OSFI), Canada",
+        24, False, "none", "CA", ("canada", "osfi"), "incident occurrence"),
+    "brazil_lgpd": (
+        "Autoridade Nacional de Protecao de Dados (ANPD), Brazil", 3, True,
+        "BR_FEDERAL", "BR", ("brazil", "anpd"), "becoming aware"),
+    "korea_pipa": (
+        "Personal Information Protection Commission (PIPC), South Korea", 72, False,
+        "none", "KR", ("korea", "pipc"), "becoming aware"),
+}
+
+
+def test_global_catalog_regimes_load_with_cited_authority_clock_trigger():
+    by = regimes.by_key(regimes.load_catalog())
+    for key, (authority, length, business, cal, juris, tokens, trigger) in \
+            _GLOBAL_REGIMES.items():
+        assert key in by, f"global-catalog regime {key} missing"
+        spec = by[key]
+        assert spec.authority == authority, key
+        assert spec.clock.length == length, key
+        assert spec.clock.business_days is business, key
+        assert spec.clock.holiday_calendar == cal, key
+        assert spec.trigger_event == trigger, key
+        # Each is a recruit-mode regime keyed on its own jurisdiction token, so it
+        # appears ONLY when the blast radius names that jurisdiction.
+        assert spec.is_recruit, key
+        assert spec.recruit_jurisdiction == juris, key
+        assert spec.recruit_name_tokens == tokens, key
+        # Each carries its cited reportability standard + a human rule label.
+        assert spec.reportability is not None and spec.reportability.standard, key
+        assert spec.reportability.rule, key
+
+
+def test_brazil_lgpd_business_day_calendar_is_registered():
+    # The Brazil LGPD clock is the only NEW business-day regime; its named calendar
+    # must be a registered holiday calendar the engine can count against, with the
+    # demo years covered (so a count never silently skips a Brazilian holiday).
+    from warden.clocks import HOLIDAY_CALENDARS
+
+    spec = regimes.by_key(regimes.load_catalog())["brazil_lgpd"]
+    assert spec.clock.holiday_calendar in HOLIDAY_CALENDARS
+    br = HOLIDAY_CALENDARS["BR_FEDERAL"]
+    assert {2026, 2027, 2028} <= set(br)
