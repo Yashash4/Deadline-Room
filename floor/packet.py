@@ -266,6 +266,83 @@ def _render_deficiency(d: dict) -> str:
     return "".join(parts)
 
 
+def _render_legal_hold(h: dict) -> str:
+    """Render the legal-hold / preservation obligation (E3.10), if the legal-hold
+    beat ran: the trigger (incident detection) and the attached-at timestamp, the
+    preservation scope where each item is bound to the EXACT canonical fact-record
+    FIELD it rests on (the affected systems and data categories), the FRCP 37(e)
+    preservation / spoliation basis, the active/released state, and the human
+    release record.
+
+    The hold attaches BY RULE at incident detection and is RELEASED only by an
+    explicit human signoff (counsel); it is never auto-released by a clock, a
+    filing, or any rule, and it GATES NOTHING. The scope->fact binding and the
+    record are deterministic Python; the validator gates nothing. Rendered from the
+    packet, this is the preservation obligation a litigator checks was tracked, not
+    missed."""
+    if not h or not h.get("scope"):
+        return ""
+    state = (h.get("state") or "").upper()
+    active = h.get("active")
+    state_badge = "badge warn" if active else "badge"
+    scope_check = h.get("preservation_scope") or {}
+    complete = scope_check.get("complete", True)
+    basis_cls = "ok" if complete else "bad"
+    basis_line = (
+        "Preservation scope COMPLETE: every scope item is bound to a field the "
+        "canonical fact-record carries." if complete else
+        "Preservation scope INCOMPLETE: a scope item cites a field not present in "
+        "the fact-record (flagged below).")
+    parts = [
+        "<h2>5g. Legal hold / preservation obligation (FRCP 37(e))</h2>",
+        "<p class='sub'>The instant a breach is reasonably anticipated to lead to "
+        "litigation or a regulatory inquiry (which is when this war room convenes), "
+        "the duty to PRESERVE evidence attaches: preserve the affected systems and "
+        "data, suspend routine deletion. Failure to issue the hold is independent "
+        "spoliation liability under FRCP 37(e), separate from the breach. The hold "
+        "attaches BY RULE at incident detection, its scope bound to the real "
+        "affected-systems and affected-data-categories fields; it is a STANDING "
+        "obligation that stays active until counsel explicitly releases it (a human "
+        "signoff), never auto-released. It is a PARALLEL preservation duty: it "
+        "gates no filing, stops no statutory clock, moves no transition. Zero LLM: "
+        "the hold attaches by rule and releases by a human.</p>",
+        f"<p class='sub'>Trigger: <strong>{_esc(h.get('trigger_event'))}</strong>; "
+        f"attached at <code>{_esc(h.get('attached_at'))}</code> "
+        "(incident detection, the moment the statutory clocks also start).</p>",
+        f"<p><span class='{state_badge}'>State: {_esc(state)}</span></p>",
+        f"<p class='sub'>Basis: <em>{_esc(h.get('basis'))}</em></p>",
+        f"<p class='{basis_cls}'><strong>{_esc(basis_line)}</strong></p>",
+    ]
+    rows = [
+        [item.get("category"), item.get("value"), item.get("fact_field")]
+        for item in h.get("scope", [])
+    ]
+    parts.append("<p class='sub'>Preservation scope (each item bound to the exact "
+                 "canonical fact-record field it rests on):</p>")
+    parts.append(_rows(
+        ["Preservation item", "Value", "Bound to fact-record field"], rows))
+    missing = scope_check.get("missing_items") or []
+    if missing:
+        items = "".join(
+            f"<li>{_esc(m.get('category'))} cites missing field "
+            f"<code>{_esc(m.get('fact_field'))}</code></li>" for m in missing)
+        parts.append(f"<p class='bad'>Scope items citing a nonexistent fact-record "
+                     f"field:</p><ul>{items}</ul>")
+    release = h.get("release")
+    if release:
+        parts.append(
+            "<p class='ok'><strong>Released by an explicit human signoff:</strong> "
+            f"{_esc(release.get('actor'))} ({_esc(release.get('released_by'))}) at "
+            f"<code>{_esc(release.get('ts'))}</code>. The hold was never "
+            "auto-released; only this human signoff lifted it.</p>"
+            f"<p class='sub'><em>{_esc(release.get('reason'))}</em></p>")
+    else:
+        parts.append(
+            "<p class='bad'><strong>Hold is ACTIVE.</strong> It stays active until "
+            "counsel explicitly releases it; no clock, filing, or rule lifts it.</p>")
+    return "".join(parts)
+
+
 def _render_reportability(r: dict) -> str:
     """Render the per-regime reportability / duty-to-notify gate (E3.1), if the
     reportability beat ran. Per regime: the statutory trigger standard, the
@@ -1568,6 +1645,7 @@ def _render_html(p: dict) -> str:
     reportability_block = _render_reportability(p.get("reportability", {}))
     affected_party_block = _render_affected_party(p.get("affected_party", {}))
     cross_border_block = _render_cross_border(p.get("cross_border", {}))
+    legal_hold_block = _render_legal_hold(p.get("legal_hold", {}))
     materiality_block = _render_materiality(p.get("materiality", {}))
     recruit_block = _render_recruit(p.get("recruit", {}))
     nydfs_recruit_block = _render_nydfs_recruit(p.get("nydfs_recruit", {}))
@@ -1737,6 +1815,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {affected_party_block}
 
 {cross_border_block}
+
+{legal_hold_block}
 
 {materiality_block}
 

@@ -103,6 +103,7 @@ from warden.reportability import (  # noqa: E402
 from warden.high_risk import (  # noqa: E402
     HighRiskVerdict, gate as high_risk_gate)
 from warden.determination import validate_determination  # noqa: E402
+from warden.legal_hold import validate_legal_hold  # noqa: E402
 from warden.second_opinion import reconcile as reconcile_second_opinion  # noqa: E402
 from warden.negotiation import (  # noqa: E402
     NegotiationEnvelope, NegotiationGuard, Verdict)
@@ -123,6 +124,7 @@ from floor.fact_record import fact_record_hash  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.determination import build_determination_record  # noqa: E402
+from floor.legal_hold import build_legal_hold  # noqa: E402
 from floor.grounding import score_filings  # noqa: E402
 from floor.lead_authority import (  # noqa: E402
     SupervisoryAuthority, resolve as resolve_lead_authority)
@@ -359,6 +361,28 @@ CROSS_BORDER_HUMAN_DECISION = (
 # resolution before signoff.
 TS_CROSS_BORDER_BLOCK = "2026-06-16T04:05:00+00:00"
 TS_CROSS_BORDER_RESOLVED = "2026-06-16T04:15:00+00:00"
+
+# E3.10 legal-hold / preservation obligation. The hold ATTACHES at incident
+# detection, anchored at INCIDENT_T0 (the same moment the statutory clocks start),
+# because the duty to preserve attaches the instant the breach is reasonably
+# anticipated to lead to litigation, which is when this war room convenes. It is a
+# standing obligation: it runs from detection and stays ACTIVE until counsel
+# explicitly releases it. The release is a HUMAN signoff (the General Counsel),
+# never an auto-release by a clock, a filing, or any rule. The timestamps are
+# fixed so the beat's run-log is byte-stable and replays byte-identically.
+TS_LEGAL_HOLD_ATTACHED = INCIDENT_T0
+TS_LEGAL_HOLD_RELEASE = "2026-06-16T05:30:00+00:00"
+# The human who lifts the hold and the recorded basis. Counsel signs off only once
+# preservation is no longer required (the matter is resolved and the litigation /
+# regulatory exposure has passed). This is the human's call; no rule and no model
+# ever sets it.
+LEGAL_HOLD_RELEASE_ROLE = "general_counsel"
+LEGAL_HOLD_RELEASE_ACTOR = "gc"
+LEGAL_HOLD_RELEASE_REASON = (
+    "Counsel directs the preservation hold lifted: the regulatory filings have "
+    "released, the matter is resolved, and the litigation / inquiry exposure that "
+    "anchored the hold has passed. Routine deletion over the affected systems and "
+    "data may resume. Recorded human signoff; no rule and no model lifted it.")
 
 
 def _recruit_fact_record(uk_recruit: bool, nydfs_recruit: bool,
@@ -811,7 +835,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     the full floor requires both distinct human keys."""
     if mode not in ("normal", "inject_contradiction", "chaos", "amendment",
                     "inject_claims", "reportability", "cross_border",
-                    "affected_party", "deficiency"):
+                    "affected_party", "deficiency", "legal_hold"):
         raise ValueError(f"unknown mode: {mode}")
     if provider_set not in (roster.PROVIDER_DEV, roster.PROVIDER_PROD):
         raise ValueError(f"unknown provider set: {provider_set!r}")
@@ -849,6 +873,15 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # seam, and the modeled regulator re-reviews the cured filing -> ACCEPTED. The
     # review is an examiner-side read; it never gates a Warden transition.
     run_deficiency = mode == "deficiency"
+    # The legal-hold beat (E3.10) is its OWN scenario: it rides the clean (normal)
+    # base path through release, then runs the preservation-obligation track. The
+    # legal hold ATTACHES at incident detection (the hold record is logged as an
+    # additive event when the run opens) and is RELEASED only by an explicit human
+    # signoff (counsel) after the filings release. It gates NOTHING: the
+    # preservation duty is parallel to the breach-notification track, never on its
+    # gate path. It is mode-driven only (no public kwarg), like cross_border and
+    # deficiency.
+    run_legal_hold = mode == "legal_hold"
     # The amendment beat reuses the clean release path as its base, then layers
     # the FACT_AMENDED reopen + agent-to-agent reconciliation on top. The
     # inject_claims beat also rides the clean path: the prompt injection is
@@ -860,7 +893,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # camera) and then the affected-party phase, both layered on the clean release
     # path, so its drafting/diff base is normal.
     base_mode = ("normal" if mode in ("amendment", "inject_claims", "reportability",
-                                       "cross_border", "affected_party", "deficiency")
+                                       "cross_border", "affected_party", "deficiency",
+                                       "legal_hold")
                  else mode)
     # The affected_party scenario runs the amendment beat first so the forensic
     # revision raises the record count before the affected-party scope is computed.
@@ -1031,6 +1065,25 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     trace.say(f"[3] Started {len(clocks.all())} statutory clocks: NIS2/DORA from "
               f"T0 {INCIDENT_T0}, SEC from the materiality determination "
               f"{TS_SEC_DETERMINATION}")
+
+    # ---- E3.10: the legal-hold / preservation obligation attaches by rule at
+    # incident detection. The instant the breach is reasonably anticipated to lead
+    # to litigation or a regulatory inquiry (which is when this war room convenes),
+    # the duty to PRESERVE evidence attaches: preserve the affected systems and
+    # data, suspend routine deletion. It is a standing obligation that runs from
+    # detection (INCIDENT_T0) and stays ACTIVE until counsel explicitly releases it
+    # (a human signoff, never an auto-release). The hold attaches BY RULE (zero LLM)
+    # with its scope bound to the real affected-systems / affected-data-categories
+    # fields; the pure warden validator confirms every cited field exists. It is a
+    # PARALLEL preservation obligation, logged as an additive event so it is
+    # hash-chained, replayed, and signed: it never gates a filing, stops a statutory
+    # clock, or moves a transition. It rides ONLY the legal_hold beat, so the four
+    # default sealed captures are untouched.
+    legal_hold_record = None
+    if run_legal_hold:
+        legal_hold_record = _attach_legal_hold(
+            log=log, trace=trace, warden=warden, fact_record=fact_record,
+            mentions=list(drafter_ids.values()))
 
     # ---- Triage posts the canonical fact-record, @mentioning drafters --
     # Each branch's protocol opens with FACT_RECORD_POSTED, emitted by Triage.
@@ -1349,6 +1402,20 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                 break
         claims_by_branch[DEFICIENCY_BRANCH] = deficiency_record.pop("cured_claims")
 
+    # ---- E3.10: the legal hold is RELEASED only by an explicit human signoff,
+    # after the regulator branches release. Counsel (the General Counsel) directs
+    # the preservation hold lifted once the matter is resolved and the litigation /
+    # inquiry exposure that anchored it has passed; the release is logged as an
+    # additive event carrying the human signer, the timestamp, and the recorded
+    # basis. The hold is NEVER auto-released: it stays active until this human
+    # signoff. The release record gates nothing; it documents that a human, not a
+    # rule or a model, lifted the preservation obligation.
+    if run_legal_hold and legal_hold_record is not None:
+        legal_hold_record = _release_legal_hold(
+            log=log, trace=trace, warden=warden,
+            hold=legal_hold_record["hold"], fact_record=fact_record,
+            mentions=list(drafter_ids.values()))
+
     # The "now" the breach check reads is the last moment the run reached: the
     # affected-party release (after the amendment) when that beat ran, else the
     # amendment re-release, else the regulator release.
@@ -1470,6 +1537,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         cross_border=cross_border_record,
         affected_party=affected_party_record,
         deficiency=deficiency_record,
+        legal_hold=legal_hold_record,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -2691,6 +2759,120 @@ def _emit_determination_record(*, log, branch, regime, standard, disposition,
            else f"INCOMPLETE (missing {', '.join(f for _, f in basis.missing_factors)})."))
     out = record.as_dict()
     out["reasonable_basis"] = basis.as_dict()
+    return out
+
+
+# ----------------------------------------------------------------------------
+# Legal-hold / preservation obligation (E3.10). The instant a breach is reasonably
+# anticipated to lead to litigation or a regulatory inquiry (which is when this war
+# room convenes), the duty to PRESERVE evidence attaches: preserve the affected
+# systems and data, suspend routine deletion. Failure to issue the hold is
+# independent spoliation liability under FRCP 37(e), separate from the breach. The
+# hold ATTACHES BY RULE at incident detection (anchored at INCIDENT_T0), scoped
+# deterministically from the affected-systems / affected-data-categories fields of
+# the canonical fact-record; the pure warden/legal_hold.py validator confirms every
+# cited field exists. It is a STANDING obligation: it stays ACTIVE until counsel
+# explicitly RELEASES it (a human signoff), never auto-released by a clock, a
+# filing, or any rule. Zero LLM anywhere in the lifecycle. It is a PARALLEL
+# preservation obligation: it GATES NOTHING (no filing is held, suppressed, or
+# released by it; no statutory clock stops; no transition moves). Both the attach
+# and the release are logged as additive events so they are hash-chained, replayed,
+# and signed exactly like every other run-log event. This rides ONLY the legal_hold
+# beat, never the four default sealed captures.
+# ----------------------------------------------------------------------------
+def _attach_legal_hold(*, log, trace, warden, fact_record, mentions) -> dict:
+    """Build, validate, and log the legal-hold record that ATTACHES at incident
+    detection, returning the packet-ready dict (the hold plus its preservation-scope
+    validation and the live LegalHold object the release step consumes).
+
+    The hold is built deterministically (scope bound to the affected-systems /
+    affected-data-categories fields, anchored at INCIDENT_T0), validated by the pure
+    warden validator (every cited fact-record field must exist), and appended as a
+    single `legal_hold_attached` event so it is sealed in the run. Nothing here
+    gates: the hold is a parallel preservation obligation. The Warden narrates the
+    attachment in the room as an additive visibility post (never written to the
+    hashed run-log), addressing the drafters, never itself."""
+    hold = build_legal_hold(
+        incident_id=INCIDENT_ID, attached_at=TS_LEGAL_HOLD_ATTACHED,
+        fact_record=fact_record)
+    scope_check = validate_legal_hold(hold, fact_record)
+    log.append("legal_hold_attached", {
+        "incident_id": hold.incident_id,
+        "trigger_event": hold.trigger_event,
+        "attached_at": hold.attached_at,
+        "state": hold.state,
+        "basis": hold.basis,
+        "scope": [item.as_dict() for item in hold.scope],
+        "preservation_scope_complete": scope_check.complete,
+        "missing_items": [
+            {"category": category, "fact_field": fieldname}
+            for category, fieldname in scope_check.missing_items
+        ],
+    })
+    scope_summary = "; ".join(f"{item.category.split('(')[0].strip()}: {item.value}"
+                              for item in hold.scope)
+    trace.say(
+        f"[LH] Legal hold ATTACHED at incident detection ({hold.attached_at}): "
+        f"preservation scope bound to {len(hold.scope)} canonical fact-record "
+        f"field(s) ({', '.join(item.fact_field for item in hold.scope)}); basis "
+        "FRCP 37(e) spoliation / preservation; scope "
+        + ("COMPLETE (every cited field exists)." if scope_check.complete
+           else f"INCOMPLETE (missing {', '.join(f for _, f in scope_check.missing_items)})."))
+    if warden is not None:
+        _warden_announce(
+            warden, trace,
+            "LEGAL HOLD ATTACHED on incident detection. Preserve the affected "
+            f"systems and data; suspend routine deletion. Scope: {scope_summary}. "
+            "Standing obligation: active until counsel releases it.",
+            mentions=mentions,
+            dedup_key=f"warden:legalhold:attached:{INCIDENT_ID}")
+    out = hold.as_dict()
+    out["preservation_scope"] = scope_check.as_dict()
+    # The live LegalHold object the release step transitions; popped before the
+    # packet is assembled so the packet dict stays JSON-clean.
+    out["hold"] = hold
+    return out
+
+
+def _release_legal_hold(*, log, trace, warden, hold, fact_record, mentions) -> dict:
+    """RELEASE the legal hold by an explicit human signoff (counsel), after the
+    regulator branches release. Returns the packet-ready dict (the released hold
+    plus its preservation-scope validation).
+
+    The release is a HUMAN call: the General Counsel directs the preservation hold
+    lifted once the matter is resolved. It is recorded on the frozen hold via
+    LegalHold.released_hold (a pure transition to a new value) and appended as a
+    single `legal_hold_released` event carrying the human signer, the timestamp, and
+    the recorded basis. The hold is never auto-released; this signoff is the only
+    thing that moves it out of the active state. Nothing here gates."""
+    released = hold.released_hold(
+        released_by=LEGAL_HOLD_RELEASE_ROLE, actor=LEGAL_HOLD_RELEASE_ACTOR,
+        ts=TS_LEGAL_HOLD_RELEASE, reason=LEGAL_HOLD_RELEASE_REASON)
+    scope_check = validate_legal_hold(released, fact_record)
+    log.append("legal_hold_released", {
+        "incident_id": released.incident_id,
+        "state": released.state,
+        "released_by": released.release.released_by,
+        "actor": released.release.actor,
+        "ts": released.release.ts,
+        "reason": released.release.reason,
+    })
+    trace.say(
+        f"[LH] Legal hold RELEASED by an explicit human signoff: "
+        f"{released.release.actor.upper()} ({released.release.released_by}) at "
+        f"{released.release.ts}. No rule and no model lifted it.")
+    if warden is not None:
+        _warden_announce(
+            warden, trace,
+            f"LEGAL HOLD RELEASED by {released.release.actor.upper()} "
+            f"({released.release.released_by}). The preservation obligation is "
+            "lifted on an explicit human signoff; routine deletion may resume. The "
+            "hold was never auto-released.",
+            mentions=mentions,
+            dedup_key=f"warden:legalhold:released:{INCIDENT_ID}")
+    out = released.as_dict()
+    out["preservation_scope"] = scope_check.as_dict()
+    out["hold"] = released
     return out
 
 
@@ -3958,7 +4140,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      recovered_retries: int = 0, operability=None,
                      attestation=None, reportability=None,
                      cross_border=None, affected_party=None,
-                     deficiency=None) -> dict:
+                     deficiency=None, legal_hold=None) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -4085,6 +4267,16 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
         packet["cross_border"] = cross_border
     if affected_party is not None:
         packet["affected_party"] = affected_party
+    if legal_hold is not None:
+        # The legal-hold / preservation obligation (E3.10): the typed hold record,
+        # its preservation scope bound to the affected-systems / affected-data
+        # fields, the FRCP 37(e) preservation basis, the active/released state, and
+        # the human release record. The hold attaches by rule at incident detection
+        # and releases only by an explicit human signoff; it GATES NOTHING. Strip
+        # the live LegalHold object (used only by the release step) so the packet
+        # stays JSON-clean.
+        legal_hold = {k: v for k, v in legal_hold.items() if k != "hold"}
+        packet["legal_hold"] = legal_hold
     if deficiency is not None:
         # The modeled-regulator deficiency / rejection loop: the typed deficiency
         # notice, the cure roundtrip, and the final ACCEPTED stamp. An examiner-side
@@ -4436,6 +4628,18 @@ def main() -> int:
                              "re-files under the same two-key gate) and the modeled "
                              "regulator re-reviews -> ACCEPTED. The detection and the gate "
                              "are deterministic Python; only the re-draft prose is the LLM's")
+    parser.add_argument("--legal-hold", action="store_true",
+                        help="run the legal-hold / preservation obligation (E3.10): "
+                             "at incident detection a litigation-hold / preservation "
+                             "duty attaches BY RULE (FRCP 37(e) spoliation), scoped "
+                             "deterministically from the affected systems and data "
+                             "categories of the canonical fact-record. It is a "
+                             "standing obligation that stays ACTIVE until counsel "
+                             "explicitly RELEASES it (a human signoff), never "
+                             "auto-released. It gates NOTHING: a parallel "
+                             "preservation duty alongside the breach-notification "
+                             "track. Zero LLM: the hold attaches by rule and releases "
+                             "by a human")
     parser.add_argument("--materiality", action="store_true",
                         help="run the SEC materiality assessment; if the incident is "
                              "not material the SEC branch is suppressed (no filing)")
@@ -4451,10 +4655,10 @@ def main() -> int:
     args = parser.parse_args()
     if sum([args.inject_contradiction, args.chaos, args.amendment,
             args.inject_claims, args.reportability, args.cross_border,
-            args.affected_party, args.deficiency]) > 1:
+            args.affected_party, args.deficiency, args.legal_hold]) > 1:
         print("Pick one of --inject-contradiction, --chaos, --amendment, "
               "--inject-claims, --reportability, --cross-border, "
-              "--affected-party, or --deficiency.")
+              "--affected-party, --deficiency, or --legal-hold.")
         return 1
     if args.reportability and args.materiality:
         print("--reportability and --materiality are separate beats; pick one.")
@@ -4467,6 +4671,9 @@ def main() -> int:
         return 1
     if args.deficiency and args.materiality:
         print("--deficiency and --materiality are separate beats; pick one.")
+        return 1
+    if args.legal_hold and args.materiality:
+        print("--legal-hold and --materiality are separate beats; pick one.")
         return 1
     if args.immaterial and not args.materiality:
         print("--immaterial requires --materiality.")
@@ -4481,7 +4688,8 @@ def main() -> int:
            "reportability" if args.reportability else \
            "cross_border" if args.cross_border else \
            "affected_party" if args.affected_party else \
-           "deficiency" if args.deficiency else "normal"
+           "deficiency" if args.deficiency else \
+           "legal_hold" if args.legal_hold else "normal"
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 
