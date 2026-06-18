@@ -474,6 +474,99 @@ def _render_consistency(c: dict) -> str:
     return "".join(parts)
 
 
+def _render_controls(c: dict) -> str:
+    """Render the CONTROL-EVIDENCE REGISTER (E4.4): the named-framework control
+    mapping an audit committee reads. Per control, the Warden mechanism, the
+    SPECIFIC named controls it satisfies across SOC 2, ISO/IEC 27001:2022, and
+    NIST CSF 2.0 (plus the relevant regulation article), the EVIDENCE that the
+    control OPERATED in THIS run (the exact run-log event type(s) found and the
+    chain head that seals them), and an OPERATED / NOT-EXERCISED status.
+
+    This is the artifact that reframes the product from "a fast filing engine"
+    into "a tool an audit committee can buy". An auditor does not ask "did it
+    file on time"; they ask which named control framework each mechanism
+    satisfies and where the evidence is. The register answers both, mapping each
+    existing Warden mechanism (two-key release, contradiction veto, exactly-once
+    ledger, signed hash-chained provenance, statutory clocks, the reportability
+    decision gate) to its real control ids and pointing the evidence at the
+    run-log event(s) and the run's chain head. It is a PURE DERIVED render over
+    the assembled packet (floor/controls.py + the declarative floor/controls.yaml
+    catalog): zero LLM, no now(); it never enters the hashed run-log and gates
+    nothing. NOT-EXERCISED is honest, not a failure: it states this run did not
+    exercise that control path (e.g. the veto on a clean run)."""
+    if not c or not c.get("controls"):
+        return ""
+    operated = c.get("operated_count", 0)
+    total = c.get("total", 0)
+    chain_head = ""
+    for ctrl in c.get("controls", []):
+        head = (ctrl.get("evidence", {}) or {}).get("chain_head")
+        if head:
+            chain_head = head
+            break
+    parts = [
+        "<h2>11. Control-evidence register (named-framework control mapping)</h2>",
+        f"<p class='ok'><strong>{_esc(operated)} of {_esc(total)} catalogued "
+        "controls OPERATED and are evidenced in this run.</strong> Each row maps a "
+        "Warden mechanism to a specific named control across SOC 2, ISO/IEC "
+        "27001:2022, and NIST CSF 2.0, and points the evidence at the run-log "
+        "event(s) that prove the control operated and the chain head that seals "
+        "them.</p>",
+        "<p class='sub'>An auditor does not accept &quot;two-key release&quot; as a "
+        "control statement; they accept &quot;Control SOD-01 (SOC 2 CC1.3; ISO/IEC "
+        "27001 A.5.3; NIST CSF PR.AA-05): two distinct human roles signed before "
+        "HUMAN_RELEASED, evidenced by the run-log release_signoff events and sealed "
+        "at the chain head&quot;. This register is that statement for every "
+        "mechanism. It is a pure derived read over the assembled packet (the "
+        "structured mirror of the sealed run-log), generated from a declarative "
+        "control catalog; it never enters the hashed run-log and gates nothing. "
+        "NOT-EXERCISED states honestly that this run's scenario did not exercise "
+        "that control path (for example the contradiction veto on a run with no "
+        "planted contradiction).</p>",
+    ]
+    if chain_head:
+        parts.append(
+            f"<p class='sub'>Evidence seal for this run (per-entry hash chain "
+            f"head): <span class='hash'>{_esc(chain_head)}</span>. Every OPERATED "
+            "control's evidence is bound to this head, so a field edit or a "
+            "reorder/omission moves the head and the detached Ed25519 signature "
+            "over it turns INVALID.</p>")
+    rows = []
+    for ctrl in c.get("controls", []):
+        status = ctrl.get("status", "")
+        if status == "OPERATED":
+            badge = "<span class='cstat cstat-ok'>OPERATED</span>"
+        else:
+            badge = "<span class='cstat cstat-na'>NOT-EXERCISED</span>"
+        ev = ctrl.get("evidence", {}) or {}
+        found = ev.get("found_events", []) or []
+        evidence_cell = (
+            "<code>" + _esc(", ".join(found)) + "</code><br>"
+            + "<span class='sub'>" + _esc(ev.get("detail", "")) + "</span>"
+            if found else
+            "<span class='sub'>" + _esc(ev.get("detail", "")) + "</span>")
+        framework_cell = "<br>".join(
+            "<strong>" + _esc(fw.get("standard")) + " " + _esc(fw.get("ref"))
+            + "</strong>: " + _esc(fw.get("criterion"))
+            for fw in ctrl.get("frameworks", []))
+        rows.append(
+            "<tr><td><strong>" + _esc(ctrl.get("id")) + "</strong><br>"
+            + _esc(ctrl.get("title")) + "<br><span class='sub'>"
+            + _esc(ctrl.get("mechanism")) + "</span></td>"
+            "<td>" + framework_cell + "</td>"
+            "<td>" + evidence_cell + "</td>"
+            "<td>" + badge + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Control / mechanism</th>"
+        "<th>Named-framework controls satisfied</th>"
+        "<th>Run-log evidence (sealed at chain head)</th>"
+        "<th>Status</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    parts.append(
+        f"<p class='sub'><strong>{_esc(c.get('verdict', ''))}</strong></p>")
+    return "".join(parts)
+
+
 def _render_legal_hold(h: dict) -> str:
     """Render the legal-hold / preservation obligation (E3.10), if the legal-hold
     beat ran: the trigger (incident detection) and the attached-at timestamp, the
@@ -1849,6 +1942,7 @@ def _render_html(p: dict) -> str:
     deficiency_block = _render_deficiency(p.get("deficiency", {}))
     completeness_block = _render_completeness(p.get("completeness", {}))
     submission_block = _render_submission(p.get("submission", {}))
+    controls_block = _render_controls(p.get("controls", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
@@ -2067,6 +2161,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {edgar_block}
 
 {submission_block}
+
+{controls_block}
 
 {attestation_block}
 

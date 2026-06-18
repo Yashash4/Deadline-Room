@@ -142,6 +142,7 @@ from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
 from floor.completeness import completeness_record  # noqa: E402
 from floor.consistency import consistency_record  # noqa: E402
+from floor.controls import controls_record  # noqa: E402
 from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
@@ -4499,6 +4500,22 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     consistency = consistency_record(packet)
     if consistency:
         packet["consistency"] = consistency
+    # ---- E4.4: the control-evidence register (named-framework control mapping) ----
+    # A PURE DERIVED render over the assembled packet: per catalogued control
+    # (floor/controls.yaml), the named-framework controls the Warden mechanism
+    # satisfies across SOC 2, ISO/IEC 27001:2022, and NIST CSF 2.0, plus the
+    # EVIDENCE that the control OPERATED in THIS run (the exact run-log event
+    # type(s) found in the packet's structured sections, sealed at the run's chain
+    # head and the detached Ed25519 signature over it) and an OPERATED /
+    # NOT-EXERCISED status. It reads the structured mirror of the sealed run-log
+    # (release.signoffs, diff.blocked_conflicts, chaos.ledger, clocks,
+    # reportability, replay.chain_head), makes zero LLM calls and no now(), and
+    # never enters the hashed run-log or gates a transition. This is the
+    # audit-committee artifact that maps every existing mechanism to its named
+    # control id and immutable evidence.
+    controls = controls_record(packet)
+    if controls:
+        packet["controls"] = controls
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
