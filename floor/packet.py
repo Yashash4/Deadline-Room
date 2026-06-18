@@ -398,6 +398,82 @@ def _render_completeness(c: dict) -> str:
     return "".join(parts)
 
 
+def _render_consistency(c: dict) -> str:
+    """Render the cross-filing CONSISTENCY ASSERTION SHEET (E4.3): the affirmative,
+    examiner-facing attestation that all N filings AGREE on the load-bearing facts.
+    The inverse face of the contradiction veto: instead of only BLOCKING on a
+    conflict, it affirmatively ATTESTS that every filing reports the same
+    incident_start_utc, records_affected, attacker, and containment, with each shared
+    value shown ONCE, a per-fact CONSISTENT / CONFLICT status, the list of filings
+    asserting it, and an overall "all N filings consistent across M load-bearing
+    facts" verdict.
+
+    This is the cross-filing consistency a regulator checks across a multi-jurisdiction
+    filing set: when the same incident is filed to SEC, ICO, NIS2, DORA, and NYDFS the
+    examiner cross-reads them, and a mismatched records count or incident_start across
+    filings is a referral. The sheet is a PURE DERIVED render over the already-
+    reconciled per-branch claims the packet carries (diff.final_claims), with the
+    CONSISTENT / CONFLICT decision computed through the SAME warden/diff.py
+    canonicalization the veto uses (so a timezone-equivalent value is still
+    CONSISTENT). Zero LLM, no now(); it never enters the hashed run-log and gates
+    nothing."""
+    if not c or not c.get("facts"):
+        return ""
+    consistent = c.get("consistent", False)
+    filing_count = c.get("filing_count", 0)
+    fact_count = c.get("fact_count", 0)
+    top_cls = "ok" if consistent else "bad"
+    headline = (
+        f"Cross-filing consistency ATTESTED: all {filing_count} filings report the "
+        f"same value on every one of the {fact_count} load-bearing facts. An examiner "
+        "cross-reading the filing set finds no mismatch."
+        if consistent else
+        "Cross-filing consistency CONFLICT: the filings disagree on a load-bearing "
+        "fact. An examiner cross-reading the set would refer this (see the conflict "
+        "below); the contradiction veto blocks release on the same conflict.")
+    filings = ", ".join(c.get("filings", []))
+    parts = [
+        "<h2>6a. Cross-filing consistency assertion (the examiner's cross-read)</h2>",
+        f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+        "<p class='sub'>When the same incident is filed to several regulators, the "
+        "examiner CROSS-READS the filings: a records count or incident_start that "
+        "differs across filings is a referral. The contradiction veto catches the "
+        "BLOCKING conflicts internally; this is the affirmative attestation the "
+        "examiner wants, that the load-bearing facts are IDENTICAL across all filings, "
+        "with each shared value shown once. It is a pure derived read over the "
+        "already-reconciled claims, computed through the SAME UTC canonicalization the "
+        "veto uses, so a timezone-equivalent value is still consistent. It is a sheet, "
+        "never a gate.</p>",
+        f"<p class='sub'>Filings cross-read: <code>{_esc(filings)}</code>.</p>",
+    ]
+    rows = []
+    for fact in c.get("facts", []):
+        status = fact.get("status", "")
+        if status == "CONSISTENT":
+            badge = "<span class='cstat cstat-ok'>CONSISTENT</span>"
+            value_cell = "<code>" + _esc(fact.get("agreed_value")) + "</code>"
+            asserting = _esc(", ".join(fact.get("filings", [])))
+        else:
+            badge = "<span class='cstat cstat-bad'>CONFLICT</span>"
+            conflict = fact.get("conflict", [])
+            value_cell = "; ".join(
+                "<strong>" + _esc(p.get("filing")) + "</strong>: <code>"
+                + _esc(p.get("value")) + "</code>" for p in conflict)
+            asserting = "(disagreement, see value column)"
+        rows.append(
+            "<tr><td><strong>" + _esc(fact.get("label")) + "</strong></td>"
+            "<td>" + value_cell + "</td>"
+            "<td>" + asserting + "</td>"
+            "<td>" + badge + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Load-bearing fact</th><th>Agreed value</th>"
+        "<th>Filings asserting it</th><th>Status</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    parts.append(
+        f"<p class='{top_cls}'><strong>{_esc(c.get('verdict', ''))}.</strong></p>")
+    return "".join(parts)
+
+
 def _render_legal_hold(h: dict) -> str:
     """Render the legal-hold / preservation obligation (E3.10), if the legal-hold
     beat ran: the trigger (incident detection) and the attached-at timestamp, the
@@ -1768,6 +1844,7 @@ def _render_html(p: dict) -> str:
     cover = _render_cover(p)
     handoff_graph = _render_handoff_graph(p)
     diff_summary = _render_diff(diff)
+    consistency_block = _render_consistency(p.get("consistency", {}))
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
     deficiency_block = _render_deficiency(p.get("deficiency", {}))
     completeness_block = _render_completeness(p.get("completeness", {}))
@@ -1967,6 +2044,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 
 <h2>6. Cross-filing contradiction diff</h2>
 {diff_summary}
+
+{consistency_block}
 
 {reconciliation_block}
 

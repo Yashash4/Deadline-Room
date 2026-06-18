@@ -141,6 +141,7 @@ from floor.recruit import (  # noqa: E402
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
 from floor.completeness import completeness_record  # noqa: E402
+from floor.consistency import consistency_record  # noqa: E402
 from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
@@ -4484,6 +4485,20 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     completeness = completeness_record(packet)
     if completeness:
         packet["completeness"] = completeness
+    # ---- E4.3: the cross-filing consistency assertion sheet ----
+    # A PURE DERIVED render over the already-reconciled claims the packet carries
+    # (packet["diff"]["final_claims"]): per load-bearing fact (incident_start_utc,
+    # records_affected, attacker, containment) the single value attested across the
+    # filing set and a CONSISTENT / CONFLICT status, computed through the SAME
+    # warden/diff.py canonicalization the contradiction veto uses (so a
+    # timezone-equivalent value is still CONSISTENT), with an overall "all N filings
+    # consistent across M load-bearing facts" verdict. It reads the diff result the
+    # packet already holds, makes zero LLM calls and no now(), and never enters the
+    # hashed run-log or gates a transition. Omitted cleanly when fewer than two
+    # filings exist to cross-read.
+    consistency = consistency_record(packet)
+    if consistency:
+        packet["consistency"] = consistency
     if recruit is not None:
         packet["recruit"] = recruit
     if nydfs_recruit is not None:
