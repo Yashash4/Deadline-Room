@@ -2321,6 +2321,58 @@ def _render_policy_version(pv: dict) -> str:
     return "".join(parts)
 
 
+def _render_regime_expert(re: dict) -> str:
+    """Render the per-regime expert reasoning (E5.6): for each filing, the
+    statutory standard its drafter was held to, the named factors it weighed, and
+    the regime-specific RATIONALE block the drafter emitted explaining why the
+    filing meets that standard.
+
+    This is the visible payoff of the regime-expert drafters: each drafter is not a
+    generic slot-filler but a domain expert in its own regulation, and this section
+    shows its reasoning in regime-specific terms. It is a PURE additive render over
+    the assembled packet; the rationale is explanatory prose the model emitted in an
+    optional [REGIME_RATIONALE] fence, extracted out-of-log, so it gates nothing,
+    enters no hashed run-log, and is rendered ONLY when present. The sealed captures
+    carry no regime_expert block, so they render unchanged."""
+    filings = re.get("filings") if re else None
+    if not filings:
+        return ""
+    parts = [
+        "<h2>7d. Regime-expert reasoning (each drafter is an expert in its own "
+        "regulation)</h2>",
+        "<p class='sub'>Each drafter is not a generic slot-filler: it is given the "
+        "statutory standard its filing must meet, the named factors that regulator "
+        "weighs, and the common failure modes for the regime, and it reasons in "
+        "regime-specific terms. The reasoning below is the drafter's own optional "
+        "rationale, explanatory prose only. It changes no load-bearing fact: the "
+        "[CLAIMS] block the Warden diffs is attached after sanitization and is "
+        "untouched, and this rationale is out-of-log, so the sealed run-log shas and "
+        "byte-identical replay are unaffected.</p>",
+    ]
+    for f in filings:
+        parts.append(
+            f"<h3>{_esc(f.get('regime'))} expert reasoning</h3>")
+        standard = f.get("statutory_standard")
+        if standard:
+            parts.append(
+                f"<p class='sub'><strong>Statutory standard:</strong> "
+                f"{_esc(standard)}</p>")
+        factors = f.get("factors") or []
+        if factors:
+            parts.append(
+                "<p class='sub'><strong>Factors this regulator weighs:</strong></p>"
+                "<ul>" + "".join(f"<li>{_esc(x)}</li>" for x in factors) + "</ul>")
+        rationale = f.get("rationale")
+        if rationale:
+            parts.append("<p class='sub'>The drafter's regime-specific rationale:</p>")
+            parts.append(f"<pre>{_esc(rationale)}</pre>")
+        else:
+            parts.append(
+                "<p class='sub'><em>This drafter emitted no separate rationale "
+                "block for this run.</em></p>")
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -2378,6 +2430,7 @@ def _render_html(p: dict) -> str:
     assertion_block = _render_assertion(p.get("assertion", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
+    regime_expert_block = _render_regime_expert(p.get("regime_expert", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
@@ -2589,6 +2642,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {chaos_block}
 
 {security_block}
+
+{regime_expert_block}
 
 {grounding_block}
 

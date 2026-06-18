@@ -233,6 +233,86 @@ def _citation_fields_hint(fact_record: dict) -> str:
     return f"Citeable fact-record fields (cite by these exact names): {fields}."
 
 
+# The fence the regime-expert rationale is wrapped in (E5.6). It is NOT a Warden
+# control envelope: it carries no gated value, it is prose, and it is extracted by
+# the packet renderer for the human-readable reasoning section only. It is
+# deliberately NOT in _CONTROL_FENCES, so the sanitizer leaves it intact (the
+# drafter WANTS to keep this block), while a model-emitted [CLAIMS] / [RECONCILE] /
+# [CHALLENGE] / [MATERIALITY] fence is still defanged exactly as before. The
+# rationale never enters the hashed run-log (the run-log holds only the structured
+# protocol events; the filing prose is packet data, not log data), so a fresh run
+# reproduces the sealed sha and replay stays byte-identical.
+RATIONALE_OPEN = "[REGIME_RATIONALE]"
+RATIONALE_CLOSE = "[/REGIME_RATIONALE]"
+
+
+def _expert_system_prompt(expert_profile) -> str:
+    """The regime-expert fragment threaded into the drafter SYSTEM prompt, built
+    from a regimes.ExpertProfileSpec exactly the way prompt_for builds the
+    format-skeleton fragment. It states the statutory standard the filing must
+    meet, the named factors the regulator weighs, and the common failure modes to
+    avoid, then instructs the model to emit an OPTIONAL fenced rationale block
+    reasoning in regime-specific terms. Deterministic text; the model fills the
+    reasoning. Changes only the prose, never the [CLAIMS] block."""
+    lines = [
+        "You are a domain EXPERT in this specific regulation, not a generic "
+        "drafter. Reason about what THIS regulator requires.",
+        f"Statutory standard the filing must satisfy: {expert_profile.statutory_standard}",
+    ]
+    if expert_profile.factors:
+        lines.append("Named factors this regulator weighs (address the ones the "
+                     "fact-record supports):")
+        for f in expert_profile.factors:
+            lines.append(f"  - {f}")
+    if expert_profile.failure_modes:
+        lines.append("Common failure modes for this regime (write to avoid these):")
+        for fm in expert_profile.failure_modes:
+            lines.append(f"  - {fm}")
+    lines.append(
+        "After the filing body, you MAY add one OPTIONAL short reasoning block, "
+        f"wrapped exactly as {RATIONALE_OPEN} on its own line, then two to four "
+        "sentences reasoning in REGIME-SPECIFIC terms (why this filing meets the "
+        "statutory standard, which named factors the fact-record drove, and which "
+        "failure mode you avoided), then "
+        f"{RATIONALE_CLOSE} on its own line. The rationale is explanatory prose "
+        "only: it states no new facts and repeats no figures the body did not "
+        "already carry.")
+    return "\n".join(lines)
+
+
+def extract_rationale(text: str) -> str:
+    """Extract the regime-expert rationale wrapped in the [REGIME_RATIONALE] fence
+    from a filing body, or "" if none is present. Pure string work used by the
+    packet renderer to show the per-regime reasoning in its own section; it never
+    feeds a gate, a clock, the diff, or the hashed run-log. Returns the inner text
+    with surrounding whitespace stripped; tolerant of no block, an unclosed block
+    (returns ""), or the close appearing before the open (returns "")."""
+    start = text.find(RATIONALE_OPEN)
+    if start == -1:
+        return ""
+    inner_start = start + len(RATIONALE_OPEN)
+    end = text.find(RATIONALE_CLOSE, inner_start)
+    if end == -1:
+        return ""
+    return text[inner_start:end].strip()
+
+
+def strip_rationale(text: str) -> str:
+    """Return the filing body with the [REGIME_RATIONALE] block removed, so the
+    human-readable filing prose and the per-regime reasoning section can be
+    rendered separately. A body with no block is returned unchanged. Pure string
+    work; never touches the [CLAIMS] block (the rationale always sits in the prose
+    half, the claims block is appended after sanitization)."""
+    start = text.find(RATIONALE_OPEN)
+    if start == -1:
+        return text
+    end = text.find(RATIONALE_CLOSE, start + len(RATIONALE_OPEN))
+    if end == -1:
+        return text
+    end += len(RATIONALE_CLOSE)
+    return (text[:start].rstrip() + "\n" + text[end:].lstrip()).strip()
+
+
 def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
     """Assemble the message a drafter posts back: the LLM prose followed by the
     deterministic structured-claims block the Warden diffs.
@@ -252,8 +332,9 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
-                 regime: str = "NIS2", format_profile=None, max_tokens: int = 700,
-                 timeout: int = 90, max_attempts: int = 1) -> str:
+                 regime: str = "NIS2", format_profile=None, expert_profile=None,
+                 max_tokens: int = 700, timeout: int = 90,
+                 max_attempts: int = 1) -> str:
     """Draft the regulatory notification body for one regime from the canonical
     fact-record on the named provider. Returns the model's text. Raises
     DrafterError on transport or empty-content failure (the caller decides
@@ -263,7 +344,23 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     REAL per-regime field skeleton (e.g. SEC 8-K Item 1.05's four mandated
     elements). The model then writes prose INTO those labelled slots instead of a
     generic structure, so the filing reads examiner-authored. The structured
-    [CLAIMS] block is attached separately and is never affected by this."""
+    [CLAIMS] block is attached separately and is never affected by this.
+
+    expert_profile, when supplied, is a floor.regimes.ExpertProfileSpec carrying the
+    statutory standard the filing must meet, the named factors the regulator weighs,
+    and the common failure modes for this regime (E5.6). It is threaded into the
+    SYSTEM prompt exactly the way format_profile is, turning the drafter from a
+    slot-filler into a regime EXPERT that reasons about the specific regulation and
+    emits an OPTIONAL fenced [REGIME_RATIONALE] block of regime-specific reasoning.
+    Like format_profile, it changes ONLY the human-readable prose: the [CLAIMS]
+    block is attached after sanitization and is never affected, and the rationale is
+    out-of-log (the run-log holds structured events, not filing prose), so a fresh
+    run reproduces the sealed sha and replay stays byte-identical. Both params
+    default to None, so a caller that passes neither is byte-identical to before."""
+    expert = (
+        "\n\n" + _expert_system_prompt(expert_profile)
+        if expert_profile is not None else ""
+    )
     if format_profile is not None:
         from floor.formats import prompt_for
         structure = prompt_for(format_profile)
@@ -273,7 +370,7 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             "state only what the supplied fact-record supports, never invent "
             "facts, and you fill the exact mandated fields the form requires. No "
             "markdown headers; plain prose under each field label. "
-            + _CITATION_INSTRUCTION
+            + _CITATION_INSTRUCTION + expert
         )
         user = (
             f"Draft the {regime} mandatory incident notification from this "
@@ -295,7 +392,7 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         "what the supplied fact-record supports, never invent facts, and you keep "
         "the structure a regulator expects. No markdown headers, plain prose with "
         "short labelled sections. "
-        + _CITATION_INSTRUCTION
+        + _CITATION_INSTRUCTION + expert
     )
     user = (
         f"Draft the {regime} mandatory incident notification (the 72-hour "

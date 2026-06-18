@@ -87,6 +87,24 @@ class ReportabilitySpec:
 
 
 @dataclass(frozen=True)
+class ExpertProfileSpec:
+    """The regime-expert substance for one regime (E5.6).
+
+    `statutory_standard` is the legal test the filing must satisfy; `factors` are
+    the named elements the regulator weighs; `failure_modes` are the common ways a
+    filing for this regime falls short. floor/drafter.py threads this into the
+    drafter SYSTEM prompt exactly the way a FormatProfile is threaded, so the model
+    reasons in regime-specific terms and emits an OPTIONAL fenced rationale block.
+    It changes ONLY the human-readable prose: the [CLAIMS] block the Warden diffs is
+    attached after sanitization and is never affected, and the rationale is
+    out-of-log, so the sealed run-log shas and byte-identical replay are
+    untouched."""
+    statutory_standard: str
+    factors: tuple[str, ...] = ()
+    failure_modes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class HighRiskSpec:
     """The declarative GDPR Art 34 high-risk threshold for the affected-party
     (data-subject) communication track.
@@ -178,6 +196,7 @@ class RegimeSpec:
     obligations: ObligationSpec | None = None
     high_risk: HighRiskSpec | None = None
     corpus_tags: tuple[str, ...] = ()
+    expert_profile: ExpertProfileSpec | None = None
 
     @property
     def is_startup(self) -> bool:
@@ -247,6 +266,26 @@ def _parse_regime(record: dict) -> RegimeSpec:
                 f"regime {record['key']} declares an empty obligations block; an "
                 f"obligations block must carry at least one of discloses, "
                 f"forbids_disclosing, or mandates")
+    expert = record.get("expert_profile")
+    expert_spec = None
+    if expert is not None:
+        # An expert_profile block, when present, must carry a statutory_standard and
+        # at least one factor: a profile with no standard or no factors is a catalog
+        # error (declaring the block at all is a claim the regime carries
+        # regime-expert substance), surfaced structurally rather than silently
+        # treated as "no expert profile".
+        standard = " ".join(str(expert["statutory_standard"]).split())
+        factors = _phrase_tuple(expert.get("factors"))
+        failure_modes = _phrase_tuple(expert.get("failure_modes"))
+        if not standard or not factors:
+            raise ValueError(
+                f"regime {record['key']} declares an expert_profile that is missing "
+                f"a statutory_standard or factors; both are required")
+        expert_spec = ExpertProfileSpec(
+            statutory_standard=standard,
+            factors=factors,
+            failure_modes=failure_modes,
+        )
     return RegimeSpec(
         key=record["key"],
         authority=record["authority"],
@@ -263,6 +302,7 @@ def _parse_regime(record: dict) -> RegimeSpec:
         obligations=obligations_spec,
         high_risk=high_risk_spec,
         corpus_tags=_corpus_tags(record.get("corpus_tags")),
+        expert_profile=expert_spec,
     )
 
 
@@ -291,6 +331,24 @@ def _token_tuple(value) -> tuple[str, ...]:
     return tuple(str(v).strip().lower() for v in value if str(v).strip())
 
 
+def _phrase_tuple(value) -> tuple[str, ...]:
+    """Normalize a YAML list of human phrases (expert-profile factors and failure
+    modes) into a tuple of whitespace-collapsed strings, in the declared order,
+    preserving the original casing and punctuation. None or an empty list yields the
+    empty tuple. A non-list value is a catalog error surfaced structurally."""
+    if not value:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(
+            f"expected a list of phrases, got {type(value).__name__}")
+    out: list[str] = []
+    for v in value:
+        s = " ".join(str(v).split())
+        if s:
+            out.append(s)
+    return tuple(out)
+
+
 def load_catalog(path: str | Path | None = None) -> list[RegimeSpec]:
     """Read the regime catalog file and return the typed regime records in file
     order. Raises if the file is missing or a record is malformed (a regime that
@@ -305,6 +363,18 @@ def load_catalog(path: str | Path | None = None) -> list[RegimeSpec]:
 
 def by_key(specs: list[RegimeSpec]) -> dict[str, RegimeSpec]:
     return {s.key: s for s in specs}
+
+
+def expert_profile_for(
+        key: str, path: str | Path | None = None) -> ExpertProfileSpec | None:
+    """Resolve the regime-expert profile a regime declares in floor/regimes.yaml,
+    by regime key, or None if that regime declares none (E5.6). Raises if the key
+    names no regime, so a caller typo surfaces structurally."""
+    specs = by_key(load_catalog(path))
+    try:
+        return specs[key].expert_profile
+    except KeyError as e:
+        raise KeyError(f"unknown regime key: {key!r}") from e
 
 
 def load_controller(path: str | Path | None = None) -> ControllerSpec:

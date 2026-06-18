@@ -34,6 +34,24 @@
 #                       enters the deadline math or the hashed run-log, so the SEC
 #                       computed instant is byte-identical with or without it.
 #   format_profile   the per-regime filing field skeleton id (floor/formats.py)
+#   expert_profile (E5.6, the regime-expert drafter spine):
+#     The real regulatory SUBSTANCE that turns a drafter from a slot-filler into a
+#     regime expert. It carries the statutory STANDARD the filing must satisfy, the
+#     named FACTORS the regulator actually weighs, and the common FAILURE MODES a
+#     filing for this regime falls into. floor/drafter.py threads it into the
+#     drafter SYSTEM prompt exactly the way format_profile is threaded, so the model
+#     reasons in regime-specific terms and emits an OPTIONAL fenced rationale block.
+#     It changes ONLY the human-readable prose: the [CLAIMS] block the Warden diffs
+#     is attached after sanitization exactly as today and is never affected, and the
+#     rationale is out-of-log, so a fresh run reproduces the sealed sha and replay
+#     stays byte-identical. Faithful and concise, no invented citations. Shape:
+#       statutory_standard  one or two plain sentences naming the legal test the
+#                           filing must meet for this regime.
+#       factors             the named elements the regulator weighs, each a short
+#                           plain phrase.
+#       failure_modes       the common ways a filing for this regime falls short,
+#                           each a short plain phrase, so the drafter writes to avoid
+#                           them.
 #   start:
 #     mode    "startup"       the clock starts when the floor opens (anchor below)
 #             "recruit"       the clock starts at the runtime-recruit moment
@@ -173,6 +191,24 @@ regimes:
       mode: startup
       anchor: incident_t0
     corpus_tags: ["NIS2-Art23(4)", "NIS2-Art23(1)", "NIS2-Art23(3)", "NIS2-Recital-101"]
+    expert_profile:
+      statutory_standard: >-
+        NIS2 Article 23(4)(a) early warning: within 24 hours of becoming aware of a
+        significant incident, an essential or important entity submits an early
+        warning to the CSIRT or competent authority indicating whether the incident
+        is suspected to be caused by unlawful or malicious acts and whether it could
+        have a cross-border impact. The early warning is a fast first signal, not the
+        full assessment.
+      factors:
+        - whether the incident is suspected to result from an unlawful or malicious act
+        - whether the incident could have a cross-border impact across member states
+        - the significance threshold (severe operational disruption or financial loss, or considerable material or non-material damage to others)
+        - the time of becoming aware that anchors the 24-hour clock
+      failure_modes:
+        - missing the 24-hour deadline by waiting for full forensic certainty
+        - leaving the suspected-malicious or cross-border flag unanswered
+        - padding the early warning with detail that belongs in the 72-hour notification
+        - asserting a cause or attribution the facts do not yet support
     reportability:
       standard: >-
         NIS2 Article 23 significant impact: an incident is reportable when it
@@ -199,6 +235,23 @@ regimes:
       mode: startup
       anchor: incident_t0
     corpus_tags: ["NIS2-Art23(4)", "NIS2-Art23(1)", "NIS2-Art23(3)", "NIS2-Recital-101"]
+    expert_profile:
+      statutory_standard: >-
+        NIS2 Article 23(4)(b) incident notification: within 72 hours of becoming
+        aware of a significant incident, the entity provides an initial assessment of
+        the significant incident, including its severity and impact, and where
+        available the indicators of compromise. This updates and supersedes the
+        24-hour early warning with an evidenced assessment.
+      factors:
+        - the initial assessment of severity and impact on the service and on others
+        - the indicators of compromise known so far (threat actor, affected systems)
+        - confirmation of the suspected-malicious and cross-border findings from the early warning
+        - the significance of the disruption to the essential or important service
+      failure_modes:
+        - submitting a notification with no severity or impact assessment, only a description
+        - omitting indicators of compromise that are already known
+        - contradicting the earlier early warning without explaining what changed
+        - overstating impact beyond what the fact-record supports
     reportability:
       standard: >-
         NIS2 Article 23 significant impact: an incident is reportable when it
@@ -225,6 +278,25 @@ regimes:
       mode: startup
       anchor: incident_t0
     corpus_tags: ["DORA-2022/2554-Art19(1)", "DORA-2022/2554-Art19(3)", "DORA-2022/2554-Art19(4)", "DORA-RTS-2024/1772-Art1", "DORA-RTS-2024/1772-Art19"]
+    expert_profile:
+      statutory_standard: >-
+        DORA (Regulation 2022/2554) Article 19 major ICT-related incident report:
+        a financial entity reports an incident classified as MAJOR under the RTS
+        2024/1772 criteria to its lead competent authority, with the initial
+        notification due without undue delay and in any case within the time limits
+        set by the RTS. The report is keyed to the classification criteria, not a
+        free-form narrative.
+      factors:
+        - clients, financial counterparts, and transactions affected
+        - the duration of the incident and any service downtime
+        - geographical spread and the criticality of the services affected (e.g. the core banking ledger)
+        - data losses and the economic impact, confined to what is evidenced
+        - reputational impact where it is material
+      failure_modes:
+        - reporting a narrative that does not map to the RTS classification criteria
+        - leaving the criticality of affected functions unstated
+        - guessing economic impact or data-loss figures the fact-record does not support
+        - treating a major incident as routine and under-reporting the downtime
     reportability:
       standard: >-
         DORA major incident (Regulation 2022/2554 Art 19, classified under the
@@ -266,6 +338,25 @@ regimes:
       mode: startup
       anchor: materiality_determination
     corpus_tags: ["SEC-Form8K-Item1.05(a)", "SEC-Form8K-Item1.05(b)", "SEC-Form8K-Item1.05-Instruction1", "SEC-Form8K-Item1.05-Instruction2", "SEC-17CFR229.106(a)", "SEC-CF-CDI-104B.01"]
+    expert_profile:
+      statutory_standard: >-
+        SEC Form 8-K Item 1.05: a registrant that has determined a cybersecurity
+        incident is MATERIAL discloses, within four business days of that
+        materiality determination, the material aspects of the nature, scope, and
+        timing of the incident and the material impact or reasonably likely material
+        impact on the registrant, including on its financial condition and results of
+        operations. Materiality is judged from the reasonable investor's perspective,
+        weighing quantitative and qualitative factors.
+      factors:
+        - the material aspects of the nature of the incident (what occurred, the threat actor, systems and data involved)
+        - the material aspects of the scope (records affected, breadth across systems)
+        - the material aspects of the timing (onset, discovery, current containment status)
+        - the material impact or reasonably likely material impact on financial condition and results of operations
+      failure_modes:
+        - disclosing technical or operational detail that Item 1.05 does not require and that aids a threat actor
+        - speculating about impact beyond what is reasonably likely and supported
+        - omitting the material-impact element and describing only the incident
+        - missing the four-business-day clock from the materiality determination
     reportability:
       standard: >-
         SEC Item 1.05 materiality: a cybersecurity incident is reportable when
@@ -308,6 +399,24 @@ regimes:
       jurisdiction: UK
       name_tokens: [uk, ico]
     corpus_tags: ["GDPR-Art33", "GDPR-Art4(12)", "GDPR-Art5(1)(c)", "GDPR-Art56(1)"]
+    expert_profile:
+      statutory_standard: >-
+        UK GDPR Article 33 personal-data breach notification to the ICO: a personal
+        data breach is notified to the supervisory authority without undue delay and,
+        where feasible, not later than 72 hours after becoming aware of it, unless the
+        breach is unlikely to result in a risk to the rights and freedoms of natural
+        persons. The notice carries the Article 33(3) content.
+      factors:
+        - the nature of the breach (categories and approximate number of data subjects and records concerned)
+        - the likely consequences of the breach for the affected individuals
+        - the measures taken or proposed to address the breach and mitigate its effects
+        - the risk to the rights and freedoms of natural persons that drives the duty
+        - data minimization: the notice carries only what is necessary, not the full incident detail
+      failure_modes:
+        - missing the 72-hour window or failing to justify a delay
+        - over-disclosing data the minimization duty (Art 5(1)(c)) keeps out of the supervisory notice
+        - omitting the likely-consequences or measures-taken elements
+        - reporting approximate numbers as false precision the fact-record does not support
     reportability:
       standard: >-
         UK GDPR / GDPR Article 33 risk to the rights and freedoms of natural
@@ -350,6 +459,24 @@ regimes:
       jurisdiction: NY
       name_tokens: [nydfs]
     corpus_tags: ["NYDFS-23NYCRR500.17(a)", "NYDFS-23NYCRR500.01(d)"]
+    expert_profile:
+      statutory_standard: >-
+        NYDFS 23 NYCRR 500.17(a)(1): a covered entity notifies the superintendent
+        electronically, as promptly as possible but in no event later than 72 hours,
+        after determining that a reportable cybersecurity event has occurred, where
+        the event has a reasonable likelihood of materially harming any material part
+        of normal operations or notice of it is required to be provided to another
+        government or self-regulatory body.
+      factors:
+        - identification of the covered entity and the reporting basis under 500.17(a)(1)
+        - the nature of the cybersecurity event
+        - the systems and categories of information affected
+        - the determination time that anchors the 72-hour clock
+      failure_modes:
+        - counting the 72 hours from discovery rather than from the determination
+        - failing to identify the covered entity or the reporting basis
+        - omitting the systems and information affected
+        - treating the notice as the full investigation rather than the prompt initial notice
     reportability:
       standard: >-
         NYDFS 23 NYCRR 500.17(a) materiality: a cybersecurity event is reportable
@@ -395,6 +522,24 @@ regimes:
       jurisdiction: IN
       name_tokens: [india]
     corpus_tags: ["India-DPDP-s8(6)", "India-DPDP-Rule7"]
+    expert_profile:
+      statutory_standard: >-
+        India DPDP Act 2023 s 8(6) read with the DPDP Rules 2025 (Rule 7): on
+        becoming aware of a personal-data breach the Data Fiduciary intimates the
+        affected Data Principals and the Data Protection Board without delay, and
+        gives the Board a detailed report within 72 hours (extendable on written
+        request). The duty attaches to any personal-data breach without a separate
+        materiality threshold.
+      factors:
+        - the nature, extent, and timing of the personal-data breach
+        - the categories and approximate number of Data Principals and records affected
+        - the likely consequences for the affected Data Principals
+        - the measures taken or proposed to mitigate the breach
+      failure_modes:
+        - delaying the intimation to Data Principals while assessing the breach
+        - missing the 72-hour detailed report to the Board, or relying on an unsought extension
+        - omitting the mitigation measures or the affected-data categories
+        - treating a non-materiality-thresholded regime as if a materiality screen applied
     reportability:
       standard: >-
         India DPDP Act 2023 (s 8(6)) read with DPDP Rules 2025 (Rule 7): on any
@@ -432,6 +577,23 @@ regimes:
       jurisdiction: SG
       name_tokens: [singapore, pdpc]
     corpus_tags: ["Singapore-PDPA-s26D", "Singapore-PDPA-s26B"]
+    expert_profile:
+      statutory_standard: >-
+        Singapore PDPA s 26D: once an organisation assesses that a data breach is
+        notifiable (it results in or is likely to result in significant harm to an
+        affected individual, or is of significant scale affecting 500 or more
+        individuals), it notifies the PDPC as soon as practicable and in any case no
+        later than 3 calendar days after making that determination.
+      factors:
+        - the notifiability assessment (significant harm, or significant scale of 500 or more individuals)
+        - the nature and circumstances of the data breach
+        - the personal data and number of affected individuals involved
+        - the steps taken or to be taken in response to the breach
+      failure_modes:
+        - counting the 3-day clock from discovery rather than from the notifiability determination
+        - notifying the PDPC for a breach that does not meet either notifiability limb
+        - omitting the affected-individual count relevant to the significant-scale limb
+        - leaving the remedial steps unstated
     reportability:
       standard: >-
         Singapore PDPA s 26B notifiable data breach: a data breach is notifiable
@@ -467,6 +629,24 @@ regimes:
       jurisdiction: AU
       name_tokens: [australia, oaic]
     corpus_tags: ["Australia-NDB-s26WE"]
+    expert_profile:
+      statutory_standard: >-
+        Australia Privacy Act 1988 (Cth) Part IIIC Notifiable Data Breaches scheme:
+        where an entity has reasonable grounds to believe an eligible data breach has
+        occurred (unauthorised access, disclosure, or loss of personal information
+        likely to result in serious harm that remedial action has not prevented), it
+        prepares and gives a statement to the OAIC and notifies affected individuals
+        as soon as practicable, having assessed within the outer 30-day window.
+      factors:
+        - whether the access, disclosure, or loss is likely to result in serious harm
+        - the kinds of personal information involved and their sensitivity
+        - whether remedial action has prevented the likely serious harm
+        - the recommendations for steps affected individuals should take in response
+      failure_modes:
+        - drifting past the 30-day assessment window without forming a belief
+        - notifying for a suspected breach before assessing the serious-harm limb
+        - omitting the remedial-action analysis that can negate eligibility
+        - failing to give affected individuals practical recommended steps
     reportability:
       standard: >-
         Australia Privacy Act 1988 (Cth) s 26WE eligible data breach: there is
@@ -502,6 +682,24 @@ regimes:
       jurisdiction: CA
       name_tokens: [canada, osfi]
     corpus_tags: ["Canada-PIPEDA-s10.1"]
+    expert_profile:
+      statutory_standard: >-
+        OSFI Technology and Cyber Security Incident Reporting advisory (with
+        Guideline B-13): a federally regulated financial institution reports a
+        reportable technology or cyber security incident to OSFI's Technology Risk
+        Division and its Lead Supervisor within 24 hours, or sooner if possible, where
+        the incident is assessed as high or critical severity or has a material impact
+        on operations.
+      factors:
+        - the assessed severity of the incident (high or critical) and its operational impact
+        - the nature of the technology or cyber security incident
+        - the systems, services, and customers affected
+        - the time the incident was identified that anchors the 24-hour clock
+      failure_modes:
+        - missing the 24-hour supervisor notification on a high or critical incident
+        - under-assessing severity to avoid the reporting trigger
+        - omitting the impact on customers or critical operations
+        - reporting without naming the affected systems and services
     reportability:
       standard: >-
         OSFI Technology and Cyber Security Incident Reporting advisory: a
@@ -537,6 +735,23 @@ regimes:
       jurisdiction: BR
       name_tokens: [brazil, anpd]
     corpus_tags: ["Brazil-LGPD-Art48"]
+    expert_profile:
+      statutory_standard: >-
+        Brazil LGPD (Law 13.709/2018) Article 48 read with Regulation CD/ANPD
+        15/2024: the controller communicates a security incident that may result in
+        relevant risk or harm to the data subjects to the ANPD and to the affected
+        data subjects within 3 business days, counted from awareness that the incident
+        affected personal data.
+      factors:
+        - whether the incident may result in relevant risk or harm to the data subjects
+        - the nature of the affected personal data and the data subjects involved
+        - the technical and security measures used to protect the data
+        - the risk-mitigation measures adopted or to be adopted
+      failure_modes:
+        - counting calendar days rather than the LGPD business-day window
+        - communicating only to the ANPD and not to the affected data subjects when required
+        - omitting the protective measures or the mitigation steps
+        - over-reporting an incident with no relevant risk or harm that only needs recording
     reportability:
       standard: >-
         Brazil LGPD (Law 13.709/2018) Art 48 read with Regulation CD/ANPD 15/2024:
@@ -571,6 +786,24 @@ regimes:
       jurisdiction: KR
       name_tokens: [korea, pipc]
     corpus_tags: ["Korea-PIPA-Art34"]
+    expert_profile:
+      statutory_standard: >-
+        South Korea PIPA Article 34 read with its Enforcement Decree: on becoming
+        aware of a personal-information breach a controller notifies the affected data
+        subjects without delay and reports to the PIPC (or KISA) within 72 hours where
+        the breach reaches the reporting thresholds (1,000 or more data subjects, or
+        sensitive or unique-identifying information, or an external unauthorised-access
+        breach).
+      factors:
+        - whether the breach crosses a reporting threshold (1,000 or more subjects, sensitive or unique-identifying data, or external unauthorised access)
+        - the categories and volume of personal information leaked
+        - the measures that may significantly reduce the risk of harm to data subjects
+        - the response and remediation already taken
+      failure_modes:
+        - missing the 72-hour PIPC report once a threshold is crossed
+        - failing to notify the affected data subjects without delay
+        - omitting the risk-reduction measures that can excuse the PIPC report
+        - misjudging whether sensitive or unique-identifying information was involved
     reportability:
       standard: >-
         South Korea PIPA Art 34: a personal-information controller must report a
@@ -599,6 +832,24 @@ regimes:
       mode: post_release
       anchor: release_moment
     corpus_tags: ["GDPR-Art34", "GDPR-Art33", "GDPR-Art4(12)"]
+    expert_profile:
+      statutory_standard: >-
+        GDPR Article 34 communication to the data subject: when a personal-data
+        breach is likely to result in a high risk to the rights and freedoms of
+        natural persons, the controller communicates the breach to the affected
+        individuals without undue delay, in clear and plain language, carrying at
+        least the contact point, the likely consequences, and the measures taken or
+        proposed, including steps the individual can take to protect themselves.
+      factors:
+        - the nature of the breach described in clear and plain language for the individual
+        - the contact point where the individual can obtain more information
+        - the likely consequences of the breach for the affected individual
+        - the measures taken or proposed and the protective steps the individual can take
+      failure_modes:
+        - writing to the data subject in supervisory-notice jargon rather than plain language
+        - omitting the practical steps the individual can take to protect themselves
+        - communicating when the breach is not high risk, or failing to when it is
+        - leaving out the contact point for follow-up
     high_risk:
       standard: >-
         GDPR Article 34: a personal-data breach must be communicated to the
