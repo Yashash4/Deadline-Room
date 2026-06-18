@@ -37,3 +37,6 @@ jobs:
 
       - name: Hygiene gate (no stray dashes, no AI attribution)
         run: python scripts/hygiene_gate.py
+
+      - name: Eval regression gate (faithfulness metrics vs the committed baseline)
+        run: python scripts/eval_regression.py
