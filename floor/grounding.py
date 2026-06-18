@@ -126,6 +126,12 @@ class GroundingResult:
     grounded: int = 0
     total: int = 0
     ungrounded: list[UngroundedSpan] = field(default_factory=list)
+    # The fact-record FIELDS whose spans the scorer EVALUATED and found grounded,
+    # by span kind. Used only by the E5.5 confidence calibration to know which
+    # self-reported claims the scorer actually evaluated and found supported. It is
+    # an in-memory aid, deliberately NOT part of as_dict(), so the packet JSON shape
+    # and the sealed captures are untouched.
+    grounded_fields: set[str] = field(default_factory=set)
 
     @property
     def score(self) -> float:
@@ -276,9 +282,11 @@ def score_filing(filing_text: str, fact_record: dict, *, branch: str = "") -> Gr
         result.total += 1
         if incident_date is None:
             result.grounded += 1
+            result.grounded_fields.add("incident_start_utc")
             continue
         if _date_matches(parts, incident_date):
             result.grounded += 1
+            result.grounded_fields.add("incident_start_utc")
         else:
             result.ungrounded.append(UngroundedSpan(
                 kind="date", span=prose[start:end].strip(),
@@ -308,6 +316,7 @@ def score_filing(filing_text: str, fact_record: dict, *, branch: str = "") -> Gr
             result.total += 1
             if _entity_grounded(span.lower(), named):
                 result.grounded += 1
+                result.grounded_fields.add("attacker")
             else:
                 result.ungrounded.append(UngroundedSpan(
                     kind="named_entity", span=span,
@@ -333,6 +342,7 @@ def score_filing(filing_text: str, fact_record: dict, *, branch: str = "") -> Gr
         result.total += 1
         if norm in grounded_nums:
             result.grounded += 1
+            result.grounded_fields.add("records_affected")
         else:
             result.ungrounded.append(UngroundedSpan(
                 kind="number", span=raw,
@@ -454,6 +464,139 @@ def strip_citations(filing_text: str) -> str:
     human-readable rendering. Pure string work; leaves the [CLAIMS] block and all
     other text untouched."""
     return re.sub(r"\s*" + _CITATION.pattern, "", filing_text or "")
+
+
+# ---------------------------------------------------------------------------
+# Per-claim confidence calibration (E5.5). A drafter may self-report a CONFIDENCE
+# level (low|medium|high) per load-bearing claim. This pure step CALIBRATES that
+# self-report against the deterministic grounding scorer above: a HIGH-confidence
+# claim the scorer flagged as UNGROUNDED is a loud calibration MISS (overconfident
+# on an unsupported fact, the failure this exists to surface); a LOW-confidence
+# claim the scorer found grounded is UNDER-CONFIDENT (a softer signal). It is pure
+# and deterministic, no LLM and no now(): it only pairs an already-produced
+# self-report with an already-produced grounding verdict and reports the pairing.
+# ---------------------------------------------------------------------------
+
+# The fact-record FIELD each grounding span KIND scores, so a self-reported
+# confidence keyed by field can be paired with the scorer's per-kind verdict. The
+# scorer flags ungrounded spans by kind ("number" for the count, "date" for the
+# incident date, "named_entity" for the breach actor); these are the fields those
+# kinds carry.
+_FIELD_FOR_KIND = {
+    "number": "records_affected",
+    "date": "incident_start_utc",
+    "named_entity": "attacker",
+}
+
+
+@dataclass(frozen=True)
+class CalibrationPair:
+    """One self-reported confidence paired with the scorer's grounded/ungrounded
+    verdict for the same claim field, with a deterministic calibration status."""
+    field: str          # the fact-record field the claim is about
+    level: str          # the self-reported confidence: low|medium|high
+    grounded: bool      # whether the scorer found this field's span(s) grounded
+    status: str         # "hit" | "miss" | "under_confident"
+    note: str           # a short human-readable explanation
+
+
+@dataclass
+class CalibrationResult:
+    """The per-filing calibration of the drafter's confidence self-report against
+    the grounding scorer. pairs holds one CalibrationPair per self-reported field
+    that the scorer also evaluated; misses is the loud subset."""
+    branch: str
+    pairs: list[CalibrationPair] = field(default_factory=list)
+
+    @property
+    def misses(self) -> list[CalibrationPair]:
+        """High-confidence-but-ungrounded pairs: the loud calibration failures."""
+        return [p for p in self.pairs if p.status == "miss"]
+
+    @property
+    def under_confident(self) -> list[CalibrationPair]:
+        return [p for p in self.pairs if p.status == "under_confident"]
+
+    @property
+    def has_miss(self) -> bool:
+        return bool(self.misses)
+
+    def as_dict(self) -> dict:
+        return {
+            "branch": self.branch,
+            "has_miss": self.has_miss,
+            "miss_count": len(self.misses),
+            "pairs": [
+                {"field": p.field, "level": p.level, "grounded": p.grounded,
+                 "status": p.status, "note": p.note}
+                for p in self.pairs
+            ],
+        }
+
+
+def _ungrounded_fields(grounding_result) -> set[str]:
+    """The set of fact-record fields the grounding scorer flagged as UNGROUNDED in
+    this filing, derived from the kinds of its ungrounded spans. Pure read over the
+    already-produced GroundingResult."""
+    fields: set[str] = set()
+    for span in grounding_result.ungrounded:
+        mapped = _FIELD_FOR_KIND.get(span.kind)
+        if mapped:
+            fields.add(mapped)
+    return fields
+
+
+def calibrate(confidence_block: dict[str, str], grounding_result) -> CalibrationResult:
+    """Calibrate a drafter's per-claim confidence self-report against the
+    deterministic grounding scorer for the same filing. Pure and deterministic: no
+    LLM, no clock, no randomness; the same (confidence_block, grounding_result)
+    always yields the same CalibrationResult, so it is replay-safe and prints a
+    re-runnable receipt.
+
+    confidence_block is a {field: level} mapping (low|medium|high) as parsed from a
+    drafter's [CONFIDENCE] block by floor.drafter.parse_confidence. grounding_result
+    is the GroundingResult score_filing produced for the SAME filing. For each
+    self-reported field the scorer also evaluates, we pair the level with whether
+    the scorer found that field grounded and assign a status:
+
+      - miss: HIGH confidence but the scorer flagged the field UNGROUNDED. This is
+        the loud failure: the drafter asserted a fact it was sure of and the
+        deterministic scorer could not trace it to the record.
+      - under_confident: LOW confidence but the scorer found the field grounded. A
+        softer signal that the self-report under-rated a supported claim.
+      - hit: the self-report and the scorer agree (high-or-medium and grounded, or
+        low and ungrounded), i.e. the confidence tracks the grounding.
+
+    A self-reported field the scorer did not evaluate (no scored span of that kind
+    in the prose) is skipped: there is nothing to calibrate against. This GATES
+    NOTHING; it is a printed receipt only."""
+    ungrounded = _ungrounded_fields(grounding_result)
+    # Only fields the scorer actually evaluated are calibratable: a field with a
+    # scored span the scorer found grounded, or a flagged ungrounded span. A field
+    # never asserted in the prose has no verdict to pair against, so it is skipped.
+    scored_fields = ungrounded | set(grounding_result.grounded_fields)
+    result = CalibrationResult(branch=grounding_result.branch)
+    for fieldname in sorted(confidence_block):
+        if fieldname not in scored_fields:
+            continue
+        level = confidence_block[fieldname]
+        is_grounded = fieldname not in ungrounded
+        if level == "high" and not is_grounded:
+            status = "miss"
+            note = ("self-reported HIGH confidence but the grounding scorer flagged "
+                    "this claim as ungrounded")
+        elif level == "low" and is_grounded:
+            status = "under_confident"
+            note = ("self-reported LOW confidence but the grounding scorer found "
+                    "this claim grounded")
+        else:
+            status = "hit"
+            note = ("self-report agrees with the grounding scorer "
+                    f"(level={level}, grounded={is_grounded})")
+        result.pairs.append(CalibrationPair(
+            field=fieldname, level=level, grounded=is_grounded,
+            status=status, note=note))
+    return result
 
 
 def score_filings(filings: list[dict], fact_record: dict) -> list[dict]:

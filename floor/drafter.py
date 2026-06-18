@@ -313,6 +313,107 @@ def strip_rationale(text: str) -> str:
     return (text[:start].rstrip() + "\n" + text[end:].lstrip()).strip()
 
 
+# The fence the per-claim self-reported CONFIDENCE block is wrapped in (E5.5). It
+# is NOT a Warden control envelope: it carries no gated value, it never feeds the
+# diff, a clock, or a release, and it is extracted by the packet renderer for the
+# calibration section only. Like RATIONALE it is deliberately NOT in
+# _CONTROL_FENCES, so the sanitizer leaves it intact while a model-emitted [CLAIMS]
+# / [RECONCILE] / [CHALLENGE] / [MATERIALITY] fence is still defanged exactly as
+# before. The confidence emission DEFAULTS OFF (draft_filing(emit_confidence=False)
+# by default), and even when on it rides in the prose half, never in the hashed
+# run-log (the run-log holds structured protocol events, not filing prose), so a
+# fresh run reproduces the sealed sha and replay stays byte-identical.
+CONFIDENCE_OPEN = "[CONFIDENCE]"
+CONFIDENCE_CLOSE = "[/CONFIDENCE]"
+
+# The self-report levels a drafter may assign a claim, ordered low to high. The
+# parser accepts only these (case-insensitive); any other token is dropped so a
+# malformed self-report can never enter the deterministic calibration as data.
+CONFIDENCE_LEVELS = ("low", "medium", "high")
+
+
+def _confidence_prompt() -> str:
+    """The per-claim confidence instruction threaded into the drafter SYSTEM prompt
+    when emit_confidence is set. It asks the model to self-report, for each
+    load-bearing fact it asserted, how confident it is that the fact is supported by
+    the record, in a single fenced block of one line per field. Deterministic text;
+    the model fills the levels. Changes only the prose, never the [CLAIMS] block.
+
+    The block shape is one semicolon-joined line per claim:
+        [CONFIDENCE]field=records_affected;level=high[/CONFIDENCE]
+    one such block per asserted load-bearing field. The levels are exactly
+    low|medium|high so the deterministic calibrate() can pair each self-report with
+    the grounding scorer's verdict."""
+    levels = "|".join(CONFIDENCE_LEVELS)
+    return (
+        "After the filing body, for EACH load-bearing fact you asserted (the "
+        "affected-record count, the incident date, and the named breach actor), add "
+        "one self-confidence line stating how confident you are that the fact is "
+        f"supported by the supplied record, wrapped exactly as {CONFIDENCE_OPEN} on "
+        "its own line, then one line per fact of the form "
+        f"field=<fact_record_field>;level=<{levels}>, then {CONFIDENCE_CLOSE} on its "
+        "own line. The confidence is a self-report only: it states no new facts and "
+        "changes no figure the body already carried.")
+
+
+def parse_confidence(text: str) -> dict[str, str]:
+    """Parse the per-claim [CONFIDENCE] block out of a filing body into a
+    {field: level} mapping, or {} if none is present. Pure deterministic string
+    work used by calibrate() and the packet renderer; it never feeds a gate, a
+    clock, the diff, or the hashed run-log.
+
+    Tolerant by construction: no block, an unclosed block, or the close appearing
+    before the open all return {}. Within the block, only lines naming a field and a
+    recognized level (low|medium|high, case-insensitive) are kept; a malformed or
+    unknown-level line is dropped silently so a bad self-report can never enter the
+    calibration as data. On a duplicate field the last line wins (a deterministic,
+    documented rule). The field name and the normalized lowercase level are
+    returned."""
+    start = text.find(CONFIDENCE_OPEN)
+    if start == -1:
+        return {}
+    inner_start = start + len(CONFIDENCE_OPEN)
+    end = text.find(CONFIDENCE_CLOSE, inner_start)
+    if end == -1:
+        return {}
+    out: dict[str, str] = {}
+    for raw in text[inner_start:end].splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        fieldname = ""
+        level = ""
+        for part in line.split(";"):
+            key, sep, value = part.partition("=")
+            if not sep:
+                continue
+            key = key.strip().lower()
+            value = value.strip()
+            if key == "field":
+                fieldname = value
+            elif key == "level":
+                level = value.lower()
+        if fieldname and level in CONFIDENCE_LEVELS:
+            out[fieldname] = level
+    return out
+
+
+def strip_confidence(text: str) -> str:
+    """Return the filing body with the [CONFIDENCE] block removed, so the
+    human-readable filing prose and the calibration section render separately. A
+    body with no block is returned unchanged. Pure string work; never touches the
+    [CLAIMS] block (the confidence block always sits in the prose half, the claims
+    block is appended after sanitization)."""
+    start = text.find(CONFIDENCE_OPEN)
+    if start == -1:
+        return text
+    end = text.find(CONFIDENCE_CLOSE, start + len(CONFIDENCE_OPEN))
+    if end == -1:
+        return text
+    end += len(CONFIDENCE_CLOSE)
+    return (text[:start].rstrip() + "\n" + text[end:].lstrip()).strip()
+
+
 def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
     """Assemble the message a drafter posts back: the LLM prose followed by the
     deterministic structured-claims block the Warden diffs.
@@ -333,6 +434,7 @@ def build_draft_body(prose: str, branch: str, claim_facts: dict) -> str:
 def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
                  regime: str = "NIS2", format_profile=None, expert_profile=None,
+                 emit_confidence: bool = False,
                  max_tokens: int = 700, timeout: int = 90,
                  max_attempts: int = 1) -> str:
     """Draft the regulatory notification body for one regime from the canonical
@@ -356,11 +458,20 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     block is attached after sanitization and is never affected, and the rationale is
     out-of-log (the run-log holds structured events, not filing prose), so a fresh
     run reproduces the sealed sha and replay stays byte-identical. Both params
-    default to None, so a caller that passes neither is byte-identical to before."""
+    default to None, so a caller that passes neither is byte-identical to before.
+
+    emit_confidence, when set, additionally asks the model to self-report a per-claim
+    CONFIDENCE block (E5.5) so a pure deterministic step can CALIBRATE the self-report
+    against the grounding scorer (a high-confidence claim the scorer flags as
+    ungrounded is a loud calibration miss). It DEFAULTS OFF, and even when on it rides
+    in the prose half exactly like the rationale: the [CLAIMS] block is appended after
+    sanitization and is never affected, and the confidence is out-of-log, so a fresh
+    run reproduces the sealed sha and replay stays byte-identical."""
     expert = (
         "\n\n" + _expert_system_prompt(expert_profile)
         if expert_profile is not None else ""
     )
+    confidence = "\n\n" + _confidence_prompt() if emit_confidence else ""
     if format_profile is not None:
         from floor.formats import prompt_for
         structure = prompt_for(format_profile)
@@ -370,7 +481,7 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             "state only what the supplied fact-record supports, never invent "
             "facts, and you fill the exact mandated fields the form requires. No "
             "markdown headers; plain prose under each field label. "
-            + _CITATION_INSTRUCTION + expert
+            + _CITATION_INSTRUCTION + expert + confidence
         )
         user = (
             f"Draft the {regime} mandatory incident notification from this "
@@ -392,7 +503,7 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         "what the supplied fact-record supports, never invent facts, and you keep "
         "the structure a regulator expects. No markdown headers, plain prose with "
         "short labelled sections. "
-        + _CITATION_INSTRUCTION + expert
+        + _CITATION_INSTRUCTION + expert + confidence
     )
     user = (
         f"Draft the {regime} mandatory incident notification (the 72-hour "

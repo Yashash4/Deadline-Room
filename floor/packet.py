@@ -1321,6 +1321,82 @@ def _render_grounding(g: dict) -> str:
     return "".join(parts)
 
 
+def _render_calibration(c: dict) -> str:
+    """Render the per-claim confidence + calibration receipt (E5.5): per filing,
+    each load-bearing claim the drafter self-reported a CONFIDENCE on (low / medium
+    / high), placed NEXT TO the deterministic grounding scorer's grounded /
+    ungrounded verdict for the same claim, with a calibration status. A HIGH-
+    confidence claim the scorer flagged as UNGROUNDED is a loud calibration MISS
+    (the drafter was sure of a fact the scorer could not trace to the record); a
+    LOW-confidence claim the scorer found grounded is UNDER-CONFIDENT.
+
+    This is a printed receipt only. The confidence is the drafter's self-report
+    (model output), the verdict is the deterministic grounding scorer's, and the
+    pairing is pure Python: zero LLM, no now(). It never gates a filing, moves a
+    transition, or conditions a release; a MISS surfaces an over-confident
+    unsupported claim loudly for a human. It is rendered ONLY when a calibration
+    block is present (a drafter emitted a confidence self-report), so the sealed
+    captures, which carry no calibration block, render unchanged."""
+    if not c or not c.get("filings"):
+        return ""
+    any_miss = c.get("any_miss", False)
+    top_cls = "bad" if any_miss else "ok"
+    headline = (
+        "Calibration MISS: a drafter self-reported HIGH confidence on a claim the "
+        "grounding scorer flagged as ungrounded. Surfaced loudly below for human "
+        "review (no filing was blocked)."
+        if any_miss else
+        "Calibration clean: every high-confidence claim traces to the fact-record. "
+        "No drafter was over-confident on an unsupported claim.")
+    parts = [
+        "<h2>7e. Per-claim confidence calibration (self-report vs the grounding "
+        "scorer)</h2>",
+        f"<p class='{top_cls}'><strong>{_esc(headline)}</strong></p>",
+        "<p class='sub'>Each drafter self-reports a CONFIDENCE (low / medium / high) "
+        "on each load-bearing fact it asserted. A pure deterministic step CALIBRATES "
+        "that self-report against the grounding scorer above: the self-reported "
+        "level sits next to the scorer's grounded / ungrounded verdict for the same "
+        "claim. A HIGH-confidence claim the scorer flagged as UNGROUNDED is a loud "
+        "calibration MISS; a LOW-confidence claim the scorer found grounded is "
+        "UNDER-CONFIDENT. The confidence is the model's self-report; the verdict is "
+        "the deterministic scorer's; the pairing is pure Python (no LLM, no clock) "
+        "and is out-of-log, so the sealed run-log shas and byte-identical replay are "
+        "unaffected. It is a receipt, never a gate.</p>",
+    ]
+    rows = []
+    for f in c.get("filings", []):
+        filing_label = _esc(f.get("regime") or f.get("branch") or "")
+        pairs = f.get("pairs", [])
+        if not pairs:
+            rows.append(
+                "<tr><td>" + filing_label + "</td>"
+                "<td colspan='4'><span class='sub'>no self-reported claim the "
+                "scorer also evaluated</span></td></tr>")
+            continue
+        for p in pairs:
+            status = p.get("status", "")
+            if status == "miss":
+                badge = "<span class='cstat cstat-bad'>MISS</span>"
+            elif status == "under_confident":
+                badge = "<span class='cstat cstat-na'>UNDER-CONFIDENT</span>"
+            else:
+                badge = "<span class='cstat cstat-ok'>HIT</span>"
+            verdict = "grounded" if p.get("grounded") else "UNGROUNDED"
+            rows.append(
+                "<tr><td>" + filing_label + "</td>"
+                "<td><code>" + _esc(p.get("field")) + "</code></td>"
+                "<td>" + _esc(str(p.get("level", "")).upper()) + "</td>"
+                "<td class='" + ("ok" if p.get("grounded") else "bad") + "'>"
+                + _esc(verdict) + "</td>"
+                "<td>" + badge + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Filing</th><th>Claim (field)</th>"
+        "<th>Self-reported confidence</th><th>Grounding scorer verdict</th>"
+        "<th>Calibration</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+    return "".join(parts)
+
+
 def _render_adversarial_review(ar: dict) -> str:
     """Render the adversarial pre-submission review (the Challenger beat): per
     filing, the objections an INDEPENDENT Challenger agent raised, and which the
@@ -2432,6 +2508,7 @@ def _render_html(p: dict) -> str:
     security_block = _render_security(p.get("security", {}))
     regime_expert_block = _render_regime_expert(p.get("regime_expert", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
+    calibration_block = _render_calibration(p.get("calibration", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
     affected_party_block = _render_affected_party(p.get("affected_party", {}))
@@ -2646,6 +2723,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {regime_expert_block}
 
 {grounding_block}
+
+{calibration_block}
 
 {adversarial_block}
 
