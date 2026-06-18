@@ -144,6 +144,7 @@ from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
 from floor.shell_adapter import LiveBand  # noqa: E402
+from floor.assertion import assertion_record  # noqa: E402
 from floor.completeness import completeness_record  # noqa: E402
 from floor.consistency import consistency_record  # noqa: E402
 from floor.controls import controls_record  # noqa: E402
@@ -4551,6 +4552,22 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     sod = sod_record(packet)
     if sod:
         packet["sod"] = sod
+    # ---- E4.8: the signed management assertion (SOC-2-style attestation letter) ----
+    # A PURE DERIVED summary over the SAME control-evidence register the controls
+    # block above is built from: the standard SOC-2-style preamble (management
+    # asserts the relevant controls operated effectively over the period), the
+    # asserted controls (each id, framework refs, OPERATED / NOT-EXERCISED, and the
+    # sealed evidence), the period (the run window derived from the packet's
+    # statutory clocks), and the assertion verdict, rendered as a formal attestation
+    # LETTER. Its digest is signed by a SEPARATE, DETACHED Ed25519 signature held in
+    # the assertion sidecar (web/data/assertion-<scenario>.json), NOT folded into the
+    # run-log bound payload, so the run-log sha, the chain head, the run-log
+    # signature, and byte-identical replay are untouched. It reads only the assembled
+    # packet (must run AFTER the controls block is set), makes zero LLM calls and no
+    # now(), and never enters the hashed run-log or gates a transition.
+    assertion = assertion_record(packet)
+    if assertion:
+        packet["assertion"] = assertion
     # Reliability receipt: how many transient network failures a later attempt
     # recovered this run. Additive, rendered only when nonzero (a clean run, and
     # every offline test, has zero and omits the field). It is read from the live

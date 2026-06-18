@@ -567,6 +567,73 @@ def _render_controls(c: dict) -> str:
     return "".join(parts)
 
 
+def _render_assertion(a: dict) -> str:
+    """Render the signed MANAGEMENT ASSERTION (E4.8): the SOC-2-style attestation
+    letter that sits on top of the control-evidence register.
+
+    An audit engagement is anchored on a management assertion plus supporting
+    evidence. The control-evidence register (E4.4) is the evidence; this is the
+    one-page letter in which management asserts the relevant controls operated
+    effectively over the reporting period, enumerates them with their named
+    framework references and the sealed run-log evidence, and is signed. It is a
+    PURE DERIVED summary over the SAME register the controls block is built from
+    (floor/assertion.py): zero LLM, no now(); it never enters the hashed run-log
+    and gates nothing.
+
+    The letter's digest is signed by a SEPARATE, DETACHED Ed25519 signature held
+    in the assertion sidecar (web/data/assertion-<scenario>.json), NOT folded into
+    the run-log bound payload, so the run-log sha, the chain head, and
+    byte-identical replay are untouched. The honest demo-key caveat travels with
+    the signature. A reader re-derives the assertion, recomputes the digest, and
+    verifies the signature with scripts/verify_assertion.py."""
+    if not a or not a.get("document"):
+        return ""
+    doc = a.get("document", {}) or {}
+    operated = a.get("operated_count", 0)
+    total = a.get("total", 0)
+    digest = a.get("digest", "")
+    period = doc.get("period", {}) or {}
+    parts = [
+        "<h2>13. Management assertion (SOC-2-style attestation letter, signed)</h2>",
+        f"<p class='ok'><strong>Management asserts {_esc(operated)} of "
+        f"{_esc(total)} catalogued controls OPERATED and are evidenced over the "
+        "reporting period.</strong> This is the one-page assertion an audit "
+        "engagement anchors on: management asserts the relevant controls operated "
+        "effectively, the control-evidence register above is the supporting "
+        "evidence, and the assertion is signed.</p>",
+        "<p class='sub'>An auditor tests a management assertion against its "
+        "evidence. The assertion below is a pure derived summary of the "
+        "control-evidence register (E4.4): the same controls, the same named "
+        "framework references, the same OPERATED / NOT-EXERCISED status, and the "
+        "same run-log evidence sealed at the chain head. Its digest is signed by a "
+        "SEPARATE, DETACHED Ed25519 signature held in the assertion sidecar; the "
+        "signature is NOT folded into the run-log payload, so the run-log seal and "
+        "byte-identical replay are untouched. A reader re-derives the assertion, "
+        "recomputes the digest, and verifies the signature with "
+        "<code>scripts/verify_assertion.py</code>.</p>",
+    ]
+    start = period.get("start", "")
+    end = period.get("end", "")
+    if start or end:
+        parts.append(
+            f"<p class='sub'>Period asserted: "
+            f"<code>{_esc(start or '(open)')}</code> through "
+            f"<code>{_esc(end or '(open)')}</code> (UTC), the run window from the "
+            "earliest statutory clock start to the furthest deadline.</p>")
+    if digest:
+        parts.append(
+            f"<p class='sub'>Assertion digest (the signed value): "
+            f"<span class='hash'>{_esc(digest)}</span>. A single edited field in "
+            "the assertion moves this digest and the detached Ed25519 signature "
+            "over it turns INVALID.</p>")
+    # The formal attestation letter, verbatim, as the audit committee reads it.
+    letter = a.get("letter", "")
+    if letter:
+        parts.append("<p class='sub'>The attestation letter:</p>")
+        parts.append(f"<pre>{_esc(letter)}</pre>")
+    return "".join(parts)
+
+
 def _render_sod(s: dict) -> str:
     """Render the SEPARATION-OF-DUTIES MATRIX (E4.5): the segregation of duties proven
     across the WHOLE run, not only at the two-key release gate.
@@ -2111,6 +2178,7 @@ def _render_html(p: dict) -> str:
     submission_block = _render_submission(p.get("submission", {}))
     controls_block = _render_controls(p.get("controls", {}))
     sod_block = _render_sod(p.get("sod", {}))
+    assertion_block = _render_assertion(p.get("assertion", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
     grounding_block = _render_grounding(p.get("grounding", {}))
@@ -2336,6 +2404,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {controls_block}
 
 {sod_block}
+
+{assertion_block}
 
 {attestation_block}
 
