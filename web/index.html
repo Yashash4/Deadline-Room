@@ -70,11 +70,19 @@
     <div class="panel-head">
       <h2>Statutory clocks</h2>
       <div class="clock-now">
-        <span class="muted">replay time</span>
+        <label class="live-toggle"><input type="checkbox" id="live-toggle" /> <span id="live-toggle-label">Live (wall-clock)</span></label>
+        <span class="muted" id="clock-mode-label">replay time</span>
         <strong id="clock-now-ts">--</strong>
       </div>
     </div>
+    <!-- E7.1/E7.4: the live-vs-sealed banner. In SEALED REPLAY this page replays
+         the regulator's byte-identical record; toggle Live to drive the same
+         clocks against the browser's wall clock as the operator view. The live
+         face never feeds the verify block below. -->
+    <p class="mode-banner" id="mode-banner" hidden></p>
     <div id="clocks" class="clocks-grid"></div>
+    <!-- E7.2: the tiered deadline-margin board, nearest deadline first. -->
+    <div id="margin-board" class="margin-board" hidden></div>
   </section>
 
   <!-- The operator's headline: what is blocked, and why, in plain English. -->

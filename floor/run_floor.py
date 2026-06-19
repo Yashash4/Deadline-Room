@@ -92,7 +92,7 @@ if str(_CODE) not in sys.path:
     sys.path.insert(0, str(_CODE))
 sys.path.insert(0, str(_CODE / "spikes"))
 
-from datetime import timedelta  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
 
 from warden.clocks import ClockEngine, parse_ts  # noqa: E402
 from warden.diff import Containment, FactClaims, diff_claims  # noqa: E402
@@ -161,6 +161,8 @@ from floor.submission import (  # noqa: E402
     MODELED_CHANNEL_CAVEAT, StubRegulatorEndpoint, SubmissionError,
     build_submission, submit)
 from floor.telemetry import RunTelemetry  # noqa: E402
+from floor.live_clock import LiveClockBoard, relative_stamp  # noqa: E402
+from floor.margin import tier_rank  # noqa: E402
 
 INCIDENT_ID = "inc-8842"
 INCIDENT_T0 = "2026-06-16T02:14:00+00:00"
@@ -949,6 +951,140 @@ def _warden_announce(warden, trace: StepTrace, text: str,
     return mid
 
 
+def _escalation_text(snap, regime_label: str) -> str:
+    """The deterministic escalation message for one tier crossing. Built ENTIRELY
+    from the live margin classification (regime, tier, remaining); ZERO LLM. The
+    Warden narrates the racing clock so the operator and the responsible drafter
+    see the deadline approaching in the room."""
+    if snap.tier == "BREACH":
+        return (f"@{regime_label} Drafter: DEADLINE BREACHED. The {snap.name} "
+                f"statutory window has elapsed (overrun {snap.remaining}). File "
+                f"immediately and record the breach basis.")
+    if snap.tier == "CRITICAL":
+        return (f"@{regime_label} Drafter: CRITICAL margin on {snap.name}. "
+                f"{snap.remaining} remain to the statutory deadline. File now.")
+    # WARN
+    return (f"@{regime_label} Drafter: WARN margin on {snap.name}. "
+            f"{snap.remaining} remain to the statutory deadline. Prioritize this "
+            f"filing.")
+
+
+# Live-mode time compression: 1 real second of the operator loop covers this many
+# board seconds, so the full GREEN -> WARN -> CRITICAL -> BREACH cascade of the
+# nearest statutory clock plays out in a ~12s on-camera window. This is the SAME
+# declared-compression idea the web replay uses ("1 second = 30 captured minutes");
+# it is a DISPLAY rate on the operator view only. The board still counts real
+# deltas (the loop reads datetime.now()), only scaled, and none of it enters the
+# sealed record. A test injects now_fn + compression=1 for exact control.
+LIVE_TIME_COMPRESSION = 3 * 3600.0  # 1 real second = 3 board hours
+
+
+def _run_live_escalation(*, warden, trace: StepTrace, drafter_ids: dict,
+                         t0: datetime, duration_s: float, tick_s: float,
+                         compression: float = LIVE_TIME_COMPRESSION,
+                         board: LiveClockBoard | None = None,
+                         now_fn=None) -> list[dict]:
+    """The LIVE operator phase (E7.1 + E7.2 + E7.3): drive the wall-clock board and,
+    on each per-clock tier crossing (GREEN -> WARN -> CRITICAL -> BREACH), post ONE
+    deterministic escalation into the Band room @mentioning the responsible drafter.
+
+    The board is anchored at the live wall-clock t0 and evaluated at a COMPRESSED
+    live instant: board_now = t0 + (wall_now - wall_start) * compression. The loop
+    reads the real wall clock (datetime.now via now_fn), so the countdown is driven
+    by real elapsed time; compression only scales it so the cascade is visible in a
+    short on-camera window. With compression == 1.0 (a test) the board runs at true
+    wall speed.
+
+    CRITICAL ISOLATION: nothing here is the sealed record. The board owns its own
+    ClockEngine; the escalation posts ride the shipped Warden-speaks-in-room
+    visibility seam (`_warden_announce`), recorded only in the human-facing handoff
+    trace, NEVER in the hashed run-log. So this whole phase cannot move a sealed sha
+    or perturb byte-identical replay; the sealed run was already assembled and
+    signed before this is called.
+
+    Each tier crossing fires once (the loop seeds every clock at GREEN, so a clock
+    that starts already inside a band fires that band on the first tick), guarded by
+    the dedup-key discipline the rest of the Warden posts use. The template is pure
+    (`_escalation_text` over the E7.2 classification), zero LLM.
+
+    Returns the list of escalation records (out-of-log) for the live console /
+    packet operability."""
+    if board is None:
+        board = LiveClockBoard(t0)
+    if now_fn is None:
+        def now_fn():
+            return datetime.now(timezone.utc)
+    escalations: list[dict] = []
+    last_rank: dict[str, int] = {}
+    wall_start = now_fn()
+    deadline_wall = wall_start + timedelta(seconds=duration_s)
+    trace.say("[LIVE] Operator escalation loop running against the wall clock "
+              "(out-of-log; the sealed regulator record is untouched).")
+
+    def board_now(wall_now: datetime) -> datetime:
+        elapsed = (wall_now - wall_start).total_seconds()
+        return t0 + timedelta(seconds=elapsed * compression)
+
+    prev_wall = None
+    while True:
+        wall_now = now_fn()
+        # Stall guard: if the wall clock stops advancing across an iteration, the
+        # countdown cannot progress, so stop rather than spin. This makes the loop
+        # terminate for any injected clock that clamps; the real wall clock always
+        # advances, so this never trips a live CLI run before its budget.
+        if prev_wall is not None and wall_now <= prev_wall:
+            break
+        prev_wall = wall_now
+        now = board_now(wall_now)
+        snaps = board.snapshot(now)
+        for snap in snaps:
+            corr = snap.correlation_id
+            rank = tier_rank(snap.tier)
+            prev = last_rank.get(corr, tier_rank("GREEN"))
+            if rank > prev:
+                # A crossing INTO a strictly more urgent tier. Post one escalation.
+                regime_label = snap.drafter_role
+                # The early-warning clock (branch "nis2-early") is owned by the same
+                # NIS2 drafter as the full-notification clock ("nis2"); resolve a
+                # hyphenated clock branch to its base drafter branch so the
+                # escalation @mentions the responsible drafter, falling back to the
+                # room (never a self-mention) when no drafter owns the clock.
+                drafter_id = (drafter_ids.get(snap.branch)
+                              or drafter_ids.get(snap.branch.split("-")[0]))
+                text = _escalation_text(snap, regime_label)
+                stamp = relative_stamp(now, t0)
+                _warden_announce(
+                    warden, trace, text,
+                    mentions=[drafter_id] if drafter_id else None,
+                    dedup_key=f"warden:live-escalation:{corr}:{snap.tier}")
+                escalations.append({
+                    "correlation_id": corr, "regime": snap.name,
+                    "tier": snap.tier, "remaining": snap.remaining,
+                    "margin_seconds": snap.margin_seconds, "stamp": stamp,
+                    "drafter": regime_label})
+                trace.say(f"    [LIVE {stamp}] {snap.tier} on {snap.name} "
+                          f"({snap.remaining} remaining)")
+            last_rank[corr] = max(rank, prev)
+        # Stop once every live clock has reached BREACH or the wall budget is spent.
+        # The budget check reuses this iteration's wall_now (it does not re-read the
+        # clock), so the loop consumes exactly one wall reading per iteration.
+        all_breached = all(
+            last_rank.get(s.correlation_id, 0) >= tier_rank("BREACH")
+            for s in snaps)
+        if all_breached or wall_now >= deadline_wall:
+            break
+        _sleep(tick_s)
+    return escalations
+
+
+def _sleep(seconds: float) -> None:
+    """A thin sleep wrapper so the live loop can be driven without real waiting in
+    tests (a test injects now_fn and a zero tick, so this is a no-op there)."""
+    if seconds > 0:
+        import time
+        time.sleep(seconds)
+
+
 # ----------------------------------------------------------------------------
 # Public entry point. Dispatches the legacy single-drafter path (kept verbatim
 # for the existing injected-client tests) and the full floor path.
@@ -971,7 +1107,13 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               failover: bool = False, route: bool = False,
               investigate: bool = False, investigate_fn=None,
               negotiate_rounds: int = 0,
-              sovereign: bool = False) -> dict:
+              sovereign: bool = False,
+              live_mode: bool = False,
+              live_t0: datetime | None = None,
+              live_duration_s: float = 12.0,
+              live_tick_s: float = 1.0,
+              live_compression: float | None = None,
+              live_now_fn=None) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -1011,7 +1153,12 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            failover=failover, route=route,
                            investigate=investigate, investigate_fn=investigate_fn,
                            negotiate_rounds=negotiate_rounds,
-                           sovereign=sovereign)
+                           sovereign=sovereign,
+                           live_mode=live_mode, live_t0=live_t0,
+                           live_duration_s=live_duration_s,
+                           live_tick_s=live_tick_s,
+                           live_compression=live_compression,
+                           live_now_fn=live_now_fn)
 
 
 # (cross_border has no public-API kwarg: it is selected purely by mode ==
@@ -1044,7 +1191,13 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     failover: bool = False, route: bool = False,
                     investigate: bool = False, investigate_fn=None,
                     negotiate_rounds: int = 0,
-                    sovereign: bool = False) -> dict:
+                    sovereign: bool = False,
+                    live_mode: bool = False,
+                    live_t0: datetime | None = None,
+                    live_duration_s: float = 12.0,
+                    live_tick_s: float = 1.0,
+                    live_compression: float | None = None,
+                    live_now_fn=None) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -1830,6 +1983,39 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     trace.say(f"     run log: {run_log_path}")
     packet["_paths"] = {"html": html_path, "json": json_path,
                         "run_log": str(run_log_path)}
+
+    # ---- LIVE operator phase (E7.1 + E7.2 + E7.3), STRICTLY out-of-log --------
+    # The sealed Examiner Packet, its run-log, and its signature are now complete
+    # and written above; everything below is the OPERATOR view and never touches
+    # the hashed record. When --live is requested we drive a wall-clock LiveClockBoard
+    # and post deterministic tier-crossing escalations into the SAME Band room. The
+    # board has its own ClockEngine anchored at datetime.now(); the escalations ride
+    # the Warden-speaks visibility seam (handoff trace only, never the run-log). So
+    # the sealed sha and byte-identical replay above are untouched: this is the live
+    # face, the sealed run is the regulator record, two strictly separate sources.
+    if live_mode:
+        t0 = live_t0 if live_t0 is not None else datetime.now(timezone.utc)
+        trace.say("")
+        trace.say("=== LIVE (wall-clock, not the sealed artifact) ===")
+        trace.say(f"    Live clocks anchored at {t0.isoformat()} "
+                  f"(operator view; the sealed sha {original_sha[:12]} is frozen).")
+        live_escalations = _run_live_escalation(
+            warden=warden, trace=trace, drafter_ids=drafter_ids,
+            t0=t0, duration_s=live_duration_s, tick_s=live_tick_s,
+            compression=(live_compression if live_compression is not None
+                         else LIVE_TIME_COMPRESSION),
+            now_fn=live_now_fn)
+        packet["live"] = {
+            "anchor_utc": t0.isoformat(),
+            "sealed_sha256": original_sha,
+            "escalations": live_escalations,
+            "note": ("Live operator view (wall-clock). The escalations above are "
+                     "out-of-log; the sealed run-log sha and byte-identical replay "
+                     "are unchanged by this phase."),
+        }
+        trace.say(f"    Live escalations posted: {len(live_escalations)} "
+                  f"(out-of-log). Sealed sha unchanged: {original_sha[:12]}.")
+
     return packet
 
 
@@ -5721,6 +5907,17 @@ def main() -> int:
                         help="feed one drafter a perturbed fact so the Warden's diff blocks, then resolve")
     parser.add_argument("--chaos", action="store_true",
                         help="kill a drafter mid-handoff; show exactly-once recovery")
+    parser.add_argument("--live", action="store_true",
+                        help="LIVE MODE (E7.1): after the sealed run completes, drive "
+                             "a wall-clock clock board against datetime.now() and post "
+                             "deterministic tier-crossing escalations (GREEN -> WARN -> "
+                             "CRITICAL -> BREACH) into the Band room @mentioning the "
+                             "responsible drafter. This is the OPERATOR view: it does "
+                             "NOT write or sign the sealed capture and is NOT what the "
+                             "signature/replay tests check. The sealed run-log sha and "
+                             "byte-identical replay are unchanged. Orthogonal to the "
+                             "mode beats; combine with --inject-contradiction/--chaos/"
+                             "--amendment to drive a live face over that scenario")
     parser.add_argument("--amendment", action="store_true",
                         help="after release, Triage revises a load-bearing fact; the SEC "
                              "and NIS2 Drafters reconcile through Band before re-filing")
@@ -5940,6 +6137,8 @@ def main() -> int:
         return 1
     banner = ("LIVE Band + Featherless" if args.provider == roster.PROVIDER_DEV
               else "LIVE Band + AI/ML API split (prod)")
+    if args.live:
+        banner += " + LIVE wall-clock operator view"
     print(f"=== Deadline Room floor run ({banner}) mode={mode} "
           f"provider={args.provider} ===\n")
     packet = run_floor(mode=mode, provider_set=args.provider,
@@ -5949,9 +6148,14 @@ def main() -> int:
                        reportability=args.reportability,
                        affected_party=args.affected_party,
                        failover=args.failover, route=args.route,
-                       sovereign=args.sovereign)
+                       sovereign=args.sovereign,
+                       live_mode=args.live)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
+    if args.live and packet.get("live"):
+        print("=== LIVE (wall-clock, not the sealed artifact): "
+              f"{len(packet['live']['escalations'])} escalation(s) posted; "
+              f"sealed sha {packet['live']['sealed_sha256'][:12]} unchanged ===")
     return 0
 
 

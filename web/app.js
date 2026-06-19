@@ -275,6 +275,23 @@ let revealedBeats = new Set();   // beats whose banner/rail have been lit this r
 let bannerTimer = null;
 let tourMode = true;             // Judge Tour: default-on guided run
 
+// ---- Live Mode (E7.1 / E7.2 / E7.4): the operator face ----------------------
+// SEALED REPLAY (default) replays the regulator's byte-identical record: the
+// clocks tick between recorded timestamps. LIVE re-anchors the SAME clock windows
+// at the browser wall clock the moment it is toggled, so each deadline counts down
+// in real time, crosses warn/critical, and breaches when Date.now() passes it. The
+// live face is purely a DISPLAY mode over the same clock windows; it never touches
+// the run log and never feeds the verify block, which keeps reading the sealed
+// bytes. Toggling Live off restores the sealed replay exactly.
+let liveMode = false;
+let liveAnchorMs = 0;        // wall-clock ms when Live was toggled on
+let liveRafId = null;
+// Proportional display tiers for the live margin board: WARN when under this much
+// of the window remains, CRITICAL when under the inner band. Display-only; the
+// authoritative server-side escalation thresholds live in floor/regimes.yaml.
+const LIVE_WARN_FRACTION = 0.25;
+const LIVE_CRITICAL_FRACTION = 0.06;
+
 // ---- Examiner Drill state (E9.4) -------------------------------------------
 // The drill is a self-grading quiz over the gates of the active sealed run. The
 // answer key is the drill manifest (scripts/drill_manifest.py), derived from the
@@ -581,6 +598,21 @@ function renderFeed(active) {
 // this is interpolated between recorded step timestamps; otherwise it is the
 // current step's recorded timestamp. The instant is always clamped by the
 // caller so it never exceeds a time the run actually reached.
+// Map a clock's sealed window to the instant frame in effect. In SEALED REPLAY
+// the window is the recorded {started, deadline, stopped}. In LIVE the SAME window
+// length is re-anchored at liveAnchorMs (the moment Live was toggled), so the
+// deadline is liveAnchorMs + window, counting down against Date.now(). A live clock
+// never "stopped" (the operator view is the running race, not the filed record).
+function clockFrame(c) {
+  const started = ms(c.started);
+  const deadline = ms(c.deadline);
+  const total = deadline - started;
+  if (liveMode) {
+    return { started: liveAnchorMs, deadline: liveAnchorMs + total, total, stoppedAt: null };
+  }
+  return { started, deadline, total, stoppedAt: c.stopped ? ms(c.stopped) : null };
+}
+
 function renderClocks(nowMs) {
   const wrap = $("#clocks");
   const now = nowMs != null ? nowMs : (packet.clocks[0] ? ms(packet.clocks[0].started) : 0);
@@ -604,17 +636,15 @@ function renderClocks(nowMs) {
   }
 
   packet.clocks.forEach((c, i) => {
-    const started = ms(c.started);
-    const deadline = ms(c.deadline);
-    const stoppedAt = c.stopped ? ms(c.stopped) : null;
+    const f = clockFrame(c);
+    const { started, deadline, total, stoppedAt } = f;
     const isStopped = stoppedAt != null && now >= stoppedAt;
     const evalAt = isStopped ? stoppedAt : Math.min(now, deadline);
     const remaining = deadline - evalAt;
-    const total = deadline - started;
     const elapsed = Math.max(0, Math.min(total, evalAt - started));
     const pct = total > 0 ? (elapsed / total) * 100 : 0;
     const breached = !isStopped && now > deadline;
-    const warn = !isStopped && !breached && remaining < total * 0.25;
+    const warn = !isStopped && !breached && remaining < total * LIVE_WARN_FRACTION;
 
     const cell = wrap.children[i];
     cell.className = "clock " + (isStopped ? "stopped" : breached ? "breach running" : "running") + (warn ? " warn" : "");
@@ -624,6 +654,40 @@ function renderClocks(nowMs) {
       : breached ? "BREACHED" : fmtClock(remaining);
     cell.querySelector(".bar > span").style.width = Math.max(0, Math.min(100, pct)) + "%";
   });
+
+  if (liveMode) renderMarginBoard(now);
+}
+
+// E7.2: the tiered deadline-margin board, nearest deadline first. Pure display
+// over the live clock frames; classifies each clock GREEN / WARN / CRITICAL /
+// BREACH by how much of its window remains, then sorts by nearest deadline. Shown
+// only in Live mode (the sealed replay keeps the recorded clock grid).
+function renderMarginBoard(nowMs) {
+  const board = $("#margin-board");
+  if (!board) return;
+  const rows = packet.clocks.map((c) => {
+    const f = clockFrame(c);
+    const remaining = f.deadline - Math.min(nowMs, f.deadline);
+    const fracLeft = f.total > 0 ? (f.deadline - nowMs) / f.total : 0;
+    let tier;
+    if (nowMs >= f.deadline) tier = "BREACH";
+    else if (fracLeft <= LIVE_CRITICAL_FRACTION) tier = "CRITICAL";
+    else if (fracLeft <= LIVE_WARN_FRACTION) tier = "WARN";
+    else tier = "GREEN";
+    return { name: c.name, deadline: f.deadline, remaining, tier };
+  });
+  rows.sort((a, b) => a.deadline - b.deadline);
+  board.innerHTML = "";
+  const head = el("div", "margin-head", "Deadline margin (nearest first)");
+  board.appendChild(head);
+  for (const r of rows) {
+    const row = el("div", "margin-row tier-" + r.tier.toLowerCase());
+    row.appendChild(el("span", "margin-tier", r.tier));
+    row.appendChild(el("span", "margin-name", r.name));
+    row.appendChild(el("span", "margin-remaining",
+      r.tier === "BREACH" ? "BREACHED" : fmtClock(r.remaining) + " left"));
+    board.appendChild(row);
+  }
 }
 
 function renderHandoffs(active) {
@@ -1150,6 +1214,87 @@ function tickClocks() {
 function onReplayComplete() {
   stopPlay();
   if (tourMode) highlightVerify();
+}
+
+// ---- Live Mode toggle (E7.1 / E7.4) ----------------------------------------
+// Switch the clock panel between SEALED REPLAY (the recorded regulator record)
+// and LIVE (the same clock windows re-anchored at the browser wall clock). Live
+// runs its own rAF loop ticking renderClocks at Date.now(); the sealed replay
+// transport is paused while live so the two clocks never fight. The verify block
+// is untouched in both modes: it always re-derives the sealed bytes.
+function setLiveMode(on) {
+  liveMode = on;
+  const banner = $("#mode-banner");
+  const modeLabel = $("#clock-mode-label");
+  const marginBoard = $("#margin-board");
+  if (on) {
+    stopPlay();
+    liveAnchorMs = Date.now();
+    if (banner) {
+      banner.hidden = false;
+      banner.className = "mode-banner live";
+      banner.textContent = "LIVE (wall-clock, not the sealed artifact). The same statutory windows, counting down against your browser clock. This is the operator view; the regulator record below is the sealed replay.";
+    }
+    if (modeLabel) modeLabel.textContent = "live wall-clock";
+    if (marginBoard) marginBoard.hidden = false;
+    startLiveTick();
+  } else {
+    stopLiveTick();
+    if (banner) banner.hidden = true;
+    if (modeLabel) modeLabel.textContent = "replay time";
+    if (marginBoard) marginBoard.hidden = true;
+    render();   // restore the sealed replay clocks at the current cursor
+  }
+}
+
+function startLiveTick() {
+  stopLiveTick();
+  const frame = () => {
+    if (!liveMode) return;
+    renderClocks(Date.now());
+    renderLiveFeedStamps(Date.now());
+    liveRafId = requestAnimationFrame(frame);
+  };
+  liveRafId = requestAnimationFrame(frame);
+}
+function stopLiveTick() {
+  if (liveRafId != null) { cancelAnimationFrame(liveRafId); liveRafId = null; }
+}
+
+// E7.4: the live feed ticker. In Live mode each feed row gets a live "T+HH:MM:SS
+// since incident start" stamp and the header shows time-to-nearest-deadline,
+// recomputed on the rAF tick. The sealed-replay feed is left exactly as recorded.
+function renderLiveFeedStamps(nowMs) {
+  if (!liveMode) return;
+  const feed = $("#feed");
+  if (!feed) return;
+  const tPlus = relMs(nowMs - liveAnchorMs);
+  // Nearest live deadline across the clock set.
+  let nearest = Infinity;
+  for (const c of packet.clocks) {
+    const f = clockFrame(c);
+    if (f.deadline > nowMs) nearest = Math.min(nearest, f.deadline - nowMs);
+  }
+  const countdown = nearest === Infinity ? "all breached" : fmtClock(nearest) + " to nearest deadline";
+  let header = feed.querySelector(".feed-live-header");
+  if (!header) {
+    header = el("div", "feed-live-header");
+    feed.insertBefore(header, feed.firstChild);
+  }
+  header.textContent = `LIVE  ${tPlus} since incident start  |  ${countdown}`;
+}
+
+// "T+HH:MM:SS" (or "T+Nd HH:MM:SS") for a signed elapsed-ms delta. Mirrors
+// floor.live_clock.relative_stamp so the live console and the web read the same.
+function relMs(deltaMs) {
+  const sign = deltaMs < 0 ? "-" : "+";
+  let s = Math.floor(Math.abs(deltaMs) / 1000);
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const pad = (x) => String(x).padStart(2, "0");
+  const hms = `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `T${sign}${d > 0 ? d + "d " + hms : hms}`;
 }
 
 // At the emotional peak (replay finished), guide the judge to the proof. We
@@ -2457,6 +2602,8 @@ async function init() {
   $("#verify").addEventListener("click", verifyAll);
   const reorder = $("#reorder-toggle");
   if (reorder) reorder.addEventListener("change", verifyAll);
+  const liveToggle = $("#live-toggle");
+  if (liveToggle) liveToggle.addEventListener("change", (e) => setLiveMode(e.target.checked));
 
   // Examiner Drill wiring (E9.4).
   $("#drill-toggle").addEventListener("click", () => {

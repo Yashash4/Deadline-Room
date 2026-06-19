@@ -94,6 +94,25 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
 /* ---- clocks ---- */
 .clock-now { text-align: right; font-family: var(--mono); }
 .clock-now strong { display: block; font-size: 0.95rem; color: var(--accent); }
+
+/* E7.1/E7.2/E7.4: Live Mode toggle, mode banner, and the tiered margin board. */
+.live-toggle { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; color: var(--muted); cursor: pointer; font-family: var(--mono); }
+.live-toggle input { accent-color: var(--amber); }
+.mode-banner { margin: 0.5rem 0 0.4rem; padding: 0.5rem 0.7rem; border-radius: 6px; font-size: 0.8rem; line-height: 1.35; }
+.mode-banner.live { color: var(--amber); border: 1px solid var(--amber); background: var(--amber-soft); }
+.margin-board { margin-top: 0.85rem; border-top: 1px dashed var(--line, #2a2a2a); padding-top: 0.65rem; }
+.margin-head { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.45rem; }
+.margin-row { display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center; gap: 0.6rem; padding: 0.3rem 0.45rem; border-radius: 5px; font-size: 0.82rem; margin-bottom: 0.3rem; }
+.margin-tier { font-family: var(--mono); font-size: 0.7rem; font-weight: 700; text-align: center; padding: 0.1rem 0; border-radius: 4px; }
+.margin-remaining { font-family: var(--mono); font-size: 0.78rem; }
+.margin-row.tier-green .margin-tier { color: var(--green); background: var(--green-soft); }
+.margin-row.tier-warn { background: var(--amber-soft); }
+.margin-row.tier-warn .margin-tier { color: var(--amber); }
+.margin-row.tier-critical { background: var(--red-soft); }
+.margin-row.tier-critical .margin-tier { color: var(--red); }
+.margin-row.tier-breach { background: var(--red-soft); border: 1px solid var(--red); }
+.margin-row.tier-breach .margin-tier, .margin-row.tier-breach .margin-remaining { color: var(--red); font-weight: 700; }
+.feed-live-header { font-family: var(--mono); font-size: 0.75rem; color: var(--amber); border-bottom: 1px solid var(--amber-soft); padding-bottom: 0.35rem; margin-bottom: 0.45rem; }
 .clocks-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; }
 @media (max-width: 760px) { .clocks-grid { grid-template-columns: repeat(2, 1fr); } }
 .clock {

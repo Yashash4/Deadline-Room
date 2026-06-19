@@ -186,6 +186,12 @@ regimes:
       business_days: false
       holiday_calendar: none
       display_timezone: Europe/Brussels
+      # Live-mode tiered margin thresholds (E7.2), in SECONDS of remaining
+      # statutory time. WARN at 6h left, CRITICAL at 1h left, on the tight 24h
+      # early-warning clock. RENDER/LIVE-ONLY: read by the operator live board
+      # and the escalation beat, never by the deadline math or the hashed log.
+      warn_margin: 21600
+      critical_margin: 3600
     format_profile: nis2_early
     start:
       mode: startup
@@ -230,6 +236,9 @@ regimes:
       business_days: false
       holiday_calendar: none
       display_timezone: Europe/Brussels
+      # WARN at 12h left, CRITICAL at 3h left, on the 72h notification clock.
+      warn_margin: 43200
+      critical_margin: 10800
     format_profile: nis2_full
     start:
       mode: startup
@@ -273,6 +282,9 @@ regimes:
       business_days: false
       holiday_calendar: none
       display_timezone: Europe/Brussels
+      # WARN at 12h left, CRITICAL at 3h left, on the 72h major-incident clock.
+      warn_margin: 43200
+      critical_margin: 10800
     format_profile: dora
     start:
       mode: startup
@@ -333,6 +345,10 @@ regimes:
       business_days: true
       holiday_calendar: US_FEDERAL
       display_timezone: America/New_York
+      # WARN at 24h left, CRITICAL at 4h left, on the SEC 4-business-day clock
+      # (the window is days, so the live warn band is correspondingly wider).
+      warn_margin: 86400
+      critical_margin: 14400
     format_profile: sec_8k
     start:
       mode: startup

@@ -68,6 +68,15 @@ class ClockSpec:
     business_days: bool
     holiday_calendar: str
     display_timezone: str = ""
+    # Live-mode tiered margin thresholds (E7.2), in SECONDS of remaining statutory
+    # time: the live operator board and the escalation beat classify a clock GREEN
+    # while its margin exceeds warn_margin, WARN at or below it, CRITICAL at or
+    # below critical_margin, BREACH at or below zero. None when the clock declares
+    # no thresholds (a recruit/post-release clock that the live startup board does
+    # not drive). RENDER/LIVE-ONLY: never read by the deadline computation or
+    # written to the hashed run-log, so the sealed shas are untouched.
+    warn_margin_seconds: float | None = None
+    critical_margin_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +224,7 @@ def _parse_regime(record: dict) -> RegimeSpec:
     clock = record["clock"]
     start = record.get("start", {})
     recruit = record.get("recruit", {})
+    warn_margin, critical_margin = _margin_thresholds(clock, record["key"])
     clock_spec = ClockSpec(
         name=clock["name"],
         length=int(clock["length"]),
@@ -222,6 +232,8 @@ def _parse_regime(record: dict) -> RegimeSpec:
         business_days=bool(clock["business_days"]),
         holiday_calendar=clock["holiday_calendar"],
         display_timezone=str(clock.get("display_timezone", "")),
+        warn_margin_seconds=warn_margin,
+        critical_margin_seconds=critical_margin,
     )
     reportability = record.get("reportability")
     reportability_spec = None
@@ -304,6 +316,34 @@ def _parse_regime(record: dict) -> RegimeSpec:
         corpus_tags=_corpus_tags(record.get("corpus_tags")),
         expert_profile=expert_spec,
     )
+
+
+def _margin_thresholds(clock: dict, key: str) -> tuple[float | None, float | None]:
+    """Read the optional live-mode warn/critical margin thresholds (E7.2) from a
+    clock block, in seconds. Both must be present together or both absent: a clock
+    declaring one without the other is a catalog error surfaced structurally,
+    never silently treated as half-configured. When present, both must be positive
+    and ordered (warn strictly greater than critical), the same invariant the live
+    classifier enforces, checked here so a bad threshold fails at catalog load."""
+    warn = clock.get("warn_margin")
+    critical = clock.get("critical_margin")
+    if warn is None and critical is None:
+        return None, None
+    if warn is None or critical is None:
+        raise ValueError(
+            f"regime {key} declares only one of warn_margin / critical_margin; "
+            f"a live-mode margin clock must declare both or neither")
+    warn_s = float(warn)
+    critical_s = float(critical)
+    if warn_s <= 0 or critical_s <= 0:
+        raise ValueError(
+            f"regime {key} margin thresholds must be positive seconds, got "
+            f"warn={warn_s} critical={critical_s}")
+    if warn_s <= critical_s:
+        raise ValueError(
+            f"regime {key} warn_margin ({warn_s}s) must be strictly greater than "
+            f"critical_margin ({critical_s}s)")
+    return warn_s, critical_s
 
 
 def _corpus_tags(value) -> tuple[str, ...]:
