@@ -1,0 +1,49 @@
+{
+  "manifest": {
+    "portfolio_root": "ba7b416fb6fa0cc905fb27b941a9162dd5107adc027d175a4ee0dc4cac61499d",
+    "portfolio_version": "1",
+    "run_count": 5,
+    "runs": [
+      {
+        "chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+        "name": "run-inc-8842-amendment.jsonl",
+        "sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc"
+      },
+      {
+        "chain_head": "723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0",
+        "name": "run-inc-8842-chaos.jsonl",
+        "sha256": "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520"
+      },
+      {
+        "chain_head": "45f6b9a0c10c14a4b578df2210e9edb3a356dc2ae04677c37bd1d5ad7b59d892",
+        "name": "run-inc-8842-inject_contradiction.jsonl",
+        "sha256": "f1f2223aa57b4bace83bf3fcfc5886e2a657d86f15b5d9ed0762646142e34e98"
+      },
+      {
+        "chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
+        "name": "run-inc-8842-normal.jsonl",
+        "sha256": "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3"
+      },
+      {
+        "chain_head": "fc09b61872f97237d7c885c23b6fba16ec31d95fc8a79e6a25c7f4e0cc2409e1",
+        "name": "run-inc-8842-submit.jsonl",
+        "sha256": "13b675f992423a71a16911b6ad604cb91e0d8065dd60f5167808c7fa87e3173b"
+      }
+    ]
+  },
+  "manifest_sha256": "c0cf17dc28de418dd68185e2a3a36ba68a8e73b1d8fa3e24d1d81473ab70c8b4",
+  "signature": {
+    "algorithm": "ed25519",
+    "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2.",
+    "demo_key": true,
+    "detached": true,
+    "manifest_sha256": "c0cf17dc28de418dd68185e2a3a36ba68a8e73b1d8fa3e24d1d81473ab70c8b4",
+    "portfolio_root": "ba7b416fb6fa0cc905fb27b941a9162dd5107adc027d175a4ee0dc4cac61499d",
+    "pubkey_fingerprint": "46e30f5bff8c221d",
+    "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+    "run_count": 5,
+    "signature": "5841961e2f14b5a2faaba61cd92038b23d5d7c1fd255e2a1bd2c991a684ad2a41d529862ecd94bbd21a4d6a8f2ed473e1974d7b8f87230df4989d6bf6634b50d",
+    "signed_payload": "canonical_json{portfolio_root,run_count}",
+    "signer": "Deadline Warden"
+  }
+}

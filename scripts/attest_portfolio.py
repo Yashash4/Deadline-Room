@@ -1,0 +1,195 @@
+"""One-command signed portfolio attestation over the whole fleet of sealed runs.
+
+A per-run signature proves a single run-log was not tampered with. This script
+answers the FLEET-level question: are ALL the sealed runs intact, and was no run
+silently dropped from the record? It discovers every `run-*.jsonl` with a sibling
+per-run signature under web/data/, re-verifies each one, folds a Merkle root over
+the SORTED chain heads of the runs that pass, signs that root (under a DISTINCT
+portfolio label so it is never confused with a per-run receipt), and writes the
+signed portfolio manifest to its OWN sidecar.
+
+  py scripts/attest_portfolio.py                       (build + write the manifest)
+  py scripts/attest_portfolio.py --verify <manifest>   (re-verify a manifest)
+
+Build mode RE-DERIVES the root from the sealed runs and writes
+web/data/portfolio-attestation.json: the canonical manifest plus the detached
+portfolio signature. Verify mode reads a manifest, RE-DISCOVERS the sealed runs
+on disk, recomputes the root, checks the portfolio signature, and DETECTS a
+dropped run, a run named in the manifest but missing on disk, or a run on disk
+but absent from the manifest. It prints the root, the run count, the per-run
+chain heads, VALID or INVALID, and the honest demo-key caveat every time: the
+signing mechanism is real, the key's secrecy is not production-grade.
+
+This script is keyless to RUN as a verifier (it needs only the committed public
+key) and read-only over the sealed captures: it writes only its own portfolio
+sidecar and never a run log or a per-run signature.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from floor.portfolio import (  # noqa: E402
+    PortfolioAttestation,
+    attest_portfolio,
+    load_portfolio,
+    manifest_digest,
+)
+from warden.portfolio_signing import (  # noqa: E402
+    sign_portfolio,
+    verify_portfolio,
+)
+from warden.signing import DEMO_KEY_CAVEAT  # noqa: E402
+
+DATA_DIR = REPO_ROOT / "web" / "data"
+DEFAULT_MANIFEST = DATA_DIR / "portfolio-attestation.json"
+
+
+def _print_runs(attestation: PortfolioAttestation) -> None:
+    print(f"Portfolio root : {attestation.root}")
+    print(f"Run count      : {attestation.run_count}")
+    print("Attested runs (each folded into the Merkle root by its chain head):")
+    name_w = max((len(r.name) for r in attestation.attested), default=4)
+    for run in attestation.attested:
+        print(f"  {run.name.ljust(name_w)}  head {run.chain_head}")
+    if attestation.flagged:
+        print("Flagged runs (excluded: per-run signature did NOT verify):")
+        for run in attestation.flagged:
+            print(f"  {run.name}: {run.flag}")
+    print()
+
+
+def build(data_dir: Path, out_path: Path) -> int:
+    """Build the signed portfolio manifest and write it to its sidecar."""
+    print("=" * 78)
+    print("PORTFOLIO ATTESTATION: one signed root over the whole fleet of runs")
+    print("=" * 78)
+    runs = load_portfolio(data_dir)
+    attestation = attest_portfolio(runs)
+    _print_runs(attestation)
+
+    signature = sign_portfolio(
+        attestation.root, attestation.run_count, attestation.manifest_sha256)
+    document = {
+        "manifest": attestation.manifest,
+        "manifest_sha256": attestation.manifest_sha256,
+        "signature": signature,
+    }
+    out_path.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
+    print(f"Wrote signed portfolio manifest to {out_path}")
+    print(f"Signer fp      : {signature['pubkey_fingerprint']}")
+    print(f"Note: {DEMO_KEY_CAVEAT}")
+    print("=" * 78)
+    return 0
+
+
+def _recompute_from_disk(data_dir: Path) -> PortfolioAttestation:
+    """Re-discover and re-fold the sealed runs straight off disk."""
+    return attest_portfolio(load_portfolio(data_dir))
+
+
+def verify(manifest_path: Path, data_dir: Path) -> int:
+    """Re-verify a portfolio manifest against the sealed runs on disk.
+
+    Recomputes the Merkle root from disk, checks the portfolio signature, and
+    cross-checks the manifest's run set against the runs actually present so a
+    dropped run (in the manifest, gone from disk) or an extra run (on disk, absent
+    from the manifest) is detected and named."""
+    print("=" * 78)
+    print("PORTFOLIO VERIFY: does the signed root still cover every sealed run?")
+    print("=" * 78)
+    if not manifest_path.exists():
+        print(f"attest_portfolio: no manifest at {manifest_path}",
+              file=sys.stderr)
+        return 2
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    stored_manifest = document.get("manifest", {}) or {}
+    signature = document.get("signature", {}) or {}
+
+    recomputed = _recompute_from_disk(data_dir)
+    stored_runs = {r["name"]: r for r in stored_manifest.get("runs", [])}
+    disk_runs = {r.name: r for r in recomputed.attested}
+
+    print(f"Manifest       : {manifest_path}")
+    print(f"Stored root    : {stored_manifest.get('portfolio_root', '(absent)')}")
+    print(f"Recomputed root: {recomputed.root}")
+    print(f"Stored count   : {stored_manifest.get('run_count', '(absent)')}")
+    print(f"Disk count     : {recomputed.run_count}")
+    print("Per-run chain heads on disk:")
+    name_w = max((len(n) for n in disk_runs), default=4)
+    for name in sorted(disk_runs):
+        print(f"  {name.ljust(name_w)}  head {disk_runs[name].chain_head}")
+    print()
+
+    failures: list[str] = []
+
+    dropped = sorted(set(stored_runs) - set(disk_runs))
+    extra = sorted(set(disk_runs) - set(stored_runs))
+    for name in dropped:
+        failures.append(f"DROPPED RUN: {name} is in the manifest but missing on disk")
+    for name in extra:
+        failures.append(f"UNATTESTED RUN: {name} is on disk but absent from the manifest")
+
+    for name in sorted(set(stored_runs) & set(disk_runs)):
+        if stored_runs[name].get("chain_head") != disk_runs[name].chain_head:
+            failures.append(
+                f"TAMPERED RUN: {name} chain head moved since the manifest was signed")
+
+    # The root the signature covers must equal the root re-derived from disk.
+    stored_root = stored_manifest.get("portfolio_root", "")
+    if recomputed.root != stored_root:
+        failures.append(
+            "ROOT MISMATCH: the root re-derived from disk does not match the "
+            "manifest root")
+
+    # The manifest the signature commits to must canonicalize to the stored digest.
+    recomputed_manifest_digest = manifest_digest(stored_manifest)
+    if recomputed_manifest_digest != document.get("manifest_sha256"):
+        failures.append("MANIFEST DIGEST MISMATCH: the stored manifest was edited")
+
+    # The portfolio signature must verify over the STORED root and count (so an
+    # edited manifest root is caught both here and by the digest check).
+    sig_ok = verify_portfolio(
+        stored_manifest.get("portfolio_root", ""),
+        stored_manifest.get("run_count", -1),
+        signature)
+    if not sig_ok:
+        failures.append("SIGNATURE INVALID: the portfolio signature does not verify")
+
+    print(f"Signer fp      : {signature.get('pubkey_fingerprint', '(absent)')}")
+    print()
+    if failures:
+        print("INVALID. The portfolio no longer covers the fleet intact:")
+        for item in failures:
+            print(f"  - {item}")
+        print(f"Note: {DEMO_KEY_CAVEAT}")
+        print("=" * 78)
+        return 1
+
+    print("VALID. The signed Merkle root re-derives from every sealed run on disk,")
+    print("the run set matches exactly (no run dropped, none unattested), and the")
+    print("portfolio signature verifies under the committed public key.")
+    print(f"Note: {DEMO_KEY_CAVEAT}")
+    print("=" * 78)
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if "--verify" in argv:
+        idx = argv.index("--verify")
+        rest = [a for a in argv[idx + 1:] if not a.startswith("--")]
+        manifest_path = (Path(rest[0]).resolve() if rest else DEFAULT_MANIFEST)
+        return verify(manifest_path, DATA_DIR)
+    return build(DATA_DIR, DEFAULT_MANIFEST)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
