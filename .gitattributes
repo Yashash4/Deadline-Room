@@ -1,0 +1,7 @@
+# Sealed, byte-hashed artifacts must be identical on every platform. A Windows
+# checkout must not rewrite their line endings to CRLF, because that changes the
+# exact bytes the Warden signs and the in-browser viewer re-hashes. Force LF so
+# the on-disk sha256 always matches the canonical signed value.
+*.jsonl text eol=lf
+web/data/*.json text eol=lf
+web/keys/* -text

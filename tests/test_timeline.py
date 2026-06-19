@@ -216,16 +216,16 @@ def test_packet_html_renders_the_timeline_and_after_action():
 
 _SEALED_SHAS = {
     "normal": (
-        "4721e56cced08b2cfc663b0bca2e392bddae18ceec919f8a386a544f2d17b625",
+        "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3",
         "89dae1455e3719996036ff4fc671755894003ef44b3938f3b9dc597aa54226f3"),
     "inject_contradiction": (
-        "4de0c9d86e6afab0923801d2aa258d50a59db88c83ddfd6c88fd3c90e26487a6",
+        "f1f2223aa57b4bace83bf3fcfc5886e2a657d86f15b5d9ed0762646142e34e98",
         "f1f2223aa57b4bace83bf3fcfc5886e2a657d86f15b5d9ed0762646142e34e98"),
     "chaos": (
-        "81ecd17595336435f6e3bb73dbc32f7f79cb729e462d7d5fdd0bd9de6cdfa463",
+        "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520",
         "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520"),
     "amendment": (
-        "a10940ab4df880cd2e3aa6f9ec1a4095ac18c5e1e338bf7510e11429317eeaf4",
+        "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
         "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc"),
 }
 
