@@ -599,6 +599,98 @@ def calibrate(confidence_block: dict[str, str], grounding_result) -> Calibration
     return result
 
 
+# ---------------------------------------------------------------------------
+# Deterministic figure-equality arbitration over amended filings (E9.7).
+#
+# When two drafters re-file at a reconciled record count, the amendment is only
+# safe to release if BOTH filings' prose actually state the SAME number. The
+# concurrence envelope and the [CLAIMS] value-match gate already pin the
+# structured figure; this is the PROSE-side arbiter: a pure, deterministic check
+# that the human-readable filings each state the expected figure and agree with
+# each other, reusing the exact number-normalization the grounding scorer uses
+# (_norm_num, so 2,100,000 / 2100000 / 2100000.0 all compare equal). It reads only
+# the already-produced filing prose, never an LLM; the same inputs always yield the
+# same verdict, so it is replay-safe. It is the load-bearing DETERMINISTIC half of
+# the smarter negotiation: the bounded LLM exchange proposes the phrasing, this
+# arbitrates the number.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class FigureCheck:
+    """The deterministic figure-equality verdict over a set of amended filings.
+
+    `expected` is the normalized figure the amendment reconciled to. `stated` maps
+    each branch to the normalized count-shaped figure found in its prose (or "" if
+    none was found). `agree` is the load-bearing boolean: True iff every filing
+    states the expected figure and therefore they all agree with each other."""
+    expected: str
+    stated: dict[str, str]
+    agree: bool
+    reason: str
+
+    def as_dict(self) -> dict:
+        return {
+            "expected": self.expected,
+            "stated": dict(self.stated),
+            "agree": self.agree,
+            "reason": self.reason,
+        }
+
+
+def _stated_count_figure(filing_text: str, expected_norm: str) -> str:
+    """The count-shaped figure a filing's prose states, normalized, or "" if none.
+    Pure: scans the prose (never the [CLAIMS] block) for a number with as many
+    digits as the expected figure and returns the first normalized match. Reuses the
+    grounding number tokenizer and normalizer so the surface forms compare exactly
+    the way the scorer compares them."""
+    prose = _strip_claims(filing_text or "")
+    want_digits = len(expected_norm)
+    for m in _NUMBER.finditer(prose):
+        norm = _norm_num(m.group(0))
+        if not norm or _is_year(norm):
+            continue
+        if len(norm) >= want_digits - 1 and len(norm) <= want_digits + 1:
+            if norm == expected_norm:
+                return norm
+            # A count-shaped number that is NOT the expected figure: record it so a
+            # disagreement is surfaced, not hidden.
+            return norm
+    return ""
+
+
+def check_figure_equality(filings: list[dict], expected_value) -> FigureCheck:
+    """Arbitrate, deterministically, whether every amended filing's prose states the
+    SAME reconciled figure (E9.7). filings is a list of {'branch'/'regime', 'text'}
+    dicts; expected_value is the reconciled record count. Pure and replay-safe: no
+    LLM, no clock, no randomness; the same inputs always yield the same FigureCheck.
+
+    The verdict AGREES iff every filing states the expected figure (so they also all
+    agree with each other). A filing stating a different count-shaped number, or
+    stating none, makes the verdict DISAGREE and names the offending branch. This is
+    the deterministic half of the smarter amendment negotiation: the LLM exchange
+    settles the phrasing, this gate settles the number."""
+    expected_norm = _norm_num(str(expected_value))
+    stated: dict[str, str] = {}
+    for f in filings:
+        branch = str(f.get("branch") or f.get("regime") or "")
+        stated[branch] = _stated_count_figure(f.get("text", ""), expected_norm)
+    mismatches = [b for b, v in stated.items() if v != expected_norm]
+    if not stated:
+        return FigureCheck(expected=expected_norm, stated=stated, agree=False,
+                           reason="no filings to arbitrate")
+    if mismatches:
+        detail = ", ".join(
+            f"{b} states {stated[b] or 'no count-shaped figure'!r}"
+            for b in mismatches)
+        return FigureCheck(
+            expected=expected_norm, stated=stated, agree=False,
+            reason=(f"filings disagree on the reconciled figure {expected_norm}: "
+                    f"{detail}"))
+    return FigureCheck(
+        expected=expected_norm, stated=stated, agree=True,
+        reason=(f"all {len(stated)} amended filings state the same reconciled "
+                f"figure {expected_norm}"))
+
+
 def score_filings(filings: list[dict], fact_record: dict) -> list[dict]:
     """Score a list of filing dicts (each {'regime'/'branch', 'text', ...}) and
     return a list of result dicts ready to attach to the packet. Pure; the input

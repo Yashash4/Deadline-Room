@@ -130,15 +130,16 @@ from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.determination import build_determination_record  # noqa: E402
 from floor.legal_hold import build_legal_hold  # noqa: E402
-from floor.grounding import score_filings  # noqa: E402
+from floor.grounding import check_figure_equality, score_filings  # noqa: E402
 from floor.lead_authority import (  # noqa: E402
     SupervisoryAuthority, resolve as resolve_lead_authority)
 from floor.drafter import (  # noqa: E402
     build_draft_body, draft_characterization, draft_filing,
-    draft_filing_with_failover)
+    draft_filing_with_failover, negotiate_characterization)
 from floor.materiality import (  # noqa: E402
     assess_materiality, assess_materiality_two_opinions)
 from floor.reportability import assess_reportability  # noqa: E402
+from floor import investigate as investigate_mod  # noqa: E402
 from floor.high_risk import assess_high_risk  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
@@ -559,6 +560,19 @@ RAG_K = 4
 # path is exactly the single-model path it has always been.
 FAILOVER_ENABLED = False
 ROUTE_ENABLED = False
+# Sub-agent INVESTIGATION (E9.7). When ON, an LLM derivation step proposes
+# candidate facts from the fact-record (a statutory deadline, a duty-to-notify
+# trigger) BEFORE drafting, and a PURE verify_derivation recomputes each against
+# the frozen clocks / threshold rules read-only, admitting only the confirmed
+# ones. The admitted facts feed the DRAFTING PROMPT only (an aid), NEVER the
+# [CLAIMS] gate envelope, and the verifier is read-only over the clocks. It
+# DEFAULTS OFF so the existing run path and the four SEALED captures stay
+# byte-identical: with it off, no derivation runs and the prompt is exactly the
+# prompt it has always been. Even with it ON the investigation is recorded
+# OUT-OF-LOG on the trace and only changes human-readable prose, so the hashed
+# run-log and replay are byte-identical; the flag's only purpose is to keep the
+# committed captures from re-drafting their prose.
+INVESTIGATE_ENABLED = False
 TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
 TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
 # The amendment re-release runs the SAME two-key gate as the initial release:
@@ -784,6 +798,17 @@ class StepTrace:
         # Vision-triage records (E5.7 part 3): one advisory screenshot triage,
         # validated and grounding-scored, OUT-OF-LOG like the rest.
         self.vision_triages: list[dict] = []
+        # Sub-agent investigation records (E9.7). Like the RAG retrievals and the
+        # Warden-in-room posts, this is an ADDITIVE, OUT-OF-LOG visibility artifact:
+        # the LLM derives candidate facts and a PURE verifier recomputes each
+        # against the frozen clocks / threshold rules read-only, admitting only the
+        # confirmed ones. NOTHING here is ever appended to the hashed run-log event
+        # stream, and the admitted facts feed only the drafting prompt, never the
+        # [CLAIMS] gate, so byte-identical replay and the sealed run-log sha are
+        # untouched. Holds the InvestigationResult receipt and the admitted
+        # {field: value} mapping that fed the prompt.
+        self.investigation: dict | None = None
+        self.investigation_facts: dict[str, str] = {}
 
     def say(self, line: str) -> None:
         self.lines.append(line)
@@ -827,6 +852,17 @@ class StepTrace:
                 for c in chunks
             ],
         })
+
+    def record_investigation(self, result, admitted_facts: dict) -> None:
+        """Record the sub-agent investigation (E9.7) as OUT-OF-LOG derived trace,
+        exactly the RAG-retrieval pattern. result is a
+        floor.investigate.InvestigationResult; admitted_facts is the {field: value}
+        mapping of DETERMINISTICALLY-CONFIRMED derivations that fed the drafting
+        prompt. The verifier is pure and read-only over the frozen clocks; nothing
+        here is written to the hashed run-log, so byte-identical replay and the
+        sealed sha are untouched."""
+        self.investigation = result.as_dict()
+        self.investigation_facts = dict(admitted_facts)
 
     def record_failover(self, branch: str, regime: str, result) -> None:
         """Record one model-failover walk (E5.7) OUT-OF-LOG: which model SERVED the
@@ -932,6 +968,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               affected_party: bool = False, high_risk_fn=None,
               affected_party_facts: dict | None = None,
               failover: bool = False, route: bool = False,
+              investigate: bool = False, investigate_fn=None,
+              negotiate_rounds: int = 0,
               sovereign: bool = False) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
@@ -969,7 +1007,10 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            affected_party=affected_party,
                            high_risk_fn=high_risk_fn,
                            affected_party_facts=affected_party_facts,
-                           failover=failover, route=route, sovereign=sovereign)
+                           failover=failover, route=route,
+                           investigate=investigate, investigate_fn=investigate_fn,
+                           negotiate_rounds=negotiate_rounds,
+                           sovereign=sovereign)
 
 
 # (cross_border has no public-API kwarg: it is selected purely by mode ==
@@ -1000,6 +1041,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     high_risk_fn=None,
                     affected_party_facts: dict | None = None,
                     failover: bool = False, route: bool = False,
+                    investigate: bool = False, investigate_fn=None,
+                    negotiate_rounds: int = 0,
                     sovereign: bool = False) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
@@ -1145,9 +1188,10 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # the drafting closure consults the router / failover chain and records the
     # decision OUT-OF-LOG. Setting them here (not as a constant) keeps each run
     # self-contained; with both OFF the drafting path is byte-identical.
-    global FAILOVER_ENABLED, ROUTE_ENABLED
+    global FAILOVER_ENABLED, ROUTE_ENABLED, INVESTIGATE_ENABLED
     FAILOVER_ENABLED = bool(failover)
     ROUTE_ENABLED = bool(route)
+    INVESTIGATE_ENABLED = bool(investigate)
 
     log = RunLog()
     trace = StepTrace(log)
@@ -1346,6 +1390,18 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             if not rec["reportable"]:
                 suppressed_branches.add(rec["branch"])
 
+    # ---- Sub-agent investigation (E9.7): BEFORE drafting, derive candidate facts
+    # the record does not state outright (a statutory deadline, a duty trigger) and
+    # deterministically verify each against the frozen clocks / threshold rules,
+    # admitting ONLY confirmed derivations. The admitted facts feed the drafting
+    # PROMPT only, never the [CLAIMS] gate. DEFAULT OFF (additive); the verifier is
+    # read-only over the clocks and the whole step records OUT-OF-LOG, so the sealed
+    # shas and byte-identical replay are untouched.
+    if investigate:
+        _investigation_phase(
+            trace=trace, fact_record=CANONICAL_FACTS, provider_set=provider_set,
+            draft_timeout=draft_timeout, propose_fn=investigate_fn)
+
     # ---- Drafters run SEQUENTIALLY (Featherless: one big model at a time)
     filings: list[dict] = []
     claims_by_branch: dict[str, object] = {}
@@ -1535,6 +1591,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
             branch_corr=branch_corr, draft_fns=draft_fns, draft_timeout=draft_timeout,
             release_gate=release_gate,
             provider_set=provider_set,
+            negotiate_rounds=negotiate_rounds,
         )
         # The amended figure becomes the reconciled record of those branches.
         for b in AMENDMENT_BRANCHES:
@@ -1760,6 +1817,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         deficiency=deficiency_record,
         legal_hold=legal_hold_record,
         submission=submission_record,
+        investigation=trace.investigation,
         sovereign=sovereign,
     )
     json_path, html_path = write_packet(packet, out_dir)
@@ -2404,7 +2462,8 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
 def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters,
                      warden_id, triage_id, drafter_ids, branch_corr,
                      draft_fns, draft_timeout, release_gate,
-                     provider_set=roster.PROVIDER_DEV) -> dict:
+                     provider_set=roster.PROVIDER_DEV,
+                     negotiate_rounds: int = 0) -> dict:
     guard = NegotiationGuard()
     sec, nis2 = "sec", "nis2"
     sec_id, nis2_id = drafter_ids[sec], drafter_ids[nis2]
@@ -2541,6 +2600,40 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
     trace.record_negotiation({**concur.canonical(), "envelope_sha256": concur.sha256(),
                               "band_message_id": concur_mid})
 
+    # 4b. Bounded multi-turn deliberation (E9.7, OPT-IN, default OFF). When a caller
+    #     asks for it, the two drafters run a bounded back-and-forth to converge on a
+    #     shared phrasing of the reconciled figure: propose, up to negotiate_rounds
+    #     revise turns, then concur. This is an ADDITIVE deliberation transcript: it
+    #     rides the returned record (packet data, OUT-OF-LOG) and never alters the
+    #     envelope characterizations, the dedup keys, or any logged event, so the
+    #     sealed amendment-capture sha and byte-identical replay are untouched. The
+    #     deterministic figure-equality check below arbitrates the NUMBER regardless
+    #     of whichever phrasing the deliberation settles on; this bounds only the
+    #     prose. With negotiate_rounds == 0 (the default and the sealed path), no
+    #     extra turns run.
+    characterization_exchange = None
+    if negotiate_rounds > 0:
+        propose_turn_fn = _characterize_fn_for(sec, "SEC", "propose", draft_fns,
+                                               draft_timeout, provider_set)
+        concur_turn_fn = _characterize_fn_for(nis2, "NIS2", "concur", draft_fns,
+                                              draft_timeout, provider_set)
+
+        def _proposer(role, counterpart_text):
+            return propose_turn_fn(counterpart_text)
+
+        def _concurrer(role, counterpart_text):
+            return concur_turn_fn(counterpart_text)
+
+        exchange = negotiate_characterization(
+            proposer_fn=_proposer, concurrer_fn=_concurrer,
+            max_rounds=negotiate_rounds)
+        characterization_exchange = exchange.as_dict()
+        trace.say(
+            f"[A4b] Bounded multi-turn deliberation: {len(exchange.turns)} turn(s) "
+            f"over up to {negotiate_rounds} round(s); converged="
+            f"{exchange.converged}, shared phrasing settled (figure arbitrated "
+            "deterministically below).")
+
     # 5. A concur now exists. Each branch may submit its amendment. Both produce
     #    the amended filing with the reconciled figure and post it back.
     amended_claims: dict[str, FactClaims] = {}
@@ -2598,6 +2691,26 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
                         "conflicts": [c.human() for c in conflicts]})
     if conflicts:
         raise RuntimeError(f"amended filings still contradict: {conflicts}")
+
+    # 6b. Deterministic PROSE figure-equality arbitration (E9.7). The [CLAIMS]
+    #     value-match gate above pins the STRUCTURED figure; this pure check
+    #     arbitrates the human-readable FILINGS, confirming both amended filings'
+    #     prose state the SAME reconciled count (reusing floor/grounding.py's exact
+    #     number normalization). It is the load-bearing deterministic half of the
+    #     smarter negotiation: the bounded LLM exchange settled the phrasing, this
+    #     settles the number. Read-only over the already-produced filing prose, and
+    #     it NEVER enters the hashed run-log (the receipt rides the returned
+    #     amendment record, which is packet data, not log data), so the sealed
+    #     amendment-capture sha and byte-identical replay are untouched.
+    figure_check = check_figure_equality(amended_filings, AMENDED_RECORDS)
+    if not figure_check.agree:
+        raise RuntimeError(
+            f"amended filings disagree on the reconciled figure: "
+            f"{figure_check.reason}")
+    trace.say(
+        f"[A5b] Deterministic figure check: both amended filings state the same "
+        f"reconciled figure {AMENDED_RECORDS:,} (arbitrated, no LLM).")
+
     _warden_announce(
         warden, trace,
         f"Concurrence recorded. @SEC Drafter and @NIS2 Drafter agree "
@@ -2645,6 +2758,8 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
         "concurred_value": AMENDED_RECORDS,
         "concurred_characterization": concur.characterization,
         "diff_passed_only_after_concur": True,
+        "figure_check": figure_check.as_dict(),
+        "characterization_exchange": characterization_exchange,
         "amended_filings": amended_filings,
         "amended_claims": amended_claims,
         "envelope_history": [
@@ -3218,6 +3333,57 @@ def _release_legal_hold(*, log, trace, warden, hold, fact_record, mentions) -> d
     out["preservation_scope"] = scope_check.as_dict()
     out["hold"] = released
     return out
+
+
+# ----------------------------------------------------------------------------
+# Sub-agent INVESTIGATION phase (E9.7). BEFORE the drafters run, an LLM derivation
+# sub-agent proposes candidate facts the fact-record does not state outright (a
+# NIS2 full-notification deadline counted from the becoming-aware timestamp, a GDPR
+# Art 34 communication trigger), and a PURE verifier recomputes each against the
+# SAME frozen Warden core the rest of the system gates on: the statutory clocks for
+# a deadline, a threshold predicate for a trigger. ONLY confirmed derivations are
+# admitted, and the admitted facts feed the DRAFTING PROMPT only, NEVER the [CLAIMS]
+# gate envelope. The verifier is read-only over the clocks (a throwaway engine), so
+# the chaos fixture, the run-log, and every sealed sha are untouched.
+#
+# It is additive and DEFAULT-OFF (run_floor(investigate=False)); with it off no
+# derivation runs. propose_fn injects the candidate list in tests so the suite
+# needs no live LLM, exactly the seam reportability_fn / materiality_fn use. The
+# whole step records OUT-OF-LOG on the trace, so byte-identical replay holds even
+# with it on.
+# ----------------------------------------------------------------------------
+def _investigation_phase(*, trace, fact_record, provider_set, draft_timeout,
+                         propose_fn=None) -> dict:
+    """Derive candidate facts, deterministically verify each, and record the result
+    OUT-OF-LOG. Returns the admitted {field: value} mapping that feeds the drafting
+    prompt (the only thing that crosses into prompting), and records the full
+    InvestigationResult receipt on the trace.
+
+    propose_fn(fact_record) injects the candidate list in tests (a list of
+    floor.investigate.CandidateFact); when None, the live Featherless derivation
+    sub-agent is called. The candidates are GUESSES; verify_derivation admits only
+    the ones the frozen core confirms."""
+    if propose_fn is not None:
+        candidates = propose_fn(fact_record)
+    else:
+        provider, model = roster.resolve(roster.MATERIALITY, provider_set)
+        candidates = investigate_mod.propose_candidates(
+            fact_record, model=model, provider=provider, timeout=draft_timeout,
+            max_attempts=LIVE_NET_ATTEMPTS)
+    result = investigate_mod.investigate(fact_record, candidates)
+    admitted = result.admitted_facts()
+    trace.record_investigation(result, admitted)
+    trace.say(
+        f"[4i] Investigation: {len(candidates)} candidate fact(s) derived; "
+        f"{len(result.admitted)} ADMITTED after deterministic recompute "
+        f"({', '.join(sorted(admitted)) or 'none'}); "
+        f"{len(result.rejected)} REJECTED where the recompute disagreed.")
+    for v in result.rejected:
+        trace.say(
+            f"[4i] REJECTED {v.candidate.regime} {v.candidate.field}: "
+            f"claimed {v.candidate.value!r}, recompute gave "
+            f"{v.recomputed_value!r}. {v.reason}")
+    return admitted
 
 
 # ----------------------------------------------------------------------------
@@ -4438,6 +4604,11 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
         body_facts = dict(CANONICAL_FACTS)
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
         grounding = _rag_grounding(branch, role.regime, body_facts, trace)
+        # E9.7: the deterministically-confirmed derived facts (if any) the
+        # investigation admitted feed the drafting PROMPT only, never the [CLAIMS]
+        # gate. Empty when investigation did not run, so the default prompt is
+        # byte-identical.
+        investigation_facts = trace.investigation_facts if trace is not None else {}
 
         # E5.7 part 2: deterministic complexity routing (DEFAULT OFF). When on, the
         # router tiers this filing and the tier's model drafts it; the decision is
@@ -4465,6 +4636,7 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
             result = draft_filing_with_failover(
                 body_facts, chain=chain, regime=role.regime,
                 format_profile=profile, grounding_chunks=grounding,
+                investigation_facts=investigation_facts,
                 timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
             trace.record_failover(branch, role.regime, result)
             return result.value
@@ -4472,6 +4644,7 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
         return draft_filing(body_facts, model=active_model, provider=active_provider,
                             regime=role.regime, format_profile=profile,
                             grounding_chunks=grounding,
+                            investigation_facts=investigation_facts,
                             timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
     return fn
 
@@ -4654,6 +4827,7 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      attestation=None, reportability=None,
                      cross_border=None, affected_party=None,
                      deficiency=None, legal_hold=None, submission=None,
+                     investigation=None,
                      sovereign: bool = False) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
@@ -4785,12 +4959,27 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "concurred_value": amendment["concurred_value"],
             "concurred_characterization": amendment["concurred_characterization"],
             "diff_passed_only_after_concur": amendment["diff_passed_only_after_concur"],
+            # E9.7: the deterministic prose figure-equality arbitration over the
+            # amended filings (both state the same reconciled count). Derived
+            # read-only over the filing prose; never in the hashed run-log.
+            "figure_check": amendment.get("figure_check"),
+            # E9.7: the bounded multi-turn deliberation transcript (None unless the
+            # caller opted into smarter negotiation). Out-of-log packet data only.
+            "characterization_exchange": amendment.get("characterization_exchange"),
             "envelope_chain": amendment["envelope_history"],
         }
     if materiality is not None:
         packet["materiality"] = materiality
     if reportability is not None:
         packet["reportability"] = reportability
+    if investigation is not None:
+        # The sub-agent investigation receipt (E9.7): every candidate fact the LLM
+        # derived, its claimed value, the DETERMINISTICALLY recomputed value, and
+        # whether it was ADMITTED (the recompute confirmed it) or REJECTED. Derived
+        # OUT-OF-LOG on the trace; the admitted facts fed the drafting prompt only,
+        # never the [CLAIMS] gate, so the run-log sha and byte-identical replay are
+        # untouched. Present only when investigation ran.
+        packet["investigation"] = investigation
     if cross_border is not None:
         packet["cross_border"] = cross_border
     if affected_party is not None:

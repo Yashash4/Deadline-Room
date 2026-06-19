@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from dataclasses import dataclass, field
 
 import requests
 
@@ -260,6 +261,40 @@ def _grounding_context_block(grounding_chunks) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+# The one system-prompt instruction added when deterministically-verified derived
+# facts are injected (E9.7). It tells the model the DERIVED FACTS block carries
+# facts a DETERMINISTIC checker already CONFIRMED (a recomputed statutory deadline,
+# a confirmed duty trigger), so the model may rely on them. Deterministic text; it
+# changes only the prose, never the [CLAIMS] block (attached after sanitization).
+# The derived facts are an AID to the prompt, never a gated claim: the
+# load-bearing [CLAIMS] envelope stays exactly the fact-record the drafter process
+# attaches, so the Warden's diff and the sealed shas are untouched.
+_INVESTIGATION_INSTRUCTION = (
+    "You are given a DERIVED FACTS block of facts a deterministic checker already "
+    "CONFIRMED by recomputing them against the statutory clocks and threshold "
+    "rules (for example a recomputed notification deadline, or a confirmed "
+    "duty-to-notify trigger). You may rely on these confirmed derivations in the "
+    "filing. They supplement the fact-record; they never replace a fact-record "
+    "field."
+)
+
+
+def _investigation_block(investigation_facts) -> str:
+    """Render the injected DERIVED FACTS block from a {field: value} mapping of
+    DETERMINISTICALLY-CONFIRMED derived facts, or "" when none are supplied. Pure
+    string work; it carries no Warden control fence and asserts no rival claim, so
+    it changes only the human-readable prompt prose, exactly like the grounding
+    context. The drafter process still attaches the one authoritative [CLAIMS]
+    block from the fact-record after sanitization, so the derived facts are a prompt
+    aid only and never enter the gated envelope."""
+    if not investigation_facts:
+        return ""
+    lines = ["DERIVED FACTS (deterministically verified, you may rely on these):"]
+    for fieldname, value in investigation_facts.items():
+        lines.append(f"  {fieldname}: {value}")
+    return "\n".join(lines) + "\n\n"
+
+
 def _citation_fields_hint(fact_record: dict) -> str:
     """A one-line reminder listing the exact citeable field names, so the model
     cites real keys. Deterministic from the record; affects only the prose tags,
@@ -470,6 +505,7 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
                  provider: str = DEFAULT_PROVIDER, api_key: str | None = None,
                  regime: str = "NIS2", format_profile=None, expert_profile=None,
                  emit_confidence: bool = False, grounding_chunks=None,
+                 investigation_facts=None,
                  max_tokens: int = 700, timeout: int = 90,
                  max_attempts: int = 1) -> str:
     """Draft the regulatory notification body for one regime from the canonical
@@ -514,7 +550,19 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     the [CLAIMS] block is attached after sanitization and is never affected, the
     citations ride in the prose half, and the retrieval is out-of-log, so a fresh run
     reproduces the sealed sha and replay stays byte-identical. It DEFAULTS None, so a
-    caller that passes no chunks is byte-identical to before."""
+    caller that passes no chunks is byte-identical to before.
+
+    investigation_facts, when supplied, is a {field: value} mapping of
+    DETERMINISTICALLY-CONFIRMED derived facts (E9.7): facts an investigation
+    sub-agent derived from the record and a pure verifier CONFIRMED by recomputing
+    them against the frozen statutory clocks / threshold rules. They are injected as
+    a "DERIVED FACTS (deterministically verified)" block ahead of the fact-record,
+    plus one system-prompt instruction that the model may rely on them. Like the
+    grounding context they change ONLY the human-readable prompt prose and the
+    resulting filing: the [CLAIMS] block is attached after sanitization from the
+    fact-record and is never affected, so the derived facts are a prompt AID and
+    never a gated claim, and a fresh run reproduces the sealed sha. It DEFAULTS None,
+    so a caller that passes no derived facts is byte-identical to before."""
     expert = (
         "\n\n" + _expert_system_prompt(expert_profile)
         if expert_profile is not None else ""
@@ -522,6 +570,9 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
     confidence = "\n\n" + _confidence_prompt() if emit_confidence else ""
     grounding_system = "\n\n" + _GROUNDING_INSTRUCTION if grounding_chunks else ""
     grounding_block = _grounding_context_block(grounding_chunks)
+    investigation_system = (
+        "\n\n" + _INVESTIGATION_INSTRUCTION if investigation_facts else "")
+    investigation_block = _investigation_block(investigation_facts)
     if format_profile is not None:
         from floor.formats import prompt_for
         structure = prompt_for(format_profile)
@@ -532,9 +583,11 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
             "facts, and you fill the exact mandated fields the form requires. No "
             "markdown headers; plain prose under each field label. "
             + _CITATION_INSTRUCTION + expert + confidence + grounding_system
+            + investigation_system
         )
         user = (
             grounding_block
+            + investigation_block
             + f"Draft the {regime} mandatory incident notification from this "
             f"canonical fact-record. Use ONLY these facts. Keep it under 300 "
             f"words total.\n\n{structure}\n\n"
@@ -555,9 +608,11 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         "the structure a regulator expects. No markdown headers, plain prose with "
         "short labelled sections. "
         + _CITATION_INSTRUCTION + expert + confidence + grounding_system
+        + investigation_system
     )
     user = (
         grounding_block
+        + investigation_block
         + f"Draft the {regime} mandatory incident notification (the 72-hour "
         f"notification where applicable) from this canonical fact-record. "
         f"Use ONLY these facts. Keep it under 300 words.\n\n"
@@ -601,6 +656,7 @@ def draft_filing_with_failover(fact_record: dict, *, chain: list[tuple[str, str]
                                api_key: str | None = None, regime: str = "NIS2",
                                format_profile=None, expert_profile=None,
                                emit_confidence: bool = False, grounding_chunks=None,
+                               investigation_facts=None,
                                max_tokens: int = 700, timeout: int = 90,
                                max_attempts: int = 1):
     """Draft one filing over an ORDERED model chain, failing over across families
@@ -631,7 +687,8 @@ def draft_filing_with_failover(fact_record: dict, *, chain: list[tuple[str, str]
             fact_record, model=model, provider=provider, api_key=api_key,
             regime=regime, format_profile=format_profile,
             expert_profile=expert_profile, emit_confidence=emit_confidence,
-            grounding_chunks=grounding_chunks, max_tokens=max_tokens,
+            grounding_chunks=grounding_chunks,
+            investigation_facts=investigation_facts, max_tokens=max_tokens,
             timeout=timeout, max_attempts=max_attempts)
 
     return model_fallback.call_with_failover(
@@ -711,10 +768,17 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
     characterize the revised record count for its regulator, so the two filings
     share one phrasing of the same number.
 
-    This is the only LLM step in the amendment beat. It writes prose only; the
+    This is the LLM step in the amendment beat. It writes prose only; the
     structured figure and verdict are attached by the drafter process, not the
     model, so the value the Warden gates on stays deterministic. Returns a single
     plain sentence (no markdown, no quotes). Raises DrafterError on failure.
+
+    `role` is the turn in the bounded multi-turn exchange:
+      "propose": open the exchange with a candidate phrasing of the new figure.
+      "revise":  counter the counterpart's phrasing with a refined shared phrasing
+                 (a middle turn in the bounded deliberation).
+      "concur":  accept the counterpart's phrasing as the shared one both filings
+                 will use (the closing turn).
     """
     system = (
         "You are a regulatory breach-notification drafter reconciling a revised "
@@ -729,6 +793,14 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
             f"from {old_records:,} to {new_records:,}. Propose to the counterpart "
             f"drafter one shared way to characterize {new_records:,} affected "
             f"records in both filings."
+        )
+    elif role == "revise":
+        user = (
+            f"You draft the {regime} filing. The counterpart proposed this "
+            f"characterization of {new_records:,} affected records: "
+            f"\"{counterpart_text}\". It is close but not yet shared wording. Reply "
+            f"with a single refined sentence both filings can use, still stating "
+            f"{new_records:,} affected records."
         )
     else:
         user = (
@@ -748,3 +820,93 @@ def draft_characterization(*, regime: str, old_records: int, new_records: int,
     if len(content) >= 2 and content[0] in "\"'" and content[-1] in "\"'":
         content = content[1:-1].strip()
     return content
+
+
+# The bound on the multi-turn characterization deliberation. The exchange is
+# propose, then up to MAX_NEGOTIATION_ROUNDS revise turns, then concur, so it can
+# never loop unboundedly: a real deliberation that does not converge in this many
+# rounds settles on the last proposal rather than spinning. Kept small so the
+# offline test exchange is fast and the live exchange is cheap.
+MAX_NEGOTIATION_ROUNDS = 3
+
+
+@dataclass(frozen=True)
+class NegotiationTurn:
+    """One turn in the bounded characterization deliberation: who spoke, in which
+    role (propose | revise | concur), the round number, and the sentence."""
+    speaker: str
+    role: str
+    round: int
+    text: str
+
+
+@dataclass
+class CharacterizationExchange:
+    """The transcript of a bounded multi-turn characterization deliberation. `turns`
+    is every turn in order; `agreed_text` is the shared phrasing both filings adopt
+    (the concur turn's text); `converged` is True when the exchange reached a concur
+    within the round bound."""
+    turns: list = field(default_factory=list)
+    agreed_text: str = ""
+    converged: bool = False
+
+    def as_dict(self) -> dict:
+        return {
+            "turns": [
+                {"speaker": t.speaker, "role": t.role, "round": t.round,
+                 "text": t.text}
+                for t in self.turns
+            ],
+            "agreed_text": self.agreed_text,
+            "converged": self.converged,
+            "rounds": len({t.round for t in self.turns}),
+        }
+
+
+def _normalize_sentence(s: str) -> str:
+    """A whitespace- and case-folded comparison form for two characterization
+    sentences, so 'converged' means the two drafters settled on the SAME phrasing,
+    not merely on a similar one. Pure string work."""
+    return " ".join(str(s).split()).strip().lower().rstrip(".")
+
+
+def negotiate_characterization(*, proposer_fn, concurrer_fn, max_rounds: int = MAX_NEGOTIATION_ROUNDS):
+    """Run the bounded multi-turn characterization deliberation and return a
+    CharacterizationExchange. The proposer opens; the concurrer responds; if the
+    concurrer's reply does not yet match the standing proposal, the proposer REVISES
+    toward it, up to `max_rounds` revise turns, then the concurrer concurs on the
+    final phrasing. Bounded by construction: it makes at most 2 + 2*max_rounds LLM
+    calls and always terminates with an agreed phrasing (the last concur, or the
+    standing proposal if the bound is hit).
+
+    proposer_fn(role, counterpart_text) and concurrer_fn(role, counterpart_text)
+    each return a one-sentence characterization; role is one of
+    "propose"/"revise"/"concur". They wrap draft_characterization (live) or an
+    injected fn (tests), so this driver is LLM-agnostic and pure given the fns. It
+    writes prose only: the structured figure the Warden gates on is attached by the
+    drafter process, never here, and the deterministic figure-equality check
+    (floor/grounding.py) arbitrates the number regardless of the phrasing this
+    settles on."""
+    exchange = CharacterizationExchange()
+    standing = proposer_fn("propose", "")
+    exchange.turns.append(NegotiationTurn("proposer", "propose", 1, standing))
+
+    rnd = 1
+    while True:
+        reply = concurrer_fn("concur" if rnd > max_rounds else "revise", standing)
+        if rnd > max_rounds or _normalize_sentence(reply) == _normalize_sentence(standing):
+            # The concurrer accepted the standing phrasing (or the round bound is
+            # reached): record the concur and stop. The agreed text is the standing
+            # proposal both filings adopt.
+            exchange.turns.append(
+                NegotiationTurn("concurrer", "concur", rnd, reply))
+            exchange.agreed_text = standing
+            exchange.converged = rnd <= max_rounds
+            return exchange
+        # The concurrer countered with a different phrasing: record it as a revise
+        # turn and let the proposer refine toward it next round.
+        exchange.turns.append(NegotiationTurn("concurrer", "revise", rnd, reply))
+        revised = proposer_fn("revise", reply)
+        exchange.turns.append(NegotiationTurn("proposer", "revise", rnd + 1, revised))
+        standing = revised
+        rnd += 1

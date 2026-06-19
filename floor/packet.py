@@ -225,6 +225,34 @@ def _render_reconciliation(rec: dict) -> str:
         parts.append(
             "<p class='ok'>The amended contradiction diff passed GREEN only after "
             "concurrence; the Warden held it BLOCKED until then.</p>")
+    # The bounded multi-turn deliberation transcript (E9.7), when it ran.
+    exchange = rec.get("characterization_exchange")
+    if exchange and exchange.get("turns"):
+        turn_rows = [
+            [t.get("round"), t.get("speaker"), t.get("role"), t.get("text")]
+            for t in exchange["turns"]
+        ]
+        parts.append(
+            "<p class='sub'>The bounded multi-turn deliberation that converged on the "
+            f"shared phrasing (converged={_esc(exchange.get('converged'))}, "
+            f"{_esc(exchange.get('rounds'))} round(s), bounded by construction):</p>")
+        parts.append(_rows(["Round", "Speaker", "Role", "Sentence"], turn_rows))
+    # The DETERMINISTIC figure-equality arbitration (E9.7): both amended filings'
+    # prose state the same reconciled number, checked in pure Python.
+    fc = rec.get("figure_check")
+    if fc:
+        agree = fc.get("agree")
+        cls = "ok" if agree else "bad"
+        stated = ", ".join(f"{_esc(b)}={_esc(v or 'none')}"
+                           for b, v in (fc.get("stated") or {}).items())
+        parts.append(
+            f"<p class='{cls}'><strong>Deterministic figure check: "
+            + ("both amended filings state the same reconciled figure "
+               if agree else "the amended filings DISAGREE on the figure ")
+            + f"<code>{_esc(fc.get('expected'))}</code>.</strong> "
+            f"Stated per filing: {stated}. This arbitration is pure Python over the "
+            "filing prose (no LLM), the load-bearing deterministic half of the "
+            "deliberation.</p>")
     # The hash-linked envelope chain (tamper-evident, replay-verifiable).
     chain_rows = [
         [i + 1, e.get("verdict"), e.get("from"), e.get("to"),
@@ -1487,6 +1515,56 @@ def _render_rag_grounding(r: dict) -> str:
             "<table><thead><tr><th>Citation id</th><th>Citation</th>"
             "<th>Title</th><th>BM25 score</th><th>Drafter</th></tr></thead>"
             "<tbody>" + "".join(rows) + "</tbody></table>")
+    return "".join(parts)
+
+
+def _render_investigation(inv: dict) -> str:
+    """Render the sub-agent investigation receipt (E9.7): each candidate fact the
+    LLM derivation proposed, the value it claimed, the value a PURE verifier
+    recomputed against the frozen statutory clocks / threshold rules, and whether the
+    candidate was ADMITTED (the recompute confirmed it) or REJECTED (the recompute
+    disagreed).
+
+    This is a derive-at-render-time receipt over the OUT-OF-LOG investigation trace.
+    The verifier is pure and read-only over the frozen clocks: nothing it produced
+    reached a gate, a clock, the diff, or the hashed run-log, and the admitted facts
+    fed the drafting PROMPT only, never the [CLAIMS] envelope, so byte-identical
+    replay is untouched. It makes visible that ONLY deterministically-confirmed
+    derivations were relied on, and that a wrong derivation is caught and rejected."""
+    if not inv or not inv.get("candidates"):
+        return ""
+    admitted = inv.get("admitted_count", 0)
+    rejected = inv.get("rejected_count", 0)
+    parts = [
+        "<h2>5b. Derived facts, deterministically verified (investigation)</h2>",
+        "<p class='sub'>Before drafting, an investigation sub-agent DERIVED candidate "
+        "facts the record does not state outright (a statutory notification deadline, "
+        "a duty-to-notify trigger). A PURE verifier then RECOMPUTED each against the "
+        "SAME frozen clocks and threshold rules the Warden gates on, and ONLY "
+        "confirmed derivations were admitted. An admitted fact fed the drafting "
+        "prompt as an aid; it never entered the [CLAIMS] gate envelope. The recompute "
+        "is read-only over the clocks, so the run-log and replay are untouched.</p>",
+        f"<p class='ok'><strong>{_esc(admitted)} derivation(s) ADMITTED after "
+        f"deterministic recompute; {_esc(rejected)} REJECTED where the recompute "
+        "disagreed.</strong></p>",
+    ]
+    rows = []
+    for c in inv["candidates"]:
+        ok = c.get("admitted")
+        badge_cls = "cstat-ok" if ok else "cstat-bad"
+        badge = "ADMITTED" if ok else "REJECTED"
+        rows.append(
+            "<tr><td>" + _esc(c.get("regime")) + "</td>"
+            "<td><code>" + _esc(c.get("field")) + "</code></td>"
+            "<td>" + _esc(c.get("kind")) + "</td>"
+            "<td>" + _esc(c.get("claimed_value")) + "</td>"
+            "<td>" + _esc(c.get("recomputed_value")) + "</td>"
+            f"<td><span class='cstat {badge_cls}'>" + badge + "</span></td>"
+            "<td>" + _esc(c.get("reason")) + "</td></tr>")
+    parts.append(
+        "<table><thead><tr><th>Regime</th><th>Derived field</th><th>Kind</th>"
+        "<th>Claimed</th><th>Recomputed</th><th>Verdict</th><th>Basis</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
     return "".join(parts)
 
 
@@ -3036,6 +3114,7 @@ def _render_html(p: dict) -> str:
     calibration_block = _render_calibration(p.get("calibration", {}))
     adversarial_block = _render_adversarial_review(p.get("adversarial_review", {}))
     reportability_block = _render_reportability(p.get("reportability", {}))
+    investigation_block = _render_investigation(p.get("investigation", {}))
     affected_party_block = _render_affected_party(p.get("affected_party", {}))
     cross_border_block = _render_cross_border(p.get("cross_border", {}))
     legal_hold_block = _render_legal_hold(p.get("legal_hold", {}))
@@ -3231,6 +3310,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {clock_rows}
 
 {reportability_block}
+
+{investigation_block}
 
 {affected_party_block}
 
