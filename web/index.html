@@ -199,6 +199,22 @@
     </div>
   </section>
 
+  <!-- Explainability (E9.2): every gated decision with a determinism chip and a
+       provenance trail, plus the plain-English answers a non-engineer asks. -->
+  <section class="panel explain-panel" id="explain-panel" aria-label="Why each decision">
+    <div class="panel-head">
+      <h2>Why each decision, in plain English</h2>
+      <span class="badge green">one source, fixed rules</span>
+    </div>
+    <p class="panel-sub muted small">Every gated decision the referee made, each badged "fixed rule (no AI judgment)" or "AI drafted, fixed rule checked", and each bound to the exact run-log entries it rests on by content hash (recomputed in your browser from the bundled log). The text is the same source the Examiner Packet and the war room show, so the three never disagree.</p>
+    <div id="explain-cards" class="explain-cards"></div>
+    <div class="counter-questions-head">
+      <h3>Plain answers to what a non-engineer asks</h3>
+      <p class="muted small">The questions an incident commander, a general counsel, or a board member actually asks, answered deterministically from the records above.</p>
+    </div>
+    <div id="counter-questions" class="counter-questions"></div>
+  </section>
+
   <section class="panel whatif-panel" id="whatif-panel" aria-label="What-If Console">
     <div class="panel-head">
       <h2>What if? The counterfactual the deterministic core can compute</h2>

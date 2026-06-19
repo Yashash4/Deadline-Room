@@ -571,3 +571,35 @@ input[type=range]::-moz-range-thumb {
 .whatif-receipt code { font-size: 0.72rem; color: var(--violet); word-break: break-all; }
 .whatif-detail { margin: 0.4rem 0; min-height: 1em; }
 .btn.small { font-size: 0.8rem; padding: 0.35rem 0.7rem; }
+
+/* ---- explainability (E9.2): decision chips, provenance, counter-questions ---- */
+.explain-cards { display: grid; gap: 0.7rem; margin-bottom: 1rem; }
+.explain-card {
+  border: 1px solid var(--line-soft); border-radius: 10px;
+  padding: 0.7rem 0.8rem; background: var(--panel-2);
+}
+.explain-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.explain-rule { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); letter-spacing: 0.03em; }
+.explain-chip {
+  font-size: 0.68rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.12rem 0.5rem; border-radius: 999px; border: 1px solid var(--line);
+}
+.explain-chip.chip-ok { color: var(--green); background: var(--green-soft); border-color: var(--green-soft); }
+.explain-chip.chip-warn { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-soft); }
+.explain-why { margin: 0.45rem 0 0.4rem; line-height: 1.45; color: var(--text); }
+.explain-prov { margin: 0; line-height: 1.4; }
+.prov-label { display: block; margin-bottom: 0.3rem; }
+.prov-hashes { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.prov-hashes code { font-size: 0.7rem; padding: 0.12rem 0.4rem; border-radius: 4px; word-break: break-all; }
+.prov-hashes code.prov-ok { color: var(--green); background: var(--green-soft); }
+.prov-hashes code.prov-miss { color: var(--amber); background: var(--amber-soft); }
+.counter-questions-head { margin: 1rem 0 0.5rem; }
+.counter-questions-head h3 { margin: 0 0 0.2rem; }
+.counter-questions { display: grid; gap: 0.4rem; }
+.cq {
+  border: 1px solid var(--line-soft); border-radius: 8px;
+  padding: 0.4rem 0.7rem; background: var(--panel);
+}
+.cq summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }
+.cq[open] summary { border-bottom: 1px solid var(--line-soft); margin-bottom: 0.35rem; }
+.cq p { margin: 0.3rem 0; line-height: 1.45; }

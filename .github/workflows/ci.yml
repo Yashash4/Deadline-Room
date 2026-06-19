@@ -1,12 +1,15 @@
 name: ci
 
-# Green checks on every push and pull request. Three gates run:
-#   1. the 282-test property suite (the deterministic core, no keys, no network)
+# Green checks on every push and pull request. The gates run:
+#   1. the property suite (the deterministic core, no keys, no network)
 #   2. ruff lint over the whole repository
 #   3. the hygiene gate: fails the build if any tracked file carries an em-dash
 #      (U+2014), an en-dash (U+2013), or an AI-attribution trailer. The forbidden
 #      codepoints live only inside scripts/hygiene_gate.py as escapes, so neither
 #      this workflow nor the gate itself ever trips the check.
+#   4. the explainability coverage audit: fails the build if a reachable Warden
+#      gate has no rationale (no governing rule, template, determinism chip, or
+#      provenance binding), so a new gate cannot ship unexplained.
 
 on:
   push:
@@ -37,6 +40,9 @@ jobs:
 
       - name: Hygiene gate (no stray dashes, no AI attribution)
         run: python scripts/hygiene_gate.py
+
+      - name: Explainability coverage audit (every reachable gate has a rationale)
+        run: python scripts/explain_audit.py
 
       - name: Eval regression gate (faithfulness metrics vs the committed baseline)
         run: python scripts/eval_regression.py

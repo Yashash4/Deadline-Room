@@ -26,9 +26,11 @@ without a rationale.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 from warden.diff import Conflict
+from warden.replay import _canon
 from warden.state_machine import Event, Rejection, Transition
 
 
@@ -48,14 +50,21 @@ class RuleTemplate:
 class DecisionRationale:
     """The typed, deterministic explanation of one Warden decision.
 
-    rule_id   the governing rule (see RULES).
-    plain_why the single plain-English sentence(s), naming the exact driving fact.
-              This is the ONE string the room post, the packet, and the web read.
+    rule_id    the governing rule (see RULES).
+    plain_why  the single plain-English sentence(s), naming the exact driving
+               fact. The ONE string the room post, the packet, and the web read.
+    decided_by the determinism class of THIS decision (see DECIDED_BY): whether a
+               fixed Warden rule decided it with no AI judgment
+               (deterministic_rule), an LLM drafted the content that a fixed rule
+               then checked (llm_content_with_deterministic_check), or it is LLM
+               content only (llm_content). It is a STATIC property of the decision
+               kind, never inferred at runtime, so the chip never lies.
     """
 
     kind: str
     rule_id: str
     plain_why: str
+    decided_by: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +159,92 @@ EVENT_RULE: dict[Event, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# The determinism class of each decision kind (E9.2 determinism chip). It is a
+# STATIC property of the rule, decided here once, NEVER inferred from runtime
+# data, so the chip can never overstate or understate how a decision was made:
+#
+#   deterministic_rule                    a fixed Warden rule decided it with zero
+#                                         AI judgment (the diff, the two-key gate,
+#                                         the dedup ledger, the liveness watchdog,
+#                                         the amendment guard). These gate, block,
+#                                         release, count, or clock.
+#   llm_content_with_deterministic_check  an LLM drafted the content, then a fixed
+#                                         rule checked it (a filing the diff then
+#                                         compares; a resolution the diff re-runs).
+#   llm_content                           LLM content only, gating nothing.
+#
+# Every kind in RULES has an entry; the coverage audit (scripts/explain_audit.py)
+# and tests/test_rationale.py both assert this map is total, so a new gate cannot
+# ship without declaring how it was decided.
+DECIDED_BY: dict[str, str] = {
+    "draft_recorded": "llm_content_with_deterministic_check",
+    "diff_green": "deterministic_rule",
+    "diff_blocked": "deterministic_rule",
+    "diff_resolved": "llm_content_with_deterministic_check",
+    "release_key1": "deterministic_rule",
+    "release_key2": "deterministic_rule",
+    "dedup_dropped": "deterministic_rule",
+    "liveness_dead": "deterministic_rule",
+    "liveness_recovered": "deterministic_rule",
+    "amend_blocked": "deterministic_rule",
+}
+
+
+# The short human label each determinism class renders as, in the packet chip and
+# the web chip (the SAME bytes, so the badge reads identically in both surfaces).
+DECIDED_BY_LABEL: dict[str, str] = {
+    "deterministic_rule": "fixed rule (no AI judgment)",
+    "llm_content_with_deterministic_check": "AI drafted, fixed rule checked",
+    "llm_content": "AI content (gates nothing)",
+}
+
+
+# Which protocol Events a decision kind RESTS ON. The provenance trail (E9.2)
+# binds each explanation to the exact run-log entries (the admitted state-machine
+# transitions for these events) by content hash, so a reader sees which input
+# entries the rationale was computed from. A kind with no driving transition
+# event (none here) resolves to an empty evidence list.
+EVIDENCE_EVENTS: dict[str, tuple[Event, ...]] = {
+    "draft_recorded": (Event.DRAFT_POSTED,),
+    "diff_green": (Event.DIFF_PASSED,),
+    "diff_blocked": (Event.DIFF_BLOCKED,),
+    "diff_resolved": (Event.DIFF_PASSED,),
+    "release_key1": (Event.SIGNOFF_OPENED,),
+    "release_key2": (Event.HUMAN_RELEASED,),
+    "dedup_dropped": (Event.DRAFT_POSTED,),
+    "liveness_dead": (Event.CLOCK_BREACHED,),
+    "liveness_recovered": (Event.DRAFT_POSTED,),
+    "amend_blocked": (Event.FACT_AMENDED,),
+}
+
+
+def entry_content_hash(transition: dict) -> str:
+    """The content hash of ONE run-log protocol-event entry, bound to the exact
+    input entry by content. A run-log protocol_event payload is byte-identical to
+    a packet state_transition row (same fields), so this hash is the SAME whether
+    computed from the packet here or from the bundled run-log entries in the
+    browser. It uses the SAME canonicalizer the hash chain uses (warden.replay
+    _canon), read-only: it reads the entry, it never writes one and never re-keys
+    the chain."""
+    return hashlib.sha256(_canon(transition).encode()).hexdigest()
+
+
+def evidence_entry_hashes(packet: dict, kind: str) -> list[str]:
+    """The per-entry content hashes of the run-log entries decision `kind` rests
+    on, resolved READ-ONLY from the packet's admitted state-machine transitions
+    for the kind's driving events. Deterministic and order-preserving; returns []
+    when the kind has no driving transition in this run."""
+    events = {e.value for e in EVIDENCE_EVENTS.get(kind, ())}
+    if not events:
+        return []
+    out: list[str] = []
+    for t in packet.get("state_transitions", []) or []:
+        if t.get("admitted") and t.get("event") in events:
+            out.append(entry_content_hash(t))
+    return out
+
+
 def _fmt(value: object) -> str:
     """Render a driving fact value the way the room and the packet both show it:
     integers grouped with thousands separators, everything else verbatim."""
@@ -192,7 +287,9 @@ class _RationaleDecision:
 def _build(kind: str, facts: dict) -> DecisionRationale:
     rule = RULES[kind]
     safe = {k: _fmt(v) for k, v in facts.items()}
-    return DecisionRationale(kind, rule.rule_id, rule.template.format(**safe))
+    return DecisionRationale(
+        kind, rule.rule_id, rule.template.format(**safe),
+        decided_by=DECIDED_BY[kind])
 
 
 def _explain_conflict(c: Conflict) -> DecisionRationale:
@@ -303,7 +400,19 @@ def rationale_record(packet: dict) -> dict:
     out: dict[str, dict] = {}
 
     def put(r: DecisionRationale) -> None:
-        out[r.kind] = {"rule_id": r.rule_id, "plain_why": r.plain_why}
+        # Each ledger entry carries the governing rule, the one plain-English
+        # why, the determinism chip (decided_by), and the provenance trail
+        # (evidence_entry_hashes binding the explanation to the exact input
+        # run-log entries by content hash). All four are derived READ-ONLY at
+        # packet-assembly time; none is appended to the hashed run-log.
+        out[r.kind] = {
+            "rule_id": r.rule_id,
+            "plain_why": r.plain_why,
+            "decided_by": r.decided_by or DECIDED_BY.get(r.kind, ""),
+            "decided_by_label": DECIDED_BY_LABEL.get(
+                r.decided_by or DECIDED_BY.get(r.kind, ""), ""),
+            "evidence_entry_hashes": evidence_entry_hashes(packet, r.kind),
+        }
 
     drafted = [b for b in (diff.get("final_claims") or {})]
     filing_count = len(drafted) if drafted else sum(

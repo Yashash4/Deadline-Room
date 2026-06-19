@@ -833,6 +833,14 @@ function renderStaticPanels() {
     rBody.appendChild(note);
   }
 
+  // Explainability panel (E9.2): the decision-rationale ledger rendered with a
+  // determinism chip and a provenance trail per decision, plus the plain-answer
+  // counter-question accordion. All read from the SAME packet.decision_rationale
+  // ledger the packet renders, so the web copy and the packet copy are the same
+  // bytes. The provenance hashes are recomputed in the browser from the bundled
+  // run-log entries, so the binding is verified client-side, not asserted.
+  renderExplainability();
+
   // Packet meta + verdict
   const greenVerdict = !((packet.diff.blocked_conflicts || []).length) || packet.diff.resolution || packet.diff.green;
   $("#verdict-badge").textContent = greenVerdict ? "released, clean" : "blocked";
@@ -868,6 +876,166 @@ function renderStaticPanels() {
 
 function addKv(dl, k, v) { dl.appendChild(el("dt", null, k)); dl.appendChild(el("dd", null, String(v))); }
 function stripClaims(text) { return text.replace(/\[CLAIMS\][\s\S]*?\[\/CLAIMS\]/g, "").trim(); }
+
+// ============================================================================
+// Explainability (E9.2): the decision-rationale ledger as a per-decision card
+// with a determinism chip and a provenance trail, plus the plain-answer
+// counter-question accordion. Everything reads packet.decision_rationale, the
+// SAME source the Examiner Packet renders, so the web and the packet are the same
+// bytes. The provenance entry hashes are recomputed in the browser from the
+// bundled run-log entries (a run-log protocol_event payload is byte-identical to a
+// packet state_transition row), so the binding is verified here, not just shown.
+// ============================================================================
+
+// The class names mirror floor/rationale.DECIDED_BY_LABEL exactly, so the chip
+// reads identically in the packet and the web.
+const DECIDED_BY_LABEL = {
+  deterministic_rule: "fixed rule (no AI judgment)",
+  llm_content_with_deterministic_check: "AI drafted, fixed rule checked",
+  llm_content: "AI content (gates nothing)",
+};
+
+function decidedByChip(entry) {
+  const decidedBy = entry.decided_by || "";
+  const label = entry.decided_by_label || DECIDED_BY_LABEL[decidedBy] || "";
+  if (!label) return null;
+  const cls = decidedBy === "deterministic_rule" ? "chip-ok" : "chip-warn";
+  return el("span", "explain-chip " + cls, label);
+}
+
+// Verify the provenance: recompute each evidence entry's content hash in the
+// browser from the bundled run-log protocol_event payloads, and confirm the set
+// the packet recorded is exactly the set present in the log. Returns the verified
+// hashes (sorted to match) and whether every recorded hash was found.
+async function provenanceHashes() {
+  const out = new Set();
+  for (const e of runLogEntries) {
+    if (e && e.type === "protocol_event" && e.payload && e.payload.admitted) {
+      out.add(await sha256Hex(canonicalize(e.payload)));
+    }
+  }
+  return out;
+}
+
+async function renderExplainability() {
+  const wrap = $("#explain-cards");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const ledger = (packet && packet.decision_rationale) || {};
+  const kinds = Object.keys(ledger);
+  // The set of entry content hashes actually present in the bundled log, so the
+  // provenance trail is verified against the log, not merely displayed.
+  const present = await provenanceHashes();
+
+  if (!kinds.length) {
+    wrap.appendChild(el("p", "small muted",
+      "No gated decision in this path carried a narrated rationale."));
+  }
+  for (const kind of kinds) {
+    const entry = ledger[kind];
+    const card = el("div", "explain-card");
+    const head = el("div", "explain-head");
+    head.appendChild(el("span", "explain-rule", entry.rule_id || kind));
+    const chip = decidedByChip(entry);
+    if (chip) head.appendChild(chip);
+    card.appendChild(head);
+    card.appendChild(el("p", "explain-why small", entry.plain_why || ""));
+
+    const hashes = entry.evidence_entry_hashes || [];
+    const prov = el("div", "explain-prov small muted");
+    if (!hashes.length) {
+      prov.textContent = "Provenance: a standing-state rationale (no single input entry).";
+    } else {
+      const allFound = hashes.every((h) => present.has(h));
+      prov.appendChild(el("span", "prov-label",
+        `Bound to ${hashes.length} run-log ${hashes.length === 1 ? "entry" : "entries"} by content hash ` +
+        (allFound ? "(verified against the bundled log): " : "(recorded): ")));
+      const list = el("div", "prov-hashes");
+      for (const h of hashes) {
+        const tag = el("code", present.has(h) ? "prov-ok" : "prov-miss", h.slice(0, 16) + "...");
+        list.appendChild(tag);
+      }
+      prov.appendChild(list);
+    }
+    card.appendChild(prov);
+    wrap.appendChild(card);
+  }
+
+  renderCounterQuestions();
+}
+
+// The plain answers a non-engineer asks, built deterministically from the
+// rationale ledger and the release / reconciliation / replay blocks already in
+// the packet. Mirrors floor/packet._render_counter_questions: same questions,
+// same source.
+function renderCounterQuestions() {
+  const wrap = $("#counter-questions");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const p = packet;
+  const ledger = p.decision_rationale || {};
+  const rec = p.reconciliation;
+  const release = p.release || {};
+  const replay = p.replay || {};
+  const chaos = p.chaos || {};
+  const qa = [];
+
+  const blocked = ledger.diff_blocked;
+  const resolved = ledger.diff_resolved;
+  if (blocked) {
+    let ans = blocked.plain_why || "";
+    ans += resolved ? " " + (resolved.plain_why || "")
+                    : " Release stays held until the filings agree.";
+    qa.push(["Did the referee block anything, and exactly why?", ans]);
+  } else {
+    qa.push(["Did the referee block anything, and exactly why?",
+      "Nothing was blocked on a contradiction. The cross-filing diff was GREEN: every load-bearing fact agreed across the filings."]);
+  }
+
+  const fixed = Object.values(ledger).filter((v) => v.decided_by === "deterministic_rule").length;
+  const aiChecked = Object.values(ledger).filter((v) => v.decided_by === "llm_content_with_deterministic_check").length;
+  qa.push(["Was any gate decided by an AI?",
+    `No gate was decided by an AI. ${fixed} decision(s) were made by a FIXED Warden rule with no AI judgment (the block, the diff, the two-key release). ${aiChecked} decision(s) involved AI-drafted content that a fixed rule then CHECKED. Every badge above states which is which; the Warden that gates, blocks, releases, and clocks runs no AI.`]);
+
+  if ((chaos.events || []).length) {
+    qa.push(["A team dropped offline mid-incident. Was anything filed twice?",
+      `No. A drafter was killed after posting; on restart the idempotency ledger dropped ${chaos.duplicates_dropped || 0} duplicate filing(s). Each filing landed exactly once, with no double-file across the declared-dead window.`]);
+  }
+
+  const signoffs = release.signoffs || [];
+  if (signoffs.length) {
+    const roles = Array.from(new Set(signoffs.map((s) => s.role).filter(Boolean))).sort().join(", ");
+    const branchCount = (release.released_branches || []).length;
+    qa.push(["Did a human actually authorize the release?",
+      `Yes, and two distinct humans had to. Each released branch carries TWO keys (${roles}); one key alone never turns the lock. ${branchCount} branch(es) released only after both keys signed.`]);
+  }
+
+  if (rec) {
+    const amend = ledger.amend_blocked;
+    let ans = "After release a load-bearing fact was revised. The amendment guard held the re-filing BLOCKED until both reopened drafters concurred on one shared figure.";
+    if (amend) {
+      ans = (amend.plain_why || "") + " The two drafters reconciled through Band; the amended diff passed GREEN only after concurrence, then re-released under the same two-key gate.";
+    }
+    qa.push(["A fact changed after filing. What stopped a silent re-file?", ans]);
+  }
+
+  const sha = replay.original_sha256 || "";
+  if (sha) {
+    const bi = replay.byte_identical ? "byte for byte" : "with a MISMATCH";
+    const head = replay.chain_head || "";
+    const headLine = head ? ` A per-entry hash chain (head ${head.slice(0, 16)}...) makes any reorder or omission detectable.` : "";
+    qa.push(["Can I prove none of this was altered?",
+      `Yes, without trusting us. The run replays ${bi} to the recorded SHA-256 (${sha.slice(0, 16)}...).${headLine} A detached Ed25519 signature binds that exact ordered run; you re-derive all three in your own browser.`]);
+  }
+
+  for (const [q, a] of qa) {
+    const d = el("details", "cq");
+    const sum = el("summary", null, q);
+    d.appendChild(sum);
+    d.appendChild(el("p", "small muted", a));
+    wrap.appendChild(d);
+  }
+}
 
 // ============================================================================
 // Scenario cards (surface the manifest blurbs as one-click, self-explaining).

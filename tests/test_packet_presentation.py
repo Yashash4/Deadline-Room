@@ -176,7 +176,68 @@ def test_packet_html_byte_stable_across_modes(tmp_path):
         assert _render_html(p) == _render_html(p)
 
 
-# ---- 6. Dash-free guard on the rendered HTML -------------------------------
+# ---- 6. E9.2: counter-question card, determinism chip, provenance trail ----
+
+def test_packet_renders_counter_questions_chip_and_provenance(tmp_path):
+    # A contradiction run exercises the block, the resolution, the two-key
+    # release, and the replay proof, so the counter-question card has the richest
+    # set of plain answers, every one derived from the packet's own records.
+    packet = _run("inject_contradiction", tmp_path)
+    html = Path(packet["_paths"]["html"]).read_text(encoding="utf-8")
+
+    # The counter-question card: the non-engineer's actual questions, as a real
+    # accordion (details/summary), answered from the ledger and the release/replay
+    # blocks already in the packet.
+    assert "Plain answers to the questions a non-engineer asks" in html
+    assert "Did the referee block anything, and exactly why?" in html
+    assert "Was any gate decided by an AI?" in html
+    assert "Can I prove none of this was altered?" in html
+    assert "<details class='cq'>" in html
+    # The block answer is the SAME bytes as the ledger's block rationale (one
+    # source), not a hand-typed second copy.
+    block_why = packet["decision_rationale"]["diff_blocked"]["plain_why"]
+    assert block_why.split("=")[0] in html
+
+    # The determinism chip: the contradiction veto is a FIXED rule with no AI
+    # judgment; the resolution is AI-drafted content a fixed rule then checked.
+    assert "fixed rule (no AI judgment)" in html
+    assert "AI drafted, fixed rule checked" in html
+
+    # The provenance trail: the block rationale is bound to the exact run-log
+    # entries by content hash, and those hashes are reproducible from the bundled
+    # log (a protocol_event payload is byte-identical to a state_transition row).
+    ledger = packet["decision_rationale"]
+    block_hashes = ledger["diff_blocked"]["evidence_entry_hashes"]
+    assert block_hashes, "the block rationale must carry evidence entry hashes"
+    for h in block_hashes:
+        assert h in html, "each provenance hash must render in the packet"
+    # Recompute the same content hash from the bundled run-log entries and confirm
+    # the recorded provenance hashes are exactly the admitted protocol_event set.
+    import hashlib
+
+    from warden.replay import _canon
+    raw = Path(packet["_paths"]["run_log"]).read_text(encoding="utf-8")
+    present = {
+        hashlib.sha256(_canon(json.loads(line)["payload"]).encode()).hexdigest()
+        for line in raw.splitlines() if line.strip()
+        and json.loads(line)["type"] == "protocol_event"
+        and json.loads(line)["payload"].get("admitted")
+    }
+    for h in block_hashes:
+        assert h in present, (
+            "a recorded provenance hash is not an entry in the bundled run log")
+
+
+def test_counter_questions_clean_run_states_no_block(tmp_path):
+    # On a clean run the block question must answer honestly that nothing was
+    # blocked, not omit the question or imply a phantom block.
+    packet = _run("normal", tmp_path)
+    html = Path(packet["_paths"]["html"]).read_text(encoding="utf-8")
+    assert "Did the referee block anything, and exactly why?" in html
+    assert "Nothing was blocked on a contradiction" in html
+
+
+# ---- 7. Dash-free guard on the rendered HTML -------------------------------
 
 def test_packet_html_is_dash_free(tmp_path):
     # Referenced by codepoint so this source file itself carries no raw dash:

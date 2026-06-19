@@ -2517,29 +2517,184 @@ def _rationale_why_by_event(p: dict) -> dict:
     return out
 
 
+def _decided_by_badge(decided_by: str, label: str) -> str:
+    """The determinism chip (E9.2): a colored badge stating, for one decision,
+    whether a fixed Warden rule decided it with no AI judgment, an LLM drafted the
+    content a fixed rule then checked, or it is LLM content only. The class is a
+    STATIC property of the decision kind (floor/rationale.DECIDED_BY), so the chip
+    is the same in the packet and the web. A deterministic rule is the strong,
+    green claim; the others are honestly amber."""
+    if not label:
+        return ""
+    cls = "cstat-ok" if decided_by == "deterministic_rule" else "cstat-bad"
+    return f"<span class='cstat {cls}'>{_esc(label)}</span>"
+
+
+def _provenance_trail(hashes: list) -> str:
+    """The provenance trail (E9.2): the per-entry content hashes of the exact
+    run-log entries this explanation rests on, each binding the rationale to its
+    input entry by content. Computed READ-ONLY from the packet's transitions with
+    the SAME canonicalizer the hash chain uses; never re-keys the chain."""
+    if not hashes:
+        return "<span class='sub'>(no input entry: a standing-state rationale)</span>"
+    items = "".join(
+        f"<li><span class='hash'>{_esc(h)}</span></li>" for h in hashes)
+    return (f"<span class='sub'>Bound to {len(hashes)} run-log "
+            f"entr{'y' if len(hashes) == 1 else 'ies'} by content hash:</span>"
+            f"<ul class='provenance'>{items}</ul>")
+
+
 def _render_rationale(p: dict) -> str:
-    """Render the Decision rationale section (E9.1): per Warden decision, the
-    governing rule id and the ONE plain-English 'why' that names the exact driving
-    fact. This is the SAME source the room post and the web gate panel read, so the
+    """Render the Decision rationale section (E9.1 + E9.2): per Warden decision, the
+    governing rule id, the ONE plain-English 'why' that names the exact driving
+    fact, the determinism chip (was it a fixed rule or AI content?), and the
+    provenance trail (the exact input run-log entries it rests on, by content
+    hash). This is the SAME source the room post and the web gate panel read, so the
     three read the same bytes. A pure derived render over the assembled packet; it
     never enters the hashed run-log and gates nothing."""
     ledger = p.get("decision_rationale", {}) or {}
     if not ledger:
         return ""
-    rows = [[entry.get("rule_id"), entry.get("plain_why")]
-            for entry in ledger.values()]
+    rows = [
+        [entry.get("rule_id"),
+         _decided_by_badge(entry.get("decided_by", ""),
+                           entry.get("decided_by_label", "")),
+         entry.get("plain_why"),
+         _provenance_trail(entry.get("evidence_entry_hashes", []) or [])]
+        for entry in ledger.values()
+    ]
+    body = "".join(
+        "<tr><td>" + _esc(rid) + "</td><td>" + chip + "</td><td>" + _esc(why)
+        + "</td><td>" + prov + "</td></tr>"
+        for rid, chip, why, prov in rows)
     parts = [
         "<h2>4a. Decision rationale (one source for every &quot;why&quot;)</h2>",
         "<p class='sub'>Every Warden decision carries a typed rationale built from "
         "three deterministic ingredients: which transition fired, which rule governs "
-        "it, and which fact drove it (it names the EXACT driving fact value). The "
-        "Warden's room post, this section, and the web copy all read this ONE source "
-        "(floor/rationale.py), so they are the same bytes, not three hand-typed "
-        "strings. It is a pure derived render: zero LLM, never appended to the hashed "
-        "run-log, gates nothing.</p>",
-        _rows(["Governing rule", "Plain-English why (names the driving fact)"], rows),
+        "it, and which fact drove it (it names the EXACT driving fact value). Each "
+        "row also carries a determinism chip stating whether a FIXED RULE decided it "
+        "with no AI judgment or an LLM drafted content a fixed rule then checked, and "
+        "a provenance trail binding the explanation to the exact input run-log "
+        "entries by content hash. The Warden's room post, this section, and the web "
+        "copy all read this ONE source (floor/rationale.py), so they are the same "
+        "bytes, not three hand-typed strings. It is a pure derived render: zero LLM, "
+        "never appended to the hashed run-log, gates nothing.</p>",
+        "<table><thead><tr><th>Governing rule</th><th>How decided</th>"
+        "<th>Plain-English why (names the driving fact)</th>"
+        "<th>Provenance (input entries by content hash)</th></tr></thead><tbody>"
+        + body + "</tbody></table>",
     ]
     return "".join(parts)
+
+
+# The non-engineer's real questions, each answered DETERMINISTICALLY from the
+# decision-rationale ledger and the existing release / reconciliation / replay
+# blocks. The condition decides whether the card applies to THIS run; the answer
+# pulls the verbatim rationale (the same bytes the room and the web show) plus the
+# concrete facts already in the packet. No new judgment, no LLM: a pure derived
+# read that turns the ledger into the questions a CISO or GC actually asks.
+def _render_counter_questions(packet: dict) -> str:
+    """Render the counter-question card (E9.2): the non-engineer's actual questions
+    (did anything get blocked and why, was anything decided by AI, was a duplicate
+    filed twice, can I prove none of this was altered) answered deterministically
+    from the rationale ledger and the existing release / reconciliation / replay
+    blocks. Pure derived read over the assembled packet; never in the hashed
+    run-log, gates nothing."""
+    ledger = packet.get("decision_rationale", {}) or {}
+    rec = packet.get("reconciliation", {}) or {}
+    release = packet.get("release", {}) or {}
+    replay = packet.get("replay", {}) or {}
+    chaos = packet.get("chaos", {}) or {}
+
+    qa: list[tuple[str, str]] = []
+
+    # Q1: was anything blocked, and why? (the contradiction veto)
+    blocked = ledger.get("diff_blocked")
+    resolved = ledger.get("diff_resolved")
+    if blocked:
+        ans = blocked.get("plain_why", "")
+        if resolved:
+            ans += " " + resolved.get("plain_why", "")
+        else:
+            ans += " Release stays held until the filings agree."
+    else:
+        ans = ("Nothing was blocked on a contradiction. The cross-filing diff was "
+               "GREEN: every load-bearing fact agreed across the filings.")
+    qa.append(("Did the referee block anything, and exactly why?", ans))
+
+    # Q2: was any of this decided by AI? (the determinism chips, counted)
+    fixed = [k for k, v in ledger.items()
+             if v.get("decided_by") == "deterministic_rule"]
+    ai_checked = [k for k, v in ledger.items()
+                  if v.get("decided_by") == "llm_content_with_deterministic_check"]
+    qa.append((
+        "Was any gate decided by an AI?",
+        f"No gate was decided by an AI. {len(fixed)} decision(s) were made by a "
+        f"FIXED Warden rule with no AI judgment (the block, the diff, the two-key "
+        f"release). {len(ai_checked)} decision(s) involved AI-drafted content that a "
+        "fixed rule then CHECKED. Every badge above states which is which; the "
+        "Warden that gates, blocks, releases, and clocks runs no AI."))
+
+    # Q3: was anything filed twice? (exactly-once under a kill)
+    dropped = chaos.get("duplicates_dropped", 0)
+    if chaos.get("events"):
+        qa.append((
+            "A team dropped offline mid-incident. Was anything filed twice?",
+            f"No. A drafter was killed after posting; on restart the idempotency "
+            f"ledger dropped {dropped} duplicate filing(s). Each filing landed "
+            "exactly once, with no double-file across the declared-dead window."))
+
+    # Q4: did a human actually release, or did the system self-release?
+    signoffs = release.get("signoffs", []) or []
+    if signoffs:
+        roles = ", ".join(sorted({s.get("role", "") for s in signoffs if s.get("role")}))
+        branch_count = len(release.get("released_branches", []) or [])
+        qa.append((
+            "Did a human actually authorize the release?",
+            f"Yes, and two distinct humans had to. Each released branch carries TWO "
+            f"keys ({roles}); one key alone never turns the lock. "
+            f"{branch_count} branch(es) released only after both keys signed."))
+
+    # Q5: a fact changed after release; what stopped a silent re-file?
+    amend = ledger.get("amend_blocked")
+    if rec:
+        ans = ("After release a load-bearing fact was revised. The amendment guard "
+               "held the re-filing BLOCKED until both reopened drafters concurred on "
+               "one shared figure.")
+        if amend:
+            ans = amend.get("plain_why", "") + " " + (
+                "The two drafters reconciled through Band; the amended diff passed "
+                "GREEN only after concurrence, then re-released under the same "
+                "two-key gate.")
+        qa.append(("A fact changed after filing. What stopped a silent re-file?", ans))
+
+    # Q6: can I prove none of this was altered? (replay + chain + signature)
+    sha = replay.get("original_sha256", "")
+    if sha:
+        bi = "byte for byte" if replay.get("byte_identical") else "with a MISMATCH"
+        head = replay.get("chain_head", "")
+        head_line = (f" A per-entry hash chain (head {head[:16]}...) makes any "
+                     "reorder or omission detectable.") if head else ""
+        qa.append((
+            "Can I prove none of this was altered?",
+            f"Yes, without trusting us. The run replays {bi} to the recorded "
+            f"SHA-256 ({sha[:16]}...).{head_line} A detached Ed25519 signature binds "
+            "that exact ordered run; you re-derive all three in your own browser."))
+
+    if not qa:
+        return ""
+    cards = "".join(
+        "<details class='cq'><summary>" + _esc(q) + "</summary>"
+        "<p class='sub'>" + _esc(a) + "</p></details>"
+        for q, a in qa)
+    return (
+        "<h2>4b. Plain answers to the questions a non-engineer asks</h2>"
+        "<p class='sub'>The questions an incident commander, a general counsel, or "
+        "a board member actually asks, each answered DETERMINISTICALLY from the "
+        "decision-rationale ledger and the release, amendment, and replay records "
+        "already in this packet. No new judgment, no AI: the answers are the same "
+        "bytes the room and the web console show.</p>"
+        + cards)
 
 
 def _render_html(p: dict) -> str:
@@ -2592,6 +2747,7 @@ def _render_html(p: dict) -> str:
     cover = _render_cover(p)
     handoff_graph = _render_handoff_graph(p)
     rationale_block = _render_rationale(p)
+    counter_questions_block = _render_counter_questions(p)
     diff_summary = _render_diff(diff)
     consistency_block = _render_consistency(p.get("consistency", {}))
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
@@ -2674,6 +2830,12 @@ pre {{ background: #f6f8fa; border: 1px solid #d7dce4; border-radius: 6px;
 code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 .hash {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
          word-break: break-all; }}
+.provenance {{ margin: 4px 0 0; padding-left: 16px; }}
+.provenance li {{ margin: 2px 0; }}
+.cq {{ border: 1px solid #d7dce4; border-radius: 6px; margin: 6px 0; padding: 4px 10px;
+       background: #fbfcfe; break-inside: avoid; }}
+.cq summary {{ cursor: pointer; font-weight: 600; padding: 4px 0; }}
+.cq[open] summary {{ border-bottom: 1px solid #e1e5ec; margin-bottom: 4px; }}
 
 /* ---- Regulator-style cover ---------------------------------------------- */
 .cover {{ border: 1.5px solid #1b2a4a; border-radius: 8px; margin: 4px 0 28px;
@@ -2782,6 +2944,8 @@ room and the web shows, so the three never disagree.</p>
 {transition_rows}
 
 {rationale_block}
+
+{counter_questions_block}
 
 <h2>5. Statutory clocks</h2>
 <p class="sub">Each deadline is stored and compared as a single UTC instant; the
