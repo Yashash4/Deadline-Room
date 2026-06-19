@@ -44,44 +44,48 @@
     "[4] Triage posted the fact-record, @mentioned all drafters (msg m1)",
     "[5.nis2] NIS2 Drafter draining /next for the mention ...",
     "    NIS2 Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    NIS2 Drafter drafted 1620 chars, posted back @mention Warden (msg m2)",
+    "    NIS2 Drafter drafted 1773 chars, posted back @mention Warden (msg m2)",
     "[6.nis2] Warden draining /next for the NIS2 draft ...",
     "    Warden parsed nis2 claims, recorded DRAFT_POSTED (msg m2)",
-    "    [Warden -> room] @NIS2 Drafter: recorded NIS2 filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m3)",
+    "    [Warden -> room] @NIS2 Drafter: Recorded the NIS2 filing. Its load-bearing claims are incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State advanced to DRAFT_POSTED. (msg m3)",
     "[5.sec] SEC Drafter draining /next for the mention ...",
     "    SEC Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    SEC Drafter drafted 1436 chars, posted back @mention Warden (msg m4)",
+    "    SEC Drafter drafted 1588 chars, posted back @mention Warden (msg m4)",
     "    [CHAOS] SEC Drafter killed at position B (posted, not yet acked); /next will re-serve the mention",
     "    SEC Drafter restarting, re-draining /next ...",
     "    [Warden -> room] @SEC Drafter missed its heartbeat (no progress for 2 logical drain cycle(s), past the 1-cycle liveness threshold). Declaring it offline; awaiting redelivery and recovery. (msg m5)",
     "    [LIVENESS] Warden declared SEC Drafter dead (stalled 2 logical cycle(s) past the threshold)",
     "    SEC Drafter recovered: duplicate dropped (ledger duplicate_dropped), no double draft",
-    "    [Warden -> room] @SEC Drafter: duplicate SEC filing dropped (ledger duplicate_dropped). Exactly-once held, no double-file. (msg m6)",
+    "    [Warden -> room] @SEC Drafter: Duplicate SEC filing dropped by the idempotency ledger (duplicate_dropped). Exactly-once held; no double-file. (msg m6)",
     "    [Warden -> room] @SEC Drafter recovered: its work was already recorded, the redelivered duplicate was dropped, no double-file. Exactly-once held across the declared-dead window. (msg m7)",
     "    [LIVENESS] Warden recovered SEC Drafter (filing landed exactly once)",
     "[6.sec] Warden draining /next for the SEC draft ...",
     "    Warden parsed sec claims, recorded DRAFT_POSTED (msg m4)",
-    "    [Warden -> room] @SEC Drafter: recorded SEC filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m8)",
+    "    [Warden -> room] @SEC Drafter: Recorded the SEC filing. Its load-bearing claims are incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State advanced to DRAFT_POSTED. (msg m8)",
     "[5.dora] DORA Drafter draining /next for the mention ...",
     "    DORA Drafter saw the mention (msg m1); calling its assigned model ...",
-    "    DORA Drafter drafted 1701 chars, posted back @mention Warden (msg m9)",
+    "    DORA Drafter drafted 1854 chars, posted back @mention Warden (msg m9)",
     "[6.dora] Warden draining /next for the DORA draft ...",
     "    Warden parsed dora claims, recorded DRAFT_POSTED (msg m9)",
-    "    [Warden -> room] @DORA Drafter: recorded DORA filing. Claims: incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State: DRAFT_POSTED. (msg m10)",
+    "    [Warden -> room] @DORA Drafter: Recorded the DORA filing. Its load-bearing claims are incident_start 2026-06-16T02:14:00+00:00, records 48,211, attacker lockbit, containment partially_contained. State advanced to DRAFT_POSTED. (msg m10)",
     "[7] Contradiction diff: GREEN (no conflicts across 3 filings)",
-    "    [Warden -> room] Contradiction diff GREEN across 3 filings. Load-bearing facts agree. Opening signoff. (msg m11)",
+    "    [Warden -> room] Cross-filing contradiction diff is GREEN across 3 filings: every load-bearing fact agrees. Opening signoff. (msg m11)",
     "    [release] inc-8842:nis2: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
     "    [release] inc-8842:nis2: head_of_ir (lena) signed; both keys present, release admitted",
     "    [release] inc-8842:sec: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
     "    [release] inc-8842:sec: head_of_ir (lena) signed; both keys present, release admitted",
     "    [release] inc-8842:dora: general_counsel (gc) signed; release withheld: awaiting head_of_ir (have general_counsel)",
     "    [release] inc-8842:dora: head_of_ir (lena) signed; both keys present, release admitted",
-    "    [Warden -> room] GC (general_counsel) signed NIS2, SEC, DORA. First of two keys on each. Awaiting LENA. (msg m12)",
-    "    [Warden -> room] LENA (head_of_ir) signed NIS2, SEC, DORA. Both keys present on all 3. RELEASED, clocks stopped. (msg m13)",
+    "    [Warden -> room] GC (general_counsel) signed NIS2, SEC, DORA: the first of two release keys on each. Awaiting the second key before release. (msg m12)",
+    "    [Warden -> room] LENA (head_of_ir) signed NIS2, SEC, DORA: both keys present on all 3. RELEASED, clocks stopped. (msg m13)",
     "[8] Warden opened signoff; two-key release (GC + Lena); clocks stopped",
     "[9] Replay byte-identical: True (sha 303c437140df...)",
     "    Signed by Deadline Warden (ed25519, key fp 46e30f5bff8c221d) over sha256 + chain_head + attestation_sha + fact_record_hash; the signature is detached, the run-log sha is unchanged.",
-    "    Operability: 3 filing(s), nearest deadline 2026-06-17T02:14:00+00:00, min statutory margin 69.23h, 0 breach(es)."
+    "    Operability: 3 filing(s), nearest deadline 2026-06-17T02:14:00+00:00, min statutory margin 69.23h, 0 breach(es).",
+    "[10] Examiner Packet written:",
+    "     C:\\yash\\band\\code\\web\\data\\examiner-packet.html",
+    "     C:\\yash\\band\\code\\web\\data\\examiner-packet.json",
+    "     run log: C:\\yash\\band\\code\\web\\data\\run-inc-8842-chaos.jsonl"
   ],
   "handoff_trace": [
     {
@@ -470,7 +474,7 @@
       "model": "deepseek-ai/DeepSeek-V3.2",
       "provider": "featherless",
       "rationale": "DeepSeek-V3.2 holds NIS2 in dev because it is a strong open reasoning model that handles structured statutory prose at flat rate, so the day-to-day build burns no metered credit.",
-      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank's incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "**To:** national CSIRT (NIS2)\n**From:** Meridian Trust Bank N.V.\n**Subject:** NIS2 Mandatory Incident Notification\n**Incident Reference:** inc-8842\n\n**1. Notification Timelines**\nThis notification is submitted within 72 hours of the bank becoming aware of a significant incident, in accordance with Article 23 of the NIS2 Directive. The incident commenced on 16 June 2026 at 02:14 UTC.\n\n**2. Nature and Significance of the Incident**\nThe incident involves a cyber attack attributed to the LockBit 3.0 ransomware group. The incident is currently assessed as partially contained. The attack has affected the availability of the core banking ledger and the customer KYC store systems.\n\n**3. Impact Assessment**\nPreliminary assessment indicates that 48,211 records have been affected. The compromised data categories include customer name, address, and account number.\n\n**4. Measures Taken and Next Steps**\nContainment activities are ongoing. The bank's incident response team is actively engaged in forensic analysis, system remediation, and implementing additional security controls to prevent further unauthorized access. A full impact assessment is in progress.\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=nis2\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "SEC",
@@ -478,7 +482,7 @@
       "model": "deepseek-ai/DeepSeek-V3-0324",
       "provider": "featherless",
       "rationale": "DeepSeek-V3-0324 holds SEC in dev as a separate open checkpoint from the NIS2 drafter, so two branches draft from genuinely different model state even before the prod split.",
-      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     },
     {
       "regime": "DORA",
@@ -486,7 +490,7 @@
       "model": "Qwen/Qwen2.5-72B-Instruct",
       "provider": "featherless",
       "rationale": "Qwen2.5-72B-Instruct holds DORA in dev because its long instruction-following is a good fit for DORA's incident-report field skeleton, and it is a third open family on flat rate.",
-      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
+      "text": "Incident ID: inc-8842\n\nDate of Notification: [Insert Date]\n\nRegulated Entity: Meridian Trust Bank N.V.\n\nCompetent Authority: National CSIRT (NIS2)\n\nIncident Start Time: June 16, 2026, at 02:14 UTC\n\nDescription of Incident:\nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. experienced a cyber-attack by the ransomware group LockBit 3.0. The attack partially compromised our core banking ledger and customer KYC store. A total of 48,211 records were affected, including personal data such as names, addresses, and account numbers.\n\nContainment Status:\nThe incident is currently partially contained. Our incident response team is actively working to fully contain and mitigate the impact of the attack.\n\nNext Steps:\nWe are conducting a thorough investigation to determine the full extent of the breach and to identify any additional vulnerabilities. We will continue to work with law enforcement and cybersecurity experts to ensure a comprehensive response. Affected customers will be notified in accordance with applicable regulations.\n\nContact Information:\nFor further information or inquiries, please contact our incident response team at [Insert Contact Information].\n\nSincerely,\n\n[Your Name]\n[Your Position]\nMeridian Trust Bank N.V.\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n[CLAIMS]\nbranch=dora\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n[/CLAIMS]"
     }
   ],
   "grounding": {
@@ -494,8 +498,8 @@
     "filings": [
       {
         "branch": "NIS2",
-        "grounded": 13,
-        "total": 13,
+        "grounded": 16,
+        "total": 16,
         "score": 1.0,
         "ungrounded": [],
         "regime": "NIS2",
@@ -508,8 +512,8 @@
       },
       {
         "branch": "SEC",
-        "grounded": 13,
-        "total": 13,
+        "grounded": 16,
+        "total": 16,
         "score": 1.0,
         "ungrounded": [],
         "regime": "SEC",
@@ -522,8 +526,8 @@
       },
       {
         "branch": "DORA",
-        "grounded": 14,
-        "total": 14,
+        "grounded": 17,
+        "total": 17,
         "score": 1.0,
         "ungrounded": [],
         "regime": "DORA",
@@ -580,6 +584,7 @@
     ]
   },
   "security": {},
+  "rag_grounding": {},
   "breached_clocks": [],
   "replay": {
     "original_sha256": "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520",
@@ -1265,6 +1270,97 @@
       }
     ]
   },
+  "assertion": {
+    "document": {
+      "incident_id": "inc-8842",
+      "regulated_entity": "Meridian Trust Bank N.V.",
+      "preamble": "Management asserts that, throughout the period stated below, the controls relevant to the regulated incident-reporting system were suitably designed and operated effectively to meet the applicable control objectives. The controls enumerated below were exercised by the incident run identified in this assertion; for each, the supporting evidence is the run-log event(s) named and the per-entry hash chain head that seals them, independently re-derivable from the sealed run. Controls marked NOT-EXERCISED were not invoked by this run's scenario; their absence from this run is stated honestly and is not a deficiency.",
+      "signer": "Deadline Warden, on behalf of management",
+      "period": {
+        "start": "2026-06-16T02:14:00+00:00",
+        "end": "2026-06-23T23:59:59+00:00"
+      },
+      "verdict": "Management asserts 4 of 6 catalogued controls OPERATED and are evidenced in this run; 2 were not exercised by this run's scenario.",
+      "total": 6,
+      "operated_count": 4,
+      "not_exercised_count": 2,
+      "chain_head": "723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0",
+      "signature_fp": "46e30f5bff8c221d",
+      "controls": [
+        {
+          "id": "SOD-01",
+          "title": "Segregation of duties on release (two-key gate)",
+          "framework_refs": "SOC 2 CC1.3; ISO/IEC 27001:2022 A.5.3; NIST CSF 2.0 PR.AA-05",
+          "status": "OPERATED",
+          "operated": true,
+          "found_events": [
+            "release_signoff",
+            "protocol_event:human_released",
+            "protocol_event:signoff_opened"
+          ],
+          "evidence_detail": "6 proving run-log event(s) present, read from packet.release.signoffs, sealed at the run chain head"
+        },
+        {
+          "id": "VAL-01",
+          "title": "Cross-filing contradiction veto (consistency control)",
+          "framework_refs": "SOC 2 PI1.2; ISO/IEC 27001:2022 A.8.26; NIST CSF 2.0 DE.AE-02",
+          "status": "NOT-EXERCISED",
+          "operated": false,
+          "found_events": [],
+          "evidence_detail": "not exercised by this run: no protocol_event:diff_blocked, diff event present at packet.diff.blocked_conflicts"
+        },
+        {
+          "id": "AVL-01",
+          "title": "Exactly-once handoff under live agent kill (idempotency ledger)",
+          "framework_refs": "SOC 2 A1.2; ISO/IEC 27001:2022 A.8.14; NIST CSF 2.0 RC.RP-01",
+          "status": "OPERATED",
+          "operated": true,
+          "found_events": [
+            "ledger",
+            "chaos"
+          ],
+          "evidence_detail": "4 proving run-log event(s) present, read from packet.chaos.ledger, sealed at the run chain head"
+        },
+        {
+          "id": "INT-01",
+          "title": "Signed, hash-chained provenance (audit-trail integrity)",
+          "framework_refs": "SOC 2 CC7.3; ISO/IEC 27001:2022 A.8.15; NIST CSF 2.0 PR.DS-06",
+          "status": "OPERATED",
+          "operated": true,
+          "found_events": [
+            "room"
+          ],
+          "evidence_detail": "1 proving run-log event(s) present, read from packet.replay.chain_head, sealed at the run chain head"
+        },
+        {
+          "id": "TML-01",
+          "title": "Statutory deadline clocks (timeliness control)",
+          "framework_refs": "SOC 2 CC2.3; ISO/IEC 27001:2022 A.5.5; NIST CSF 2.0 RS.CO-02",
+          "status": "OPERATED",
+          "operated": true,
+          "found_events": [
+            "clock_started",
+            "clock_stopped"
+          ],
+          "evidence_detail": "4 proving run-log event(s) present, read from packet.clocks, sealed at the run chain head"
+        },
+        {
+          "id": "DEC-01",
+          "title": "Reportability / materiality decision gate (decision control)",
+          "framework_refs": "SOC 2 CC3.2; ISO/IEC 27001:2022 A.5.34; NIST CSF 2.0 RS.MA-03",
+          "status": "NOT-EXERCISED",
+          "operated": false,
+          "found_events": [],
+          "evidence_detail": "not exercised by this run: no reportability, determination_record, clock_stopped event present at packet.reportability.regimes"
+        }
+      ]
+    },
+    "digest": "3b5aac09d37b71d648badf68a25eacf6e680522524f8d5c06307ea893097ed78",
+    "letter": "MANAGEMENT ASSERTION\nRegulated incident-reporting system: control operation over the reporting period\n\nReporting entity   : Meridian Trust Bank N.V.\nIncident reference : inc-8842\nPeriod asserted    : 2026-06-16T02:14:00+00:00 through 2026-06-23T23:59:59+00:00 (UTC)\n\nManagement asserts that, throughout the period stated below, the controls relevant to the regulated incident-reporting system were suitably designed and operated effectively to meet the applicable control objectives. The controls enumerated below were exercised by the incident run identified in this assertion; for each, the supporting evidence is the run-log event(s) named and the per-entry hash chain head that seals them, independently re-derivable from the sealed run. Controls marked NOT-EXERCISED were not invoked by this run's scenario; their absence from this run is stated honestly and is not a deficiency.\n\nAsserted controls (4 of 6 OPERATED):\n\n  [OPERATED] SOD-01: Segregation of duties on release (two-key gate)\n      Frameworks : SOC 2 CC1.3; ISO/IEC 27001:2022 A.5.3; NIST CSF 2.0 PR.AA-05\n      Evidence   : release_signoff, protocol_event:human_released, protocol_event:signoff_opened\n                   6 proving run-log event(s) present, read from packet.release.signoffs, sealed at the run chain head\n\n  [NOT-EXERCISED] VAL-01: Cross-filing contradiction veto (consistency control)\n      Frameworks : SOC 2 PI1.2; ISO/IEC 27001:2022 A.8.26; NIST CSF 2.0 DE.AE-02\n                   not exercised by this run: no protocol_event:diff_blocked, diff event present at packet.diff.blocked_conflicts\n\n  [OPERATED] AVL-01: Exactly-once handoff under live agent kill (idempotency ledger)\n      Frameworks : SOC 2 A1.2; ISO/IEC 27001:2022 A.8.14; NIST CSF 2.0 RC.RP-01\n      Evidence   : ledger, chaos\n                   4 proving run-log event(s) present, read from packet.chaos.ledger, sealed at the run chain head\n\n  [OPERATED] INT-01: Signed, hash-chained provenance (audit-trail integrity)\n      Frameworks : SOC 2 CC7.3; ISO/IEC 27001:2022 A.8.15; NIST CSF 2.0 PR.DS-06\n      Evidence   : room\n                   1 proving run-log event(s) present, read from packet.replay.chain_head, sealed at the run chain head\n\n  [OPERATED] TML-01: Statutory deadline clocks (timeliness control)\n      Frameworks : SOC 2 CC2.3; ISO/IEC 27001:2022 A.5.5; NIST CSF 2.0 RS.CO-02\n      Evidence   : clock_started, clock_stopped\n                   4 proving run-log event(s) present, read from packet.clocks, sealed at the run chain head\n\n  [NOT-EXERCISED] DEC-01: Reportability / materiality decision gate (decision control)\n      Frameworks : SOC 2 CC3.2; ISO/IEC 27001:2022 A.5.34; NIST CSF 2.0 RS.MA-03\n                   not exercised by this run: no reportability, determination_record, clock_stopped event present at packet.reportability.regimes\n\nEvidence seal (per-entry hash chain head): 723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0\nRun-log signer fingerprint               : 46e30f5bff8c221d\n\nManagement asserts 4 of 6 catalogued controls OPERATED and are evidenced in this run; 2 were not exercised by this run's scenario.\n\nAsserted and signed by: Deadline Warden, on behalf of management",
+    "verdict": "Management asserts 4 of 6 catalogued controls OPERATED and are evidenced in this run; 2 were not exercised by this run's scenario.",
+    "operated_count": 4,
+    "total": 6
+  },
   "operability": {
     "mode": "chaos",
     "clock_set": "NIS2 early warning (24h), NIS2 full notification (72h), DORA major-incident (72h), SEC 8-K (4 business days)",
@@ -1456,22 +1552,22 @@
         {
           "label": "Nature of the incident",
           "instruction": "State the material aspects of the NATURE of the cybersecurity incident from the fact-record (what occurred, the threat actor, the systems and data categories involved).",
-          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
+          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
         },
         {
           "label": "Scope of the incident",
           "instruction": "State the material aspects of the SCOPE of the incident from the fact-record (the number of records affected and the breadth across systems). Do not speculate beyond the fact-record.",
-          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
+          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
         },
         {
           "label": "Timing of the incident",
           "instruction": "State the material aspects of the TIMING of the incident from the fact-record (when it began, when it was discovered, and the current containment status as of a stated time).",
-          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
+          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
         },
         {
           "label": "Material impact or reasonably likely material impact",
           "instruction": "State the material impact, or reasonably likely material impact, on the registrant, including on financial condition and results of operations. Do not speculate beyond the fact-record.",
-          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
+          "body": "**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)"
         }
       ],
       "facts": {
@@ -1486,7 +1582,7 @@
       "edgar_accession_number": null,
       "export_note": "EDGAR-shaped Form 8-K Item 1.05 export of the real mandated fields. This is not a filed EDGAR submission: no accession number is assigned and the filer-identifying fields marked as placeholders are supplied by the registrant at submission. The Item 1.05 content elements and the CYD/iXBRL tagging use the real SEC concept names."
     },
-    "ixbrl": "<ix:fragment xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\" form=\"8-K\" item=\"1.05\" period-of-report=\"2026-06-16\">\n<ix:header xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:xbrli=\"http://www.xbrl.org/2003/instance\" xmlns:xbrldi=\"http://xbrl.org/2006/xbrldi\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\">\n  <ix:references>\n    <link:schemaRef xmlns:link=\"http://www.xbrl.org/2003/linkbase\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" xlink:href=\"https://xbrl.sec.gov/cyd/2024/cyd-2024.xsd\"/>\n  </ix:references>\n  <ix:resources>\n    <xbrli:context id=\"C-inc-8842\">\n      <xbrli:entity>\n        <xbrli:identifier scheme=\"http://www.sec.gov/CIK\">0000000000</xbrli:identifier>\n        <xbrli:segment>\n          <xbrldi:explicitMember dimension=\"cyd:MaterialCybersecurityIncidentAxis\">cyd:Inc8842Member</xbrldi:explicitMember>\n        </xbrli:segment>\n      </xbrli:entity>\n      <xbrli:period>\n        <xbrli:instant>2026-06-16</xbrli:instant>\n      </xbrli:period>\n    </xbrli:context>\n  </ix:resources>\n</ix:header>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentTextBlock\" contextRef=\"C-inc-8842\">**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentNatureScopeTimingTextBlock\" contextRef=\"C-inc-8842\">Nature of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\nScope of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\nTiming of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentMaterialImpactOrReasonablyLikelyMaterialImpactTextBlock\" contextRef=\"C-inc-8842\">**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n</ix:fragment>"
+    "ixbrl": "<ix:fragment xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\" form=\"8-K\" item=\"1.05\" period-of-report=\"2026-06-16\">\n<ix:header xmlns:ix=\"http://www.xbrl.org/2013/inlineXBRL\" xmlns:xbrli=\"http://www.xbrl.org/2003/instance\" xmlns:xbrldi=\"http://xbrl.org/2006/xbrldi\" xmlns:cyd=\"http://xbrl.sec.gov/cyd/2024\">\n  <ix:references>\n    <link:schemaRef xmlns:link=\"http://www.xbrl.org/2003/linkbase\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" xlink:href=\"https://xbrl.sec.gov/cyd/2024/cyd-2024.xsd\"/>\n  </ix:references>\n  <ix:resources>\n    <xbrli:context id=\"C-inc-8842\">\n      <xbrli:entity>\n        <xbrli:identifier scheme=\"http://www.sec.gov/CIK\">0000000000</xbrli:identifier>\n        <xbrli:segment>\n          <xbrldi:explicitMember dimension=\"cyd:MaterialCybersecurityIncidentAxis\">cyd:Inc8842Member</xbrldi:explicitMember>\n        </xbrli:segment>\n      </xbrli:entity>\n      <xbrli:period>\n        <xbrli:instant>2026-06-16</xbrli:instant>\n      </xbrli:period>\n    </xbrli:context>\n  </ix:resources>\n</ix:header>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentTextBlock\" contextRef=\"C-inc-8842\">**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentNatureScopeTimingTextBlock\" contextRef=\"C-inc-8842\">Nature of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\nScope of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\nTiming of the incident: **SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n  <ix:nonNumeric name=\"cyd:MaterialCybersecurityIncidentMaterialImpactOrReasonablyLikelyMaterialImpactTextBlock\" contextRef=\"C-inc-8842\">**SEC Breach Notification**  \n**Reporting Entity:** Meridian Trust Bank N.V.  \n**Incident ID:** inc-8842  \n**Notification Date:** [Today's Date]  \n\n**1. Incident Summary**  \nOn June 16, 2026, at 02:14 UTC, Meridian Trust Bank N.V. detected unauthorized access to its core banking ledger and customer KYC store by the ransomware group LockBit 3.0. The incident remains partially contained.  \n\n**2. Data Compromised**  \nApproximately 48,211 records were affected, exposing customer names, addresses, and account numbers. No additional data categories were accessed.  \n\n**3. Response Measures**  \nContainment efforts are ongoing. The national CSIRT (NIS2) has been notified per regulatory requirements.  \n\n**4. Regulatory Coordination**  \nThis filing constitutes the 72-hour notification under applicable SEC rules. Further updates will be provided as the investigation progresses.  \n\n**Contact:** [Designated Point of Contact]  \n**Authority Reference:** NIS2 Directive, SEC Reg. S-P\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)\n\n(CLAIMS)\nbranch=sec\nincident_start_utc=2026-06-16T02:14:00+00:00\nrecords_affected=48211\nattacker=LockBit 3.0\ncontainment=partially_contained\n(/CLAIMS)</ix:nonNumeric>\n</ix:fragment>"
   },
   "ecosystem_exports": {
     "stix": {
@@ -2114,6 +2210,424 @@
         "export_note": "MISP-core-format event export of the incident's load-bearing indicators. This is a conformant event document, not a push to a live MISP instance; MISP also imports the STIX 2.1 bundle directly."
       }
     }
+  },
+  "privilege": {
+    "verdict": "5 classified artifact(s): 5 in the DISCLOSABLE set (filings and statutory content), 0 in the PRIVILEGED set (legal advice and attorney work-product, withheld).",
+    "banner": "PRIVILEGED AND CONFIDENTIAL: ATTORNEY-CLIENT COMMUNICATION / ATTORNEY WORK-PRODUCT. Prepared at the direction of counsel for the purpose of providing legal advice in anticipation of litigation. Not for disclosure.",
+    "disclosable_count": 5,
+    "privileged_count": 0,
+    "disclosable": [
+      {
+        "event": "filings",
+        "description": "The drafted regulator filings",
+        "basis": "disclosable_filing",
+        "basis_label": "Disclosable regulator filing",
+        "privilege_set": "disclosable",
+        "count": 3
+      },
+      {
+        "event": "edgar_export",
+        "description": "The EDGAR-shaped Form 8-K Item 1.05 export",
+        "basis": "disclosable_filing",
+        "basis_label": "Disclosable regulator filing",
+        "privilege_set": "disclosable",
+        "count": 1
+      },
+      {
+        "event": "completeness",
+        "description": "Submission completeness screen (mandated-field matrix)",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 3
+      },
+      {
+        "event": "consistency",
+        "description": "Cross-filing consistency assertion",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 4
+      },
+      {
+        "event": "attestation",
+        "description": "Deadline-compliance attestation",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 4
+      }
+    ],
+    "privileged": [],
+    "all_items": [
+      {
+        "event": "filings",
+        "description": "The drafted regulator filings",
+        "basis": "disclosable_filing",
+        "basis_label": "Disclosable regulator filing",
+        "privilege_set": "disclosable",
+        "count": 3
+      },
+      {
+        "event": "edgar_export",
+        "description": "The EDGAR-shaped Form 8-K Item 1.05 export",
+        "basis": "disclosable_filing",
+        "basis_label": "Disclosable regulator filing",
+        "privilege_set": "disclosable",
+        "count": 1
+      },
+      {
+        "event": "completeness",
+        "description": "Submission completeness screen (mandated-field matrix)",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 3
+      },
+      {
+        "event": "consistency",
+        "description": "Cross-filing consistency assertion",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 4
+      },
+      {
+        "event": "attestation",
+        "description": "Deadline-compliance attestation",
+        "basis": "non_privileged_regulatory",
+        "basis_label": "Non-privileged statutory / regulatory content",
+        "privilege_set": "disclosable",
+        "count": 4
+      }
+    ]
+  },
+  "timeline": {
+    "count": 25,
+    "chain_head": "723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0",
+    "span_start": "2026-06-16T02:14:00+00:00",
+    "span_end": "2026-06-16T05:00:00+00:00",
+    "entries": [
+      {
+        "ts": "2026-06-16T02:14:00+00:00",
+        "kind": "clock_start",
+        "actor": "",
+        "event": "clock_started",
+        "branch": "inc-8842:nis2-early",
+        "description": "NIS2 early warning (24h) clock started (trigger: becoming aware)",
+        "deadline_note": "statutory deadline 2026-06-17T02:14:00+00:00"
+      },
+      {
+        "ts": "2026-06-16T02:14:00+00:00",
+        "kind": "clock_start",
+        "actor": "",
+        "event": "clock_started",
+        "branch": "inc-8842:nis2",
+        "description": "NIS2 full notification (72h) clock started (trigger: becoming aware)",
+        "deadline_note": "statutory deadline 2026-06-19T02:14:00+00:00"
+      },
+      {
+        "ts": "2026-06-16T02:14:00+00:00",
+        "kind": "clock_start",
+        "actor": "",
+        "event": "clock_started",
+        "branch": "inc-8842:dora",
+        "description": "DORA major-incident (72h) clock started (trigger: incident occurrence)",
+        "deadline_note": "statutory deadline 2026-06-19T02:14:00+00:00"
+      },
+      {
+        "ts": "2026-06-16T02:31:00+00:00",
+        "kind": "clock_start",
+        "actor": "",
+        "event": "clock_started",
+        "branch": "inc-8842:sec",
+        "description": "SEC 8-K (4 business days) clock started (trigger: materiality determination)",
+        "deadline_note": "statutory deadline 2026-06-23T23:59:59+00:00"
+      },
+      {
+        "ts": "2026-06-16T02:31:00+00:00",
+        "kind": "transition",
+        "actor": "triage",
+        "event": "fact_record_posted",
+        "branch": "inc-8842:nis2",
+        "description": "Incident fact-record posted (canonical facts established)",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T02:31:00+00:00",
+        "kind": "transition",
+        "actor": "triage",
+        "event": "fact_record_posted",
+        "branch": "inc-8842:sec",
+        "description": "Incident fact-record posted (canonical facts established)",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T02:31:00+00:00",
+        "kind": "transition",
+        "actor": "triage",
+        "event": "fact_record_posted",
+        "branch": "inc-8842:dora",
+        "description": "Incident fact-record posted (canonical facts established)",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "nis2_drafter",
+        "event": "draft_started",
+        "branch": "inc-8842:nis2",
+        "description": "Drafter began the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "nis2_drafter",
+        "event": "draft_posted",
+        "branch": "inc-8842:nis2",
+        "description": "Drafter posted the filing back to the Warden",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "sec_drafter",
+        "event": "draft_started",
+        "branch": "inc-8842:sec",
+        "description": "Drafter began the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "sec_drafter",
+        "event": "draft_posted",
+        "branch": "inc-8842:sec",
+        "description": "Drafter posted the filing back to the Warden",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "dora_drafter",
+        "event": "draft_started",
+        "branch": "inc-8842:dora",
+        "description": "Drafter began the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T03:11:00+00:00",
+        "kind": "transition",
+        "actor": "dora_drafter",
+        "event": "draft_posted",
+        "branch": "inc-8842:dora",
+        "description": "Drafter posted the filing back to the Warden",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "diff_passed",
+        "branch": "inc-8842:nis2",
+        "description": "Cross-filing contradiction diff passed GREEN",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "diff_passed",
+        "branch": "inc-8842:sec",
+        "description": "Cross-filing contradiction diff passed GREEN",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "diff_passed",
+        "branch": "inc-8842:dora",
+        "description": "Cross-filing contradiction diff passed GREEN",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "signoff_opened",
+        "branch": "inc-8842:nis2",
+        "description": "Warden opened the two-key human signoff",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "signoff_opened",
+        "branch": "inc-8842:sec",
+        "description": "Warden opened the two-key human signoff",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T04:00:00+00:00",
+        "kind": "transition",
+        "actor": "warden",
+        "event": "signoff_opened",
+        "branch": "inc-8842:dora",
+        "description": "Warden opened the two-key human signoff",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "transition",
+        "actor": "lena",
+        "event": "human_released",
+        "branch": "inc-8842:nis2",
+        "description": "Two distinct human keys released the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "transition",
+        "actor": "lena",
+        "event": "human_released",
+        "branch": "inc-8842:sec",
+        "description": "Two distinct human keys released the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "transition",
+        "actor": "lena",
+        "event": "human_released",
+        "branch": "inc-8842:dora",
+        "description": "Two distinct human keys released the filing",
+        "deadline_note": ""
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "clock_stop",
+        "actor": "",
+        "event": "clock_stopped",
+        "branch": "inc-8842:nis2",
+        "description": "NIS2 full notification (72h) clock stopped (filing released)",
+        "deadline_note": "filed before the statutory deadline 2026-06-19T02:14:00+00:00"
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "clock_stop",
+        "actor": "",
+        "event": "clock_stopped",
+        "branch": "inc-8842:dora",
+        "description": "DORA major-incident (72h) clock stopped (filing released)",
+        "deadline_note": "filed before the statutory deadline 2026-06-19T02:14:00+00:00"
+      },
+      {
+        "ts": "2026-06-16T05:00:00+00:00",
+        "kind": "clock_stop",
+        "actor": "",
+        "event": "clock_stopped",
+        "branch": "inc-8842:sec",
+        "description": "SEC 8-K (4 business days) clock stopped (filing released)",
+        "deadline_note": "filed before the statutory deadline 2026-06-23T23:59:59+00:00"
+      }
+    ]
+  },
+  "after_action": {
+    "deadlines_filed": 3,
+    "deadlines_met": 3,
+    "deadlines_breached": 0,
+    "clock_margins": [
+      {
+        "clock": "NIS2 early warning (24h)",
+        "branch": "inc-8842:nis2-early",
+        "deadline": "2026-06-17T02:14:00+00:00",
+        "filed_at": "",
+        "met": false,
+        "filed": false,
+        "margin_human": "(clock still running, not filed)"
+      },
+      {
+        "clock": "NIS2 full notification (72h)",
+        "branch": "inc-8842:nis2",
+        "deadline": "2026-06-19T02:14:00+00:00",
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "met": true,
+        "filed": true,
+        "margin_human": "69h 14m of margin"
+      },
+      {
+        "clock": "DORA major-incident (72h)",
+        "branch": "inc-8842:dora",
+        "deadline": "2026-06-19T02:14:00+00:00",
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "met": true,
+        "filed": true,
+        "margin_human": "69h 14m of margin"
+      },
+      {
+        "clock": "SEC 8-K (4 business days)",
+        "branch": "inc-8842:sec",
+        "deadline": "2026-06-23T23:59:59+00:00",
+        "filed_at": "2026-06-16T05:00:00+00:00",
+        "met": true,
+        "filed": true,
+        "margin_human": "186h 59m of margin"
+      }
+    ],
+    "fact_change": null,
+    "challenger": null,
+    "contradiction_caught": false,
+    "operated_controls": [
+      "SOD-01",
+      "AVL-01",
+      "INT-01",
+      "TML-01"
+    ],
+    "findings": [
+      "3 of 3 filed statutory deadline(s) met; no breaches.",
+      "4 catalogued control(s) operated and are evidenced in the sealed run."
+    ]
+  },
+  "policy_version": {
+    "policy_version": "f2856f9359c074bca07cf9ad47713dd282fe1359a152dd03466bf8debf0fa997",
+    "render_time_only": true,
+    "in_hashed_run_log": false,
+    "components": [
+      {
+        "name": "controls.yaml",
+        "sha256": "545b530d00ed4f46a327cf2161d5ecafeedaeaab73b6ea773956459bd0059b46"
+      },
+      {
+        "name": "regimes.yaml",
+        "sha256": "eb4d36b7d38f851f4351e2c27fdd5122c4adcc0130dae5c7192e7d07a32b25a6"
+      },
+      {
+        "name": "rule_set",
+        "sha256": "9053ee70e1bafc85f893bcfebe6bf8da7d6de066f7b0f6124516f6fb1d66cff8"
+      }
+    ],
+    "note": "Render-time policy version over the governing catalogs (regimes.yaml, controls.yaml) and the Warden rule set (transition-authority table). Derived at packet assembly, NOT folded into the hashed run-log, so the sealed run-log sha and byte-identical replay are untouched. An edit to any policy component moves this composite sha."
+  },
+  "decision_rationale": {
+    "diff_green": {
+      "rule_id": "WARDEN-RULE-DIFF-GREEN",
+      "plain_why": "Cross-filing contradiction diff is GREEN across 3 filings: every load-bearing fact agrees. Opening signoff.",
+      "decided_by": "deterministic_rule",
+      "decided_by_label": "fixed rule (no AI judgment)",
+      "evidence_entry_hashes": [
+        "fb3e345d1b93af7aacc74aaf5e303cfcc5b11425a39d28e74186e2a79089347c",
+        "f5a4a4378dedffed84663d6cbc573413d9e67a2da8083f65a92965c334c33ad8",
+        "70266b877c3001dd74c0adf1ebabd979c607ae87292f4fcd099d7e81f8c46cb0"
+      ]
+    }
+  },
+  "_paths": {
+    "html": "C:\\yash\\band\\code\\web\\data\\examiner-packet.html",
+    "json": "C:\\yash\\band\\code\\web\\data\\examiner-packet.json",
+    "run_log": "C:\\yash\\band\\code\\web\\data\\run-inc-8842-chaos.jsonl"
   },
   "redaction": {
     "redacted_field_count": 2,
