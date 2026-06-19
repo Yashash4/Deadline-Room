@@ -30,12 +30,23 @@ from __future__ import annotations
 
 import json
 import shutil
+import warnings
 from pathlib import Path
 
 import pytest
 import yaml
 
-from fastapi.testclient import TestClient
+# Starlette 1.x prefers an `httpx2` transport for its TestClient and emits a
+# StarletteDeprecationWarning when it falls back to the still-supported `httpx`
+# client. `httpx2` is not yet a released package, so the fallback is the only
+# available path and the warning is not actionable. Suppress it at the import
+# site only, leaving every other warning live.
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="Using `httpx` with `starlette.testclient` is deprecated",
+    )
+    from fastapi.testclient import TestClient
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = REPO_ROOT / "deploy"
