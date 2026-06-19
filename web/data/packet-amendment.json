@@ -11,13 +11,13 @@
       "attacker": "LockBit 3.0",
       "containment": "partially_contained",
       "systems": [
-        "core banking ledger",
-        "customer KYC store"
+        "[REDACTED FOR PUBLICATION]",
+        "[REDACTED FOR PUBLICATION]"
       ],
       "data_categories": [
-        "name",
-        "address",
-        "account_number"
+        "[REDACTED FOR PUBLICATION]",
+        "[REDACTED FOR PUBLICATION]",
+        "[REDACTED FOR PUBLICATION]"
       ],
       "regulated_entity": "Meridian Trust Bank N.V.",
       "competent_authority": "national CSIRT (NIS2)",
@@ -2460,5 +2460,15 @@
         "export_note": "MISP-core-format event export of the incident's load-bearing indicators. This is a conformant event document, not a push to a live MISP instance; MISP also imports the STIX 2.1 bundle directly."
       }
     }
+  },
+  "redaction": {
+    "redacted_field_count": 2,
+    "redacted_fields": [
+      "data_categories",
+      "systems"
+    ],
+    "mask": "[REDACTED FOR PUBLICATION]",
+    "summary": "2 fields redacted for publication",
+    "note": "PII-class fact-record field values were masked for publication. The statutory facts (incident_start_utc, records_affected, attacker, containment) and the [CLAIMS] block the Warden gated on are kept verbatim. Redaction is applied at publish time only and is never part of the hashed run-log, so the run-log sha and byte-identical replay are unchanged."
   }
 }

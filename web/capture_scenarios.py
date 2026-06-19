@@ -29,7 +29,6 @@ Run from code/:  py web/capture_scenarios.py
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -37,6 +36,7 @@ _CODE = Path(__file__).resolve().parent.parent
 if str(_CODE) not in sys.path:
     sys.path.insert(0, str(_CODE))
 
+from floor.redaction import redact_packet_for_publication  # noqa: E402
 from floor.run_floor import DRAFTER_ROLES, run_floor  # noqa: E402
 from floor.shell_adapter import FakeBandClient, FakeRoom  # noqa: E402
 from warden.replay import RunLog  # noqa: E402
@@ -107,20 +107,31 @@ def _capture(mode: str, prose: dict) -> dict:
     room, clients = _build_clients()
     packet = run_floor(out_dir=str(OUT), mode=mode, clients=clients,
                        draft_fns=_stub_draft_fns(prose, mode))
-    # The floor wrote examiner-packet.json (generic name) and the run log. Move the
-    # packet to a scenario-specific name and keep the matching run log.
-    src = OUT / "examiner-packet.json"
+    # The floor wrote examiner-packet.json (generic, UNREDACTED) and the run log.
+    # The web viewer loads a PUBLISHED packet, so write the redacted view to the
+    # scenario-specific name: PII-class fact-record field values are masked and a
+    # redaction receipt is added, while the [CLAIMS] block inside the filings, the
+    # statutory facts, and the replay hash are kept verbatim (floor/redaction.py).
+    # Redaction is a publish-layer pass only; it never enters the hashed run-log,
+    # so run-inc-8842-<mode>.jsonl and its sealed sha are untouched.
+    published = redact_packet_for_publication(packet)
     dst = OUT / f"packet-{mode}.json"
-    shutil.move(str(src), str(dst))
-    # Drop the generic html the floor also wrote; the viewer renders from JSON.
+    dst.write_text(json.dumps(published, indent=2), encoding="utf-8")
+    # Drop the generic unredacted artifacts the floor also wrote; the viewer
+    # renders from the published JSON above.
+    src = OUT / "examiner-packet.json"
+    if src.exists():
+        src.unlink()
     html = OUT / "examiner-packet.html"
     if html.exists():
         html.unlink()
-    # Verify the hash the packet claims matches its own bundled run log.
+    # Verify the hash the published packet claims matches its own bundled run log.
+    # Redaction preserves replay.original_sha256 verbatim, so this still holds and
+    # the in-browser re-verify stays exact.
     log = RunLog.load(OUT / f"run-inc-8842-{mode}.jsonl")
-    assert log.sha256() == packet["replay"]["original_sha256"], \
-        f"{mode}: bundled log hash does not match packet replay hash"
-    return packet
+    assert log.sha256() == published["replay"]["original_sha256"], \
+        f"{mode}: bundled log hash does not match published packet replay hash"
+    return published
 
 
 def main() -> int:

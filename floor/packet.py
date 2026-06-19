@@ -14,17 +14,54 @@ import json
 from pathlib import Path
 
 from floor.grounding import strip_citations
+from floor.redaction import redact_packet_for_publication
 
 
-def write_packet(packet: dict, out_dir: str | Path, stem: str = "examiner-packet") -> tuple[str, str]:
-    """Write <stem>.json and <stem>.html into out_dir. Returns both paths."""
+def write_packet(
+    packet: dict,
+    out_dir: str | Path,
+    stem: str = "examiner-packet",
+    *,
+    publish: bool = False,
+) -> tuple[str, str]:
+    """Write <stem>.json and <stem>.html into out_dir. Returns both paths.
+
+    With publish=True the PUBLISHED packet is rendered: PII-class fact-record
+    field values are masked and a redaction receipt is added before both the JSON
+    sidecar and the HTML are written (floor/redaction.py). Redaction is a pure
+    render/publish-layer pass; it never touches the hashed run-log, so the replay
+    hash and byte-identical replay are unchanged, and the [CLAIMS] block plus the
+    statutory facts stay verbatim. The default (publish=False) writes the
+    unredacted packet exactly as before."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{stem}.json"
     html_path = out / f"{stem}.html"
-    json_path.write_text(json.dumps(packet, indent=2), encoding="utf-8")
-    html_path.write_text(_render_html(packet), encoding="utf-8")
+    rendered = redact_packet_for_publication(packet) if publish else packet
+    json_path.write_text(json.dumps(rendered, indent=2), encoding="utf-8")
+    html_path.write_text(_render_html(rendered), encoding="utf-8")
     return str(json_path), str(html_path)
+
+
+def _render_redaction(r: dict) -> str:
+    """Render the publication-redaction receipt (E9.5), present only on a PUBLISHED
+    packet. States how many PII-class fact-record fields were masked, names them,
+    and affirms the statutory facts stayed verbatim. Pure read over the receipt
+    floor/redaction.py built; never a gate, never in the hashed run-log."""
+    if not r:
+        return ""
+    count = r.get("redacted_field_count", 0)
+    fields = r.get("redacted_fields", []) or []
+    cls = "warn" if count else ""
+    fields_html = (
+        "<p class='sub'>Fields masked: "
+        + ", ".join(f"<code>{_esc(f)}</code>" for f in fields) + ".</p>"
+        if fields else
+        "<p class='sub'>No PII-class fields were present to mask on this run.</p>")
+    return (
+        f"<p><span class='badge {cls}'>{_esc(r.get('summary', ''))}</span></p>"
+        + fields_html
+        + f"<p class='sub'>{_esc(r.get('note', ''))}</p>")
 
 
 def _esc(v) -> str:
@@ -3017,6 +3054,7 @@ def _render_html(p: dict) -> str:
     timeline_block = _render_timeline(p.get("timeline", {}))
     after_action_block = _render_after_action(p.get("after_action", {}))
     policy_version_block = _render_policy_version(p.get("policy_version", {}))
+    redaction_block = _render_redaction(p.get("redaction", {}))
     pending = p.get("pending", [])
     pending_section = (
         "<h2>9. Pending (more Band agent keys required)</h2><ul>"
@@ -3162,6 +3200,7 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 
 <h2>1. Incident fact-record (canonical)</h2>
 <pre>{_esc(json.dumps(incident.get('fact_record', {}), indent=2))}</pre>
+{redaction_block}
 
 <h2>2. Band @mention handoff trace</h2>
 <p class="sub">Every protocol envelope is delivered by @mention; this is the live room trace.</p>
