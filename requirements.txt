@@ -10,6 +10,7 @@ cryptography==46.0.5 # Ed25519 run-log signing and verification (warden/, script
 PyYAML==6.0.3       # regime and config parsing (floor/regimes.yaml, floor/assertion.py)
 fastapi==0.137.2    # the standing governance service + product UI app (service/, web/app_server.py)
 uvicorn==0.49.0     # ASGI server the service container runs the app under
+httpx==0.28.1       # starlette TestClient transport (tests/test_service.py, test_deploy_smoke.py)
 python-hcl2==8.1.2  # parse the infra/ Terraform as HCL in the deploy smoke test (tests/)
 pytest==9.0.3       # the 1,435-test property suite (tests/)
 hypothesis==6.155.3 # property-based tests over generated inputs (tests/test_properties_hypothesis.py)
