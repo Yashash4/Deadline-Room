@@ -4,11 +4,11 @@
 
 **[Live demo](https://deadline-room.vercel.app/) (verify it in your browser) · [Submission](https://lablab.ai/ai-hackathons/band-of-agents-hackathon/tripod/deadline-room) · [What you can run in 2 minutes](#what-you-can-run-in-2-minutes)**
 
-![ci](https://github.com/Yashash4/Deadline-Room/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-1%2C435%20passing-3fd07f)
-![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)
-![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)
-![license](https://img.shields.io/badge/license-MIT-8b9bb4)
+[![ci](https://github.com/Yashash4/Deadline-Room/actions/workflows/ci.yml/badge.svg)](https://github.com/Yashash4/Deadline-Room/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-1%2C435%20passing-3fd07f)](https://github.com/Yashash4/Deadline-Room/tree/main/tests)
+[![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)](https://github.com/Yashash4/Deadline-Room/tree/main/warden)
+[![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)](https://deadline-room.vercel.app/)
+[![license](https://img.shields.io/badge/license-MIT-8b9bb4)](https://github.com/Yashash4/Deadline-Room/blob/main/LICENSE)
 
 ---
 
