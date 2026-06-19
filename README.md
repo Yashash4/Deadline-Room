@@ -9,6 +9,7 @@
 [![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)](https://github.com/Yashash4/Deadline-Room/tree/main/warden)
 [![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)](https://deadline-room.vercel.app/)
 [![license](https://img.shields.io/badge/license-MIT-8b9bb4)](https://github.com/Yashash4/Deadline-Room/blob/main/LICENSE)
+[![band-once on PyPI](https://img.shields.io/pypi/v/band-once?label=band-once%20on%20PyPI&color=3fd07f)](https://pypi.org/project/band-once/)
 
 ---
 
@@ -324,4 +325,10 @@ Every push and pull request runs the same three gates in GitHub Actions (`.githu
 
 MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Yashash S S.
 
-The exactly-once lifecycle layer is extracted into the standalone, MIT-licensed [`band-once/`](band-once/) library (its own proof and public conformance check); Deadline Room consumes it (dogfooding).
+The exactly-once lifecycle layer is extracted into the standalone, MIT-licensed [`band-once/`](band-once/) library (its own proof and public conformance check); Deadline Room consumes it (dogfooding). It is published on PyPI, so any builder can install it directly:
+
+```
+pip install band-once
+```
+
+See [pypi.org/project/band-once](https://pypi.org/project/band-once/).
