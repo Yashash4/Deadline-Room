@@ -223,6 +223,35 @@
     <p class="panel-sub muted small">The same no-AI engine that replays the past byte-for-byte can compute the counterfactual: change one deterministic input (a clock anchor, the contradiction block, a fact value) and recompute the consequence. Each what-if carries its own signed receipt under a separate "counterfactual" label, so it is never confused with a real run. Re-verify any of them in your browser.</p>
     <div id="whatif-cards" class="whatif-cards"></div>
   </section>
+
+  <!-- E6.4 Fleet SLA / throughput: the standing-operations-center view across
+       every sealed incident, folded from the signed portfolio manifest. -->
+  <section class="panel fleet-panel" id="fleet-panel" aria-label="Fleet SLA and throughput">
+    <div class="panel-head">
+      <h2>Across every incident: the fleet SLA and throughput</h2>
+      <span class="badge green" id="fleet-verdict-badge">signed rollup</span>
+    </div>
+    <p class="panel-sub muted small">A standing operations center is judged on its SLA, not a single deadline. This is every sealed incident at once: the worst-case and median statutory margin, how many filings landed near a breach, whether it EVER breached, and the throughput. Every number is a no-AI read of the recorded clocks, folded into the signed portfolio manifest, so editing one breaks the signature.</p>
+    <div id="fleet-summary" class="fleet-summary"></div>
+    <div class="fleet-table-wrap">
+      <table class="fleet-table" id="fleet-table">
+        <thead>
+          <tr>
+            <th>Incident path</th>
+            <th>Filings</th>
+            <th>Tightest margin</th>
+            <th>Breaches</th>
+            <th>Drafted</th>
+            <th>Released</th>
+            <th>Suppressed</th>
+            <th>Vetoes</th>
+          </tr>
+        </thead>
+        <tbody id="fleet-rows"></tbody>
+      </table>
+    </div>
+    <div id="fleet-receipt" class="fleet-receipt small muted"></div>
+  </section>
 </main>
 
 <footer class="footer">

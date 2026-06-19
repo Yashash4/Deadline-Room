@@ -38,22 +38,271 @@
         "name": "run-inc-8842-submit.jsonl",
         "sha256": "13b675f992423a71a16911b6ad604cb91e0d8065dd60f5167808c7fa87e3173b"
       }
-    ]
+    ],
+    "sla": {
+      "ever_breached": false,
+      "median_margin_hours": 69.23,
+      "near_breach_count": 0,
+      "near_breach_hours": 24.0,
+      "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+      "per_run": [
+        {
+          "breaches": 0,
+          "filings_landed": 3,
+          "margins": [
+            {
+              "breached": false,
+              "clock": "DORA major-incident (72h)",
+              "correlation_id": "inc-8842:dora",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "dora"
+            },
+            {
+              "breached": false,
+              "clock": "NIS2 full notification (72h)",
+              "correlation_id": "inc-8842:nis2",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "nis2"
+            },
+            {
+              "breached": false,
+              "clock": "SEC 8-K (4 business days)",
+              "correlation_id": "inc-8842:sec",
+              "deadline_utc": "2026-06-23T23:59:59+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 187.0,
+              "regime": "sec"
+            }
+          ],
+          "min_margin_hours": 69.23,
+          "mode": "amendment",
+          "name": "run-inc-8842-amendment.jsonl",
+          "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+          "throughput": {
+            "diff_conflicts": 0,
+            "drafted": 3,
+            "filings": 3,
+            "released": 3,
+            "suppressed": 0
+          }
+        },
+        {
+          "breaches": 0,
+          "filings_landed": 3,
+          "margins": [
+            {
+              "breached": false,
+              "clock": "DORA major-incident (72h)",
+              "correlation_id": "inc-8842:dora",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "dora"
+            },
+            {
+              "breached": false,
+              "clock": "NIS2 full notification (72h)",
+              "correlation_id": "inc-8842:nis2",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "nis2"
+            },
+            {
+              "breached": false,
+              "clock": "SEC 8-K (4 business days)",
+              "correlation_id": "inc-8842:sec",
+              "deadline_utc": "2026-06-23T23:59:59+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 187.0,
+              "regime": "sec"
+            }
+          ],
+          "min_margin_hours": 69.23,
+          "mode": "chaos",
+          "name": "run-inc-8842-chaos.jsonl",
+          "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+          "throughput": {
+            "diff_conflicts": 0,
+            "drafted": 3,
+            "filings": 3,
+            "released": 3,
+            "suppressed": 0
+          }
+        },
+        {
+          "breaches": 0,
+          "filings_landed": 3,
+          "margins": [
+            {
+              "breached": false,
+              "clock": "DORA major-incident (72h)",
+              "correlation_id": "inc-8842:dora",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "dora"
+            },
+            {
+              "breached": false,
+              "clock": "NIS2 full notification (72h)",
+              "correlation_id": "inc-8842:nis2",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "nis2"
+            },
+            {
+              "breached": false,
+              "clock": "SEC 8-K (4 business days)",
+              "correlation_id": "inc-8842:sec",
+              "deadline_utc": "2026-06-23T23:59:59+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 187.0,
+              "regime": "sec"
+            }
+          ],
+          "min_margin_hours": 69.23,
+          "mode": "inject_contradiction",
+          "name": "run-inc-8842-inject_contradiction.jsonl",
+          "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+          "throughput": {
+            "diff_conflicts": 3,
+            "drafted": 3,
+            "filings": 3,
+            "released": 3,
+            "suppressed": 0
+          }
+        },
+        {
+          "breaches": 0,
+          "filings_landed": 3,
+          "margins": [
+            {
+              "breached": false,
+              "clock": "DORA major-incident (72h)",
+              "correlation_id": "inc-8842:dora",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "dora"
+            },
+            {
+              "breached": false,
+              "clock": "NIS2 full notification (72h)",
+              "correlation_id": "inc-8842:nis2",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "nis2"
+            },
+            {
+              "breached": false,
+              "clock": "SEC 8-K (4 business days)",
+              "correlation_id": "inc-8842:sec",
+              "deadline_utc": "2026-06-23T23:59:59+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 187.0,
+              "regime": "sec"
+            }
+          ],
+          "min_margin_hours": 69.23,
+          "mode": "normal",
+          "name": "run-inc-8842-normal.jsonl",
+          "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+          "throughput": {
+            "diff_conflicts": 0,
+            "drafted": 3,
+            "filings": 3,
+            "released": 3,
+            "suppressed": 0
+          }
+        },
+        {
+          "breaches": 0,
+          "filings_landed": 4,
+          "margins": [
+            {
+              "breached": false,
+              "clock": "DORA major-incident (72h)",
+              "correlation_id": "inc-8842:dora",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "dora"
+            },
+            {
+              "breached": false,
+              "clock": "NIS2 full notification (72h)",
+              "correlation_id": "inc-8842:nis2",
+              "deadline_utc": "2026-06-19T02:14:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 69.23,
+              "regime": "nis2"
+            },
+            {
+              "breached": false,
+              "clock": "UK ICO / GDPR personal-data breach (72h)",
+              "correlation_id": "inc-8842:uk",
+              "deadline_utc": "2026-06-19T03:40:00+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 70.67,
+              "regime": "uk"
+            },
+            {
+              "breached": false,
+              "clock": "SEC 8-K (4 business days)",
+              "correlation_id": "inc-8842:sec",
+              "deadline_utc": "2026-06-23T23:59:59+00:00",
+              "filed_utc": "2026-06-16T05:00:00+00:00",
+              "margin_hours": 187.0,
+              "regime": "sec"
+            }
+          ],
+          "min_margin_hours": 69.23,
+          "mode": "submit",
+          "name": "run-inc-8842-submit.jsonl",
+          "nearest_deadline_utc": "2026-06-17T02:14:00+00:00",
+          "throughput": {
+            "diff_conflicts": 0,
+            "drafted": 4,
+            "filings": 4,
+            "released": 4,
+            "suppressed": 0
+          }
+        }
+      ],
+      "throughput_diff_conflicts": 3,
+      "throughput_drafted": 16,
+      "throughput_filings": 16,
+      "throughput_released": 16,
+      "throughput_suppressed": 0,
+      "total_breaches": 0,
+      "total_filings": 16,
+      "worst_margin_clock": "DORA major-incident (72h)",
+      "worst_margin_hours": 69.23,
+      "worst_margin_run": "run-inc-8842-amendment.jsonl"
+    }
   },
-  "manifest_sha256": "7adba58f542e59cf587f721b14dd40f98345715e7d08485472d06e8a5a4b141c",
+  "manifest_sha256": "b9278f032a960c4a779b352632c7c1fd6009f09e8c2adccbddc8692036b6ba59",
   "signature": {
     "algorithm": "ed25519",
     "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2.",
     "demo_key": true,
     "detached": true,
     "insights_sha256": "30f50c437fc493dcd5418e571af1aeabeef3fdeace861c4f3348c9d6bccbc7ba",
-    "manifest_sha256": "7adba58f542e59cf587f721b14dd40f98345715e7d08485472d06e8a5a4b141c",
+    "manifest_sha256": "b9278f032a960c4a779b352632c7c1fd6009f09e8c2adccbddc8692036b6ba59",
     "portfolio_root": "ba7b416fb6fa0cc905fb27b941a9162dd5107adc027d175a4ee0dc4cac61499d",
     "pubkey_fingerprint": "46e30f5bff8c221d",
     "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
     "run_count": 5,
-    "signature": "cbc80a2d722353b356626fb894180826d7485a1a1df5a31ab210c6c180e028cb9c75306fda4dffcb647920d1fce388948dcbc540fc8d50c69a69cdbcbcbfd609",
-    "signed_payload": "canonical_json{insights_sha256,portfolio_root,run_count}",
-    "signer": "Deadline Warden"
+    "signature": "bb9bfa212235640910bb43f8aaea4e4ee0cd866b2948230664cc787b78c68667732ff33741f4a10dacaaf8851fbed15ad405106cd2f7d5c3d69d96be7063b809",
+    "signed_payload": "canonical_json{insights_sha256,portfolio_root,run_count,sla_sha256}",
+    "signer": "Deadline Warden",
+    "sla_sha256": "3890a21a697bf68af5caeed0132ca0393f225c7e19e2cddf1400c16233b16afe"
   }
 }

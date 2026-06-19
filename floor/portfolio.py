@@ -408,6 +408,373 @@ def insights_digest(insights: PortfolioInsights) -> str:
     return insights_dict_digest(insights_dict(insights))
 
 
+# ---------------------------------------------------------------------------
+# Portfolio SLA / throughput roll-up (E6.4). A standing operations center is
+# judged on its SLA, not on any single deadline: across EVERY sealed incident,
+# the worst-case and median statutory margin, how many filings landed inside a
+# near-breach window, how many runs ever breached, and the nearest deadline across
+# the whole fleet. Every number is a pure read of the `clock_started` /
+# `clock_stopped` entries ALREADY in the sealed run logs (the exact deadline and
+# the exact filed-at instant), folded with the same deadline-minus-filed math the
+# packet operability block renders. We never re-enter the clock engine and never
+# call now(): same captures, same rollup on every platform. The SLA verdict is
+# folded into the RANK 1 signed manifest, so editing any rollup number breaks the
+# portfolio signature.
+# ---------------------------------------------------------------------------
+
+# The near-breach window an operations center watches: a filing that landed with
+# less than this many hours of statutory margin is "near breach", a filing that
+# landed past its deadline is a breach. 24h is the tightest statutory step in the
+# regime set (the NIS2 early warning), so it is the natural near-breach band.
+NEAR_BREACH_HOURS = 24.0
+
+
+def _hours_between(deadline_iso: str, filed_iso: str) -> float:
+    """Signed hours from filed-at to deadline (deadline minus filed-at), rounded to
+    two decimals, the same recipe floor.telemetry uses for a stable receipt.
+    Positive means statutory time remained at filing (margin); negative means the
+    deadline was already past (a breach). Pure arithmetic over the two instants
+    already recorded in the sealed log; no clock engine, no now()."""
+    from datetime import datetime
+
+    delta = datetime.fromisoformat(deadline_iso) - datetime.fromisoformat(filed_iso)
+    return round(delta.total_seconds() / 3600.0, 2)
+
+
+@dataclass(frozen=True)
+class FiledMargin:
+    """One filed statutory clock and the margin it landed with, read straight from
+    the sealed log. `clock` and `correlation_id` identify the deadline; `regime` is
+    the branch parsed from the correlation id; `deadline_utc` is the recorded
+    deadline; `filed_utc` is the recorded stop instant; `margin_hours` is
+    deadline minus filed-at; `breached` is True when the margin is negative. Every
+    field derives from a `clock_started` / `clock_stopped` pair in the sealed log."""
+    run: str
+    clock: str
+    correlation_id: str
+    regime: str
+    deadline_utc: str
+    filed_utc: str
+    margin_hours: float
+    breached: bool
+
+
+def _run_filed_margins(run_name: str, entries: list[dict]) -> list[FiledMargin]:
+    """The filed-clock margins for one run, folded from its `clock_started` /
+    `clock_stopped` entries. A `clock_started` carries the clock name and the
+    statutory deadline; a matching `clock_stopped` (same correlation id) carries
+    the filed-at instant. A clock that started but never stopped never filed and so
+    contributes no margin (it is omitted, never a fabricated zero), mirroring the
+    packet operability block. Deterministic: sorted by deadline then correlation id
+    so the fold reads in statutory order on every platform."""
+    started: dict[str, dict] = {}
+    stopped: dict[str, str] = {}
+    for entry in entries:
+        payload = entry.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        etype = entry.get("type")
+        if etype == "clock_started":
+            corr = str(payload.get("correlation_id", ""))
+            if corr:
+                started[corr] = payload
+        elif etype == "clock_stopped":
+            corr = str(payload.get("correlation_id", ""))
+            ts = payload.get("ts")
+            if corr and isinstance(ts, str):
+                stopped[corr] = ts
+    margins: list[FiledMargin] = []
+    for corr, start in started.items():
+        if corr not in stopped:
+            continue
+        deadline = str(start.get("deadline", ""))
+        filed = stopped[corr]
+        if not deadline or not filed:
+            continue
+        margin = _hours_between(deadline, filed)
+        margins.append(FiledMargin(
+            run=run_name, clock=str(start.get("clock", "")),
+            correlation_id=corr, regime=_regime_of(corr),
+            deadline_utc=deadline, filed_utc=filed,
+            margin_hours=margin, breached=margin < 0))
+    margins.sort(key=lambda m: (m.deadline_utc, m.correlation_id))
+    return margins
+
+
+def _run_started_deadlines(entries: list[dict]) -> list[str]:
+    """Every statutory deadline a run STARTED a clock on (filed or not), so the
+    fleet nearest-deadline is computed over all live clocks, not only filed ones.
+    Sorted ascending; deterministic."""
+    deadlines: list[str] = []
+    for entry in entries:
+        if entry.get("type") != "clock_started":
+            continue
+        payload = entry.get("payload", {})
+        if isinstance(payload, dict):
+            deadline = payload.get("deadline")
+            if isinstance(deadline, str) and deadline:
+                deadlines.append(deadline)
+    return sorted(deadlines)
+
+
+def _run_throughput(entries: list[dict]) -> dict:
+    """The throughput counts for one run, folded from its protocol events, matching
+    the packet operability throughput block exactly: `drafted` is the number of
+    distinct regimes that started drafting, `released` (= `filings`) is the number
+    of distinct regimes that reached human release, `suppressed` is the count of
+    terminal suppress dispositions, and `diff_conflicts` is the count of
+    contradiction-veto (`diff_blocked`) events. Pure counting over the sealed log;
+    no LLM, no now()."""
+    drafted: set[str] = set()
+    released: set[str] = set()
+    suppressed = 0
+    diff_conflicts = 0
+    for entry in entries:
+        if entry.get("type") != "protocol_event":
+            continue
+        payload = entry.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        event = payload.get("event")
+        corr = str(payload.get("correlation_id", ""))
+        regime = _regime_of(corr) or corr
+        if event == "draft_started" and regime:
+            drafted.add(regime)
+        elif event == "human_released" and regime:
+            released.add(regime)
+        elif event == "suppress":
+            suppressed += 1
+        elif event == "diff_blocked":
+            diff_conflicts += 1
+    return {
+        "drafted": len(drafted),
+        "filings": len(released),
+        "released": len(released),
+        "suppressed": suppressed,
+        "diff_conflicts": diff_conflicts,
+    }
+
+
+@dataclass(frozen=True)
+class RunSla:
+    """The SLA / throughput summary for one sealed run, folded from its log.
+
+    `name` is the run-log file name; `mode` is the scenario branch parsed from the
+    name; `margins` are the filed-clock margins; `throughput` is the per-run count
+    block; `filings_landed` is the number of clocks that filed; `min_margin_hours`
+    is the tightest margin any filing landed inside (None when nothing filed);
+    `breaches` counts clocks that filed past their deadline; `nearest_deadline_utc`
+    is the earliest deadline any clock STARTED on (filed or not). Every value is a
+    deterministic read of the sealed log."""
+    name: str
+    mode: str
+    margins: list[FiledMargin]
+    throughput: dict
+    filings_landed: int
+    min_margin_hours: float | None
+    breaches: int
+    nearest_deadline_utc: str | None
+
+
+def _mode_of(run_name: str) -> str:
+    """The scenario mode carried in a run-log file name. A capture is named
+    `run-<incident>-<mode>.jsonl` (e.g. `run-inc-8842-chaos.jsonl`), so the mode is
+    the final dash-delimited token before the `.jsonl` suffix. A name that does not
+    match that shape yields the empty string."""
+    stem = run_name
+    for suffix in (".jsonl",):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    if "-" not in stem:
+        return ""
+    return stem.rsplit("-", 1)[1]
+
+
+def _run_sla(run: SealedRun) -> RunSla:
+    """Fold one run's SLA / throughput summary from its sealed log entries."""
+    entries = _entries_of(_canonical_jsonl(run.log_path))
+    margins = _run_filed_margins(run.name, entries)
+    throughput = _run_throughput(entries)
+    filed = [m.margin_hours for m in margins]
+    started = _run_started_deadlines(entries)
+    return RunSla(
+        name=run.name,
+        mode=_mode_of(run.name),
+        margins=margins,
+        throughput=throughput,
+        filings_landed=len(margins),
+        min_margin_hours=min(filed) if filed else None,
+        breaches=sum(1 for m in margins if m.breached),
+        nearest_deadline_utc=started[0] if started else None,
+    )
+
+
+def _median(values: list[float]) -> float | None:
+    """The median of a list of floats, rounded to two decimals for a stable
+    receipt. The mean of the two middle values on an even-length list. None on an
+    empty list. Pure and deterministic."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    n = len(ordered)
+    mid = n // 2
+    if n % 2 == 1:
+        return round(ordered[mid], 2)
+    return round((ordered[mid - 1] + ordered[mid]) / 2.0, 2)
+
+
+@dataclass(frozen=True)
+class PortfolioSla:
+    """The fleet SLA / throughput roll-up across every attested sealed run, no LLM.
+
+    `per_run` is the SORTED per-run SLA summary; `total_filings` is the count of
+    filed clocks across the fleet; `total_breaches` is how many filed past their
+    deadline; `worst_margin_hours` is the tightest margin any filing in the fleet
+    landed inside, and `worst_margin_run` / `worst_margin_clock` name where it
+    landed; `median_margin_hours` is the median filed margin across the fleet;
+    `near_breach_count` is how many filings landed inside the near-breach window
+    (margin under NEAR_BREACH_HOURS but not breached); `nearest_deadline_utc` is
+    the single earliest deadline any clock started on across all runs;
+    `ever_breached` is the fleet-level "did we EVER breach"; the `throughput_*`
+    fields aggregate the per-run counts. Every value is a pure fold over the sealed
+    clock and protocol entries, so it is safe to fold next to the signed root."""
+    per_run: list[RunSla]
+    total_filings: int
+    total_breaches: int
+    worst_margin_hours: float | None
+    worst_margin_run: str
+    worst_margin_clock: str
+    median_margin_hours: float | None
+    near_breach_count: int
+    near_breach_hours: float
+    nearest_deadline_utc: str | None
+    ever_breached: bool
+    throughput_drafted: int
+    throughput_filings: int
+    throughput_released: int
+    throughput_suppressed: int
+    throughput_diff_conflicts: int
+
+
+def portfolio_sla(runs: list[SealedRun]) -> PortfolioSla:
+    """Fold the fleet SLA / throughput roll-up over the ATTESTED sealed runs.
+
+    Only runs that passed their per-run signature are folded (a flagged run never
+    counts), so the rollup attests the same verified set as the Merkle root. For
+    each run the filed-clock margins are read straight from its `clock_started` /
+    `clock_stopped` entries (deadline minus filed-at, the same math the packet
+    renders), the throughput counts are folded from its protocol events, and the
+    nearest started deadline is taken. The fleet aggregates then follow: worst-case
+    margin (and which run/clock owns it), median margin, near-breach count, breach
+    count, the single nearest deadline across the fleet, and the summed throughput.
+    Pure and deterministic: same captures, same rollup, no now(), no LLM."""
+    attested = sorted(
+        (r for r in runs if r.signature_valid), key=lambda r: r.name)
+    per_run = [_run_sla(r) for r in attested]
+
+    all_margins: list[FiledMargin] = []
+    for run_sla in per_run:
+        all_margins.extend(run_sla.margins)
+
+    worst: FiledMargin | None = None
+    for margin in all_margins:
+        if worst is None or margin.margin_hours < worst.margin_hours:
+            worst = margin
+
+    nearest_candidates = sorted(
+        r.nearest_deadline_utc for r in per_run
+        if r.nearest_deadline_utc is not None)
+
+    return PortfolioSla(
+        per_run=per_run,
+        total_filings=len(all_margins),
+        total_breaches=sum(1 for m in all_margins if m.breached),
+        worst_margin_hours=worst.margin_hours if worst else None,
+        worst_margin_run=worst.run if worst else "",
+        worst_margin_clock=worst.clock if worst else "",
+        median_margin_hours=_median([m.margin_hours for m in all_margins]),
+        near_breach_count=sum(
+            1 for m in all_margins
+            if not m.breached and m.margin_hours < NEAR_BREACH_HOURS),
+        near_breach_hours=NEAR_BREACH_HOURS,
+        nearest_deadline_utc=nearest_candidates[0] if nearest_candidates else None,
+        ever_breached=any(m.breached for m in all_margins),
+        throughput_drafted=sum(r.throughput["drafted"] for r in per_run),
+        throughput_filings=sum(r.throughput["filings"] for r in per_run),
+        throughput_released=sum(r.throughput["released"] for r in per_run),
+        throughput_suppressed=sum(r.throughput["suppressed"] for r in per_run),
+        throughput_diff_conflicts=sum(
+            r.throughput["diff_conflicts"] for r in per_run),
+    )
+
+
+def sla_dict(sla: PortfolioSla) -> dict:
+    """The canonical, sorted-key dict the SLA rollup serializes to inside the signed
+    manifest. Mirrors the manifest's own canonicalization so a verifier (Python or
+    browser) rebuilds identical bytes and the same digest. Every value is a count, a
+    margin, or a sorted per-run row; no field carries generated prose."""
+    return {
+        "near_breach_count": sla.near_breach_count,
+        "near_breach_hours": sla.near_breach_hours,
+        "ever_breached": sla.ever_breached,
+        "median_margin_hours": sla.median_margin_hours,
+        "nearest_deadline_utc": sla.nearest_deadline_utc,
+        "per_run": [
+            {
+                "name": r.name,
+                "mode": r.mode,
+                "filings_landed": r.filings_landed,
+                "min_margin_hours": r.min_margin_hours,
+                "breaches": r.breaches,
+                "nearest_deadline_utc": r.nearest_deadline_utc,
+                "throughput": dict(sorted(r.throughput.items())),
+                "margins": [
+                    {
+                        "clock": m.clock,
+                        "correlation_id": m.correlation_id,
+                        "regime": m.regime,
+                        "deadline_utc": m.deadline_utc,
+                        "filed_utc": m.filed_utc,
+                        "margin_hours": m.margin_hours,
+                        "breached": m.breached,
+                    }
+                    for m in r.margins
+                ],
+            }
+            for r in sla.per_run
+        ],
+        "total_breaches": sla.total_breaches,
+        "total_filings": sla.total_filings,
+        "throughput_diff_conflicts": sla.throughput_diff_conflicts,
+        "throughput_drafted": sla.throughput_drafted,
+        "throughput_filings": sla.throughput_filings,
+        "throughput_released": sla.throughput_released,
+        "throughput_suppressed": sla.throughput_suppressed,
+        "worst_margin_clock": sla.worst_margin_clock,
+        "worst_margin_hours": sla.worst_margin_hours,
+        "worst_margin_run": sla.worst_margin_run,
+    }
+
+
+def sla_dict_digest(sla_obj: dict) -> str:
+    """The sha256 of a canonical SLA DICT (sorted keys, no whitespace). Used by a
+    verifier that holds the stored rollup straight from a manifest, so it can
+    recompute the exact digest the signature folded in without rebuilding a
+    `PortfolioSla`."""
+    payload = json.dumps(
+        sla_obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def sla_digest(sla: PortfolioSla) -> str:
+    """The sha256 of the canonical SLA bytes: the value the PORTFOLIO signature
+    folds in alongside the root, run count, and insights, so editing any rollup
+    number moves this digest, which moves the signed payload, which breaks the
+    signature."""
+    return sla_dict_digest(sla_dict(sla))
+
+
 def _canonical_manifest(runs: list[SealedRun]) -> dict:
     """The canonical, sorted manifest the portfolio signature is taken over.
 
@@ -420,11 +787,13 @@ def _canonical_manifest(runs: list[SealedRun]) -> dict:
         (r for r in runs if r.signature_valid), key=lambda r: r.name)
     heads = sorted(r.chain_head for r in attested)
     insights = cross_incident_patterns(runs)
+    sla = portfolio_sla(runs)
     return {
         "portfolio_version": "1",
         "run_count": len(attested),
         "portfolio_root": merkle_root(heads),
         "insights": insights_dict(insights),
+        "sla": sla_dict(sla),
         "runs": [
             {"name": r.name, "sha256": r.sha256, "chain_head": r.chain_head}
             for r in attested
@@ -467,6 +836,8 @@ class PortfolioAttestation:
     manifest_sha256: str
     insights: PortfolioInsights
     insights_sha256: str
+    sla: PortfolioSla
+    sla_sha256: str
     attested: list[SealedRun]
     flagged: list[SealedRun]
 
@@ -477,13 +848,17 @@ def attest_portfolio(runs: list[SealedRun]) -> PortfolioAttestation:
     Folds a Merkle root over the SORTED chain heads of every run that passed its
     per-run signature, alongside a canonical sorted manifest. Runs that failed
     verification are recorded in `flagged` and excluded from the root, never
-    silently included. Pure and deterministic: the same set of sealed runs yields
-    the same root and manifest digest on every build and platform."""
+    silently included. The cross-incident insights and the fleet SLA / throughput
+    rollup are folded into the manifest, and their digests into the signed payload,
+    so editing any finding or any rollup number breaks the portfolio signature.
+    Pure and deterministic: the same set of sealed runs yields the same root and
+    manifest digest on every build and platform."""
     attested = sorted(
         (r for r in runs if r.signature_valid), key=lambda r: r.name)
     flagged = sorted(
         (r for r in runs if not r.signature_valid), key=lambda r: r.name)
     insights = cross_incident_patterns(runs)
+    sla = portfolio_sla(runs)
     manifest = _canonical_manifest(runs)
     return PortfolioAttestation(
         manifest=manifest,
@@ -492,6 +867,8 @@ def attest_portfolio(runs: list[SealedRun]) -> PortfolioAttestation:
         manifest_sha256=manifest_digest(manifest),
         insights=insights,
         insights_sha256=insights_digest(insights),
+        sla=sla,
+        sla_sha256=sla_digest(sla),
         attested=attested,
         flagged=flagged,
     )

@@ -1530,6 +1530,105 @@ async function verifyWhatIf(art, pill, detail) {
   }
 }
 
+// ---- E6.4 fleet SLA / throughput board -------------------------------------
+// Render the fleet-wide SLA / throughput rollup from the signed portfolio
+// manifest (web/data/portfolio-attestation.json). Pure presentation of numbers
+// the no-AI rollup already folded and signed; this panel never recomputes a
+// margin, it only displays the signed rollup so a judge sees the standing-ops view
+// across every sealed incident at once.
+function fmtMarginHours(h) {
+  if (h === null || h === undefined) return "n/a";
+  return `${Number(h).toFixed(2)}h`;
+}
+
+function fleetStat(label, value, cls) {
+  const stat = el("div", "fleet-stat" + (cls ? " " + cls : ""));
+  stat.appendChild(el("span", "fleet-stat-value", value));
+  stat.appendChild(el("span", "fleet-stat-label", label));
+  return stat;
+}
+
+async function renderFleet() {
+  const summary = $("#fleet-summary");
+  const rows = $("#fleet-rows");
+  const receipt = $("#fleet-receipt");
+  const badge = $("#fleet-verdict-badge");
+  if (!summary || !rows) return;
+  let doc;
+  try {
+    doc = await fetch("data/portfolio-attestation.json").then((r) => r.json());
+  } catch (e) {
+    summary.appendChild(el("p", "small muted",
+      "Fleet rollup unavailable (run py scripts/attest_portfolio.py)."));
+    return;
+  }
+  const manifest = doc.manifest || {};
+  const sla = manifest.sla || {};
+  const perRun = Array.isArray(sla.per_run) ? sla.per_run : [];
+
+  summary.innerHTML = "";
+  summary.appendChild(fleetStat("incidents in the fleet",
+    fmtNum(manifest.run_count || perRun.length)));
+  summary.appendChild(fleetStat("filings landed", fmtNum(sla.total_filings || 0)));
+  summary.appendChild(fleetStat("worst-case statutory margin",
+    fmtMarginHours(sla.worst_margin_hours),
+    sla.ever_breached ? "danger" : "ok"));
+  summary.appendChild(fleetStat("median statutory margin",
+    fmtMarginHours(sla.median_margin_hours)));
+  summary.appendChild(fleetStat(
+    `filings within ${Number(sla.near_breach_hours || 0).toFixed(0)}h of breach`,
+    fmtNum(sla.near_breach_count || 0),
+    (sla.near_breach_count || 0) > 0 ? "warn" : ""));
+  summary.appendChild(fleetStat("breaches across the fleet",
+    fmtNum(sla.total_breaches || 0),
+    sla.ever_breached ? "danger" : "ok"));
+
+  if (badge) {
+    if (sla.ever_breached) {
+      badge.className = "badge red";
+      badge.textContent = "breach on record";
+    } else {
+      badge.className = "badge green";
+      badge.textContent = "no breach, signed";
+    }
+  }
+
+  rows.innerHTML = "";
+  for (const run of perRun) {
+    const tr = el("tr");
+    const label = (run.mode || run.name || "").replace(/_/g, " ");
+    tr.appendChild(el("td", "fleet-run-name", label));
+    tr.appendChild(el("td", null, fmtNum(run.filings_landed || 0)));
+    const marginTd = el("td", null, fmtMarginHours(run.min_margin_hours));
+    if ((run.breaches || 0) > 0) marginTd.classList.add("fleet-cell-danger");
+    tr.appendChild(marginTd);
+    const breachTd = el("td", null, fmtNum(run.breaches || 0));
+    if ((run.breaches || 0) > 0) breachTd.classList.add("fleet-cell-danger");
+    tr.appendChild(breachTd);
+    const tp = run.throughput || {};
+    tr.appendChild(el("td", null, fmtNum(tp.drafted || 0)));
+    tr.appendChild(el("td", null, fmtNum(tp.released || 0)));
+    tr.appendChild(el("td", null, fmtNum(tp.suppressed || 0)));
+    tr.appendChild(el("td", null, fmtNum(tp.diff_conflicts || 0)));
+    rows.appendChild(tr);
+  }
+
+  if (receipt) {
+    receipt.innerHTML = "";
+    const nearest = sla.nearest_deadline_utc
+      ? `nearest deadline across the fleet ${sla.nearest_deadline_utc}` : "";
+    const worst = (sla.worst_margin_hours !== null
+        && sla.worst_margin_hours !== undefined && sla.worst_margin_run)
+      ? `worst case in ${(sla.worst_margin_run || "").replace(/_/g, " ")} on ${sla.worst_margin_clock}`
+      : "";
+    const sig = doc.signature || {};
+    const line = [nearest, worst].filter(Boolean).join(" | ");
+    if (line) receipt.appendChild(el("div", null, line));
+    receipt.appendChild(el("code", null,
+      `${sig.signed_payload || "portfolio rollup"}  fp ${sig.pubkey_fingerprint || "--"}`));
+  }
+}
+
 async function init() {
   reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1551,6 +1650,7 @@ async function init() {
   renderScenarioCards(def.id);
   await loadScenario(def);
   await renderWhatIf();
+  await renderFleet();
 
   $("#play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
   $("#restart").addEventListener("click", () => { stopPlay(); revealedBeats = new Set(); hideBeatBanner(); setCursor(0); });

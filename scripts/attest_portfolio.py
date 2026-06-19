@@ -38,11 +38,14 @@ if str(REPO_ROOT) not in sys.path:
 from floor.portfolio import (  # noqa: E402
     PortfolioAttestation,
     PortfolioInsights,
+    PortfolioSla,
     attest_portfolio,
     insights_dict,
     insights_dict_digest,
     load_portfolio,
     manifest_digest,
+    sla_dict,
+    sla_dict_digest,
 )
 from warden.portfolio_signing import (  # noqa: E402
     sign_portfolio,
@@ -105,6 +108,46 @@ def _print_insights(insights: PortfolioInsights) -> None:
     print()
 
 
+def _print_sla(sla: PortfolioSla) -> None:
+    """Print the fleet SLA / throughput roll-up folded from the sealed runs (E6.4).
+
+    The standing-operations-center view: per-run filings and tightest margin, then
+    the fleet aggregates a CISO is judged on (worst-case and median statutory
+    margin, near-breach and breach counts, the nearest deadline across the whole
+    fleet, and the aggregated throughput). Every number is a pure read of the
+    sealed clock and protocol entries, never a now() or an estimate."""
+    print("Fleet SLA / throughput roll-up (folded from the sealed clocks, zero LLM):")
+    name_w = max((len(r.name) for r in sla.per_run), default=4)
+    for run in sla.per_run:
+        min_margin = ("n/a" if run.min_margin_hours is None
+                      else f"{run.min_margin_hours:.2f}h")
+        tp = run.throughput
+        print(f"  {run.name.ljust(name_w)}  filings {run.filings_landed} "
+              f"min-margin {min_margin}  breaches {run.breaches}  "
+              f"drafted {tp['drafted']} released {tp['released']} "
+              f"suppressed {tp['suppressed']} diff-conflicts {tp['diff_conflicts']}")
+    worst = ("n/a" if sla.worst_margin_hours is None
+             else f"{sla.worst_margin_hours:.2f}h")
+    median = ("n/a" if sla.median_margin_hours is None
+              else f"{sla.median_margin_hours:.2f}h")
+    print("  ----")
+    print(f"  Filings across the fleet     : {sla.total_filings}")
+    print(f"  Worst-case statutory margin  : {worst}"
+          + (f" (run {sla.worst_margin_run}, clock {sla.worst_margin_clock!r})"
+             if sla.worst_margin_hours is not None else ""))
+    print(f"  Median statutory margin      : {median}")
+    print(f"  Filings within {sla.near_breach_hours:.0f}h of breach : "
+          f"{sla.near_breach_count}")
+    print(f"  Breaches across the fleet    : {sla.total_breaches}")
+    print(f"  Ever breached                : {'YES' if sla.ever_breached else 'no'}")
+    print(f"  Nearest deadline (fleet)     : "
+          f"{sla.nearest_deadline_utc or '(none)'}")
+    print(f"  Throughput drafted/released/suppressed : "
+          f"{sla.throughput_drafted}/{sla.throughput_released}/"
+          f"{sla.throughput_suppressed}")
+    print()
+
+
 def build(data_dir: Path, out_path: Path) -> int:
     """Build the signed portfolio manifest and write it to its sidecar."""
     print("=" * 78)
@@ -114,10 +157,11 @@ def build(data_dir: Path, out_path: Path) -> int:
     attestation = attest_portfolio(runs)
     _print_runs(attestation)
     _print_insights(attestation.insights)
+    _print_sla(attestation.sla)
 
     signature = sign_portfolio(
         attestation.root, attestation.run_count, attestation.manifest_sha256,
-        attestation.insights_sha256)
+        attestation.insights_sha256, attestation.sla_sha256)
     document = {
         "manifest": attestation.manifest,
         "manifest_sha256": attestation.manifest_sha256,
@@ -160,6 +204,7 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
     stored_runs = {r["name"]: r for r in stored_manifest.get("runs", [])}
     disk_runs = {r.name: r for r in recomputed.attested}
     stored_insights = stored_manifest.get("insights", {}) or {}
+    stored_sla = stored_manifest.get("sla", {}) or {}
 
     print(f"Manifest       : {manifest_path}")
     print(f"Stored root    : {stored_manifest.get('portfolio_root', '(absent)')}")
@@ -172,6 +217,7 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
         print(f"  {name.ljust(name_w)}  head {disk_runs[name].chain_head}")
     print()
     _print_insights(recomputed.insights)
+    _print_sla(recomputed.sla)
 
     failures: list[str] = []
 
@@ -202,19 +248,31 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
             "INSIGHTS MISMATCH: the cross-incident findings in the manifest do "
             "not re-derive from the sealed logs")
 
+    # The fleet SLA / throughput rollup re-derived from disk must match the stored
+    # rollup (an edited margin, breach count, or throughput number no longer
+    # re-derives from the sealed clock and protocol entries).
+    disk_sla = sla_dict(recomputed.sla)
+    if disk_sla != stored_sla:
+        failures.append(
+            "SLA MISMATCH: the fleet SLA / throughput rollup in the manifest does "
+            "not re-derive from the sealed logs")
+
     # The manifest the signature commits to must canonicalize to the stored digest.
     recomputed_manifest_digest = manifest_digest(stored_manifest)
     if recomputed_manifest_digest != document.get("manifest_sha256"):
         failures.append("MANIFEST DIGEST MISMATCH: the stored manifest was edited")
 
-    # The portfolio signature must verify over the STORED root, count, AND the
-    # digest of the STORED findings (so editing a finding breaks the signature
-    # directly, not only the manifest digest cross-check).
+    # The portfolio signature must verify over the STORED root, count, the digest
+    # of the STORED findings, AND the digest of the STORED SLA rollup (so editing a
+    # finding or a rollup number breaks the signature directly, not only the
+    # manifest digest cross-check).
     stored_insights_digest = insights_dict_digest(stored_insights)
+    stored_sla_digest = sla_dict_digest(stored_sla)
     sig_ok = verify_portfolio(
         stored_manifest.get("portfolio_root", ""),
         stored_manifest.get("run_count", -1),
         stored_insights_digest,
+        stored_sla_digest,
         signature)
     if not sig_ok:
         failures.append("SIGNATURE INVALID: the portfolio signature does not verify")
@@ -231,8 +289,9 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
 
     print("VALID. The signed Merkle root re-derives from every sealed run on disk,")
     print("the run set matches exactly (no run dropped, none unattested), the")
-    print("cross-incident findings re-derive from the sealed logs, and the")
-    print("portfolio signature verifies under the committed public key.")
+    print("cross-incident findings and the fleet SLA / throughput rollup re-derive")
+    print("from the sealed logs, and the portfolio signature verifies under the")
+    print("committed public key.")
     print(f"Note: {DEMO_KEY_CAVEAT}")
     print("=" * 78)
     return 0

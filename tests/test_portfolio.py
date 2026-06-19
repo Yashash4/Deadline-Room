@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 from floor.portfolio import (
+    NEAR_BREACH_HOURS,
     SealedRun,
     attest_portfolio,
     cross_incident_patterns,
@@ -25,6 +26,9 @@ from floor.portfolio import (
     insights_dict_digest,
     load_portfolio,
     merkle_root,
+    portfolio_sla,
+    sla_dict,
+    sla_dict_digest,
 )
 from scripts.attest_portfolio import build, verify
 from warden.portfolio_signing import sign_portfolio, verify_portfolio
@@ -112,11 +116,13 @@ def test_one_byte_edit_flips_head_moves_root_breaks_signature(tmp_path):
     # Sign the ORIGINAL root, then prove that signature does NOT verify the new
     # post-tamper root: a one-byte run edit breaks the portfolio signature.
     record = sign_portfolio(
-        base.root, base.run_count, base.manifest_sha256, base.insights_sha256)
+        base.root, base.run_count, base.manifest_sha256, base.insights_sha256,
+        base.sla_sha256)
     assert verify_portfolio(
-        base.root, base.run_count, base.insights_sha256, record)
+        base.root, base.run_count, base.insights_sha256, base.sla_sha256, record)
     assert not verify_portfolio(
-        after.root, after.run_count, after.insights_sha256, record)
+        after.root, after.run_count, after.insights_sha256, after.sla_sha256,
+        record)
 
 
 def test_dropped_run_is_detected_by_verifier(tmp_path, capsys):
@@ -311,9 +317,10 @@ def test_insight_is_inside_the_signed_manifest_editing_breaks_signature():
         "incident_start_utc": 3}
 
     record = sign_portfolio(
-        att.root, att.run_count, att.manifest_sha256, att.insights_sha256)
+        att.root, att.run_count, att.manifest_sha256, att.insights_sha256,
+        att.sla_sha256)
     assert verify_portfolio(
-        att.root, att.run_count, att.insights_sha256, record)
+        att.root, att.run_count, att.insights_sha256, att.sla_sha256, record)
 
     # Edit one finding: flip the veto count from 3 to 4. The insights digest moves,
     # so the signature no longer verifies over the edited findings.
@@ -323,7 +330,7 @@ def test_insight_is_inside_the_signed_manifest_editing_breaks_signature():
     tampered_digest = insights_dict_digest(tampered)
     assert tampered_digest != att.insights_sha256
     assert not verify_portfolio(
-        att.root, att.run_count, tampered_digest, record)
+        att.root, att.run_count, tampered_digest, att.sla_sha256, record)
 
 
 def test_edited_finding_in_manifest_is_detected_by_verifier(tmp_path, capsys):
@@ -366,6 +373,294 @@ def test_insights_fold_leaves_sealed_captures_and_replay_unchanged():
     att = attest_portfolio(load_portfolio(DATA))
     # The insight fold ran (it sees the three-time veto on the captures) ...
     assert att.insights.veto_field_recurrence == {"incident_start_utc": 3}
+    after = snapshot()
+    assert before == after, "the sealed per-run captures must not change"
+
+    import hashlib
+    for name, sha_prefix in FROZEN_SHAS.items():
+        jsonl = (DATA / name).read_text(encoding="utf-8")
+        sha = hashlib.sha256(jsonl.encode("utf-8")).hexdigest()
+        assert sha.startswith(sha_prefix), f"{name} sha drifted: {sha}"
+
+
+# ---------------------------------------------------------------------------
+# E6.4 portfolio SLA / throughput roll-up. The fleet view a standing operations
+# center is judged on: across EVERY sealed run, the worst-case and median
+# statutory margin, the near-breach and breach counts, the nearest deadline, and
+# the aggregated throughput. Every number is a pure read of the clock_started /
+# clock_stopped and protocol entries already in the sealed logs, with zero LLM and
+# no now(), and the rollup is INSIDE the signed manifest so editing a number breaks
+# the portfolio signature.
+# ---------------------------------------------------------------------------
+
+
+def test_sla_rollup_is_deterministic_over_the_captures():
+    # Two independent folds over the same sealed data produce identical rollups.
+    a = portfolio_sla(load_portfolio(DATA))
+    b = portfolio_sla(load_portfolio(DATA))
+    assert sla_dict(a) == sla_dict(b)
+    assert sla_dict_digest(sla_dict(a)) == sla_dict_digest(sla_dict(b))
+
+
+def test_sla_margins_match_the_per_run_packet_telemetry():
+    """The fleet rollup margins are derived from the sealed clock_started /
+    clock_stopped entries; they must equal the per-run packet operability
+    deadline_margins, the SAME deadline-minus-filed math the packet renders. This
+    proves the cross-run rollup does not drift from the per-run telemetry."""
+    sla = portfolio_sla(load_portfolio(DATA))
+    by_run = {r.name: r for r in sla.per_run}
+    for scenario in json.loads(
+            (DATA / "manifest.json").read_text(encoding="utf-8"))["scenarios"]:
+        run_name = Path(scenario["run_log"]).name
+        if run_name not in by_run:
+            continue
+        packet = json.loads(
+            (DATA / Path(scenario["packet"]).name).read_text(encoding="utf-8"))
+        packet_margins = {
+            m["correlation_id"]: m["margin_hours"]
+            for m in packet["operability"]["deadline_margins"]
+            if m["filed"]
+        }
+        rollup_margins = {
+            m.correlation_id: m.margin_hours
+            for m in by_run[run_name].margins
+        }
+        assert rollup_margins == packet_margins, (
+            f"{run_name} rollup margins drifted from the packet telemetry")
+        # The tightest filed margin and breach verdict match the packet too.
+        assert by_run[run_name].min_margin_hours == \
+            packet["operability"]["min_filed_margin_hours"]
+        assert (by_run[run_name].breaches > 0) == \
+            packet["operability"]["any_breached"]
+
+
+def test_sla_throughput_matches_the_per_run_packet_throughput():
+    """The per-run drafted / released / suppressed counts the rollup folds from the
+    sealed protocol events equal the packet operability throughput block."""
+    sla = portfolio_sla(load_portfolio(DATA))
+    by_run = {r.name: r for r in sla.per_run}
+    for scenario in json.loads(
+            (DATA / "manifest.json").read_text(encoding="utf-8"))["scenarios"]:
+        run_name = Path(scenario["run_log"]).name
+        if run_name not in by_run:
+            continue
+        packet = json.loads(
+            (DATA / Path(scenario["packet"]).name).read_text(encoding="utf-8"))
+        pkt = packet["operability"]["throughput"]
+        tp = by_run[run_name].throughput
+        for key in ("drafted", "filings", "released", "suppressed"):
+            assert tp[key] == pkt[key], (
+                f"{run_name} throughput {key} drifted from the packet")
+
+
+def test_sla_aggregates_are_exact_on_the_captures():
+    # The clean captures file every clock on time, so the fleet never breaches and
+    # the worst-case margin equals the tightest filed margin across all runs.
+    sla = portfolio_sla(load_portfolio(DATA))
+    assert sla.total_filings == sum(r.filings_landed for r in sla.per_run)
+    assert sla.total_breaches == 0
+    assert sla.ever_breached is False
+    assert sla.near_breach_count == 0
+    assert sla.near_breach_hours == NEAR_BREACH_HOURS
+    # The worst-case margin is the minimum filed margin across every run, and it
+    # names the run and clock that owns it.
+    all_filed = [m for r in sla.per_run for m in r.margins]
+    assert sla.worst_margin_hours == min(m.margin_hours for m in all_filed)
+    assert sla.worst_margin_run
+    assert sla.worst_margin_clock
+    # The fleet nearest deadline is the earliest deadline any clock started on.
+    assert sla.nearest_deadline_utc == min(
+        r.nearest_deadline_utc for r in sla.per_run
+        if r.nearest_deadline_utc is not None)
+
+
+def test_synthetic_breached_run_is_counted(tmp_path):
+    # A run that files PAST its deadline is a breach: the rollup counts it, flips
+    # ever_breached, and the negative margin becomes the worst-case.
+    breached = _write_run(tmp_path, "run-breach.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "NIS2 full notification (72h)",
+                     "correlation_id": "inc-9001:nis2",
+                     "deadline": "2026-06-19T02:14:00+00:00"}},
+        # Filed 10 hours AFTER the deadline: a breach.
+        {"type": "clock_stopped", "seq": 1,
+         "payload": {"correlation_id": "inc-9001:nis2",
+                     "ts": "2026-06-19T12:14:00+00:00"}},
+        {"type": "protocol_event", "seq": 2,
+         "payload": {"event": "draft_started", "correlation_id": "inc-9001:nis2"}},
+        {"type": "protocol_event", "seq": 3,
+         "payload": {"event": "human_released",
+                     "correlation_id": "inc-9001:nis2"}},
+    ])
+    ontime = _write_run(tmp_path, "run-ontime.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "DORA major-incident (72h)",
+                     "correlation_id": "inc-9002:dora",
+                     "deadline": "2026-06-19T02:14:00+00:00"}},
+        {"type": "clock_stopped", "seq": 1,
+         "payload": {"correlation_id": "inc-9002:dora",
+                     "ts": "2026-06-16T02:14:00+00:00"}},
+        {"type": "protocol_event", "seq": 2,
+         "payload": {"event": "draft_started", "correlation_id": "inc-9002:dora"}},
+        {"type": "protocol_event", "seq": 3,
+         "payload": {"event": "human_released",
+                     "correlation_id": "inc-9002:dora"}},
+    ])
+    sla = portfolio_sla([breached, ontime])
+    assert sla.total_filings == 2
+    assert sla.total_breaches == 1
+    assert sla.ever_breached is True
+    # The breached filing landed 10h past the deadline: margin -10.0h, the worst.
+    assert sla.worst_margin_hours == -10.0
+    assert sla.worst_margin_run == "run-breach.jsonl"
+    # Both filings are within the near-breach window? No: the breached one is past
+    # the deadline (counted as a breach, not a near-breach); the on-time one landed
+    # 72h early. So near_breach_count stays 0 here.
+    assert sla.near_breach_count == 0
+
+
+def test_near_breach_window_counts_a_tight_but_on_time_filing(tmp_path):
+    # A filing that lands inside the near-breach window but before the deadline is a
+    # near-breach (not a breach): it is counted in near_breach_count.
+    tight = _write_run(tmp_path, "run-tight.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "NIS2 early warning (24h)",
+                     "correlation_id": "inc-9100:nis2-early",
+                     "deadline": "2026-06-17T02:14:00+00:00"}},
+        # Filed 1 hour before the deadline: 1.0h of margin, inside the 24h window.
+        {"type": "clock_stopped", "seq": 1,
+         "payload": {"correlation_id": "inc-9100:nis2-early",
+                     "ts": "2026-06-17T01:14:00+00:00"}},
+        {"type": "protocol_event", "seq": 2,
+         "payload": {"event": "draft_started",
+                     "correlation_id": "inc-9100:nis2-early"}},
+        {"type": "protocol_event", "seq": 3,
+         "payload": {"event": "human_released",
+                     "correlation_id": "inc-9100:nis2-early"}},
+    ])
+    sla = portfolio_sla([tight])
+    assert sla.total_breaches == 0
+    assert sla.near_breach_count == 1
+    assert sla.worst_margin_hours == 1.0
+
+
+def test_unfiled_clock_contributes_no_margin(tmp_path):
+    # A clock that started but never stopped never filed: it contributes no margin
+    # and no breach (never a fabricated zero), mirroring the packet operability.
+    run = _write_run(tmp_path, "run-open.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "SEC 8-K (4 business days)",
+                     "correlation_id": "inc-9200:sec",
+                     "deadline": "2026-06-23T23:59:59+00:00"}},
+    ])
+    sla = portfolio_sla([run])
+    assert sla.total_filings == 0
+    assert sla.per_run[0].min_margin_hours is None
+    assert sla.total_breaches == 0
+    # The nearest deadline still reflects the started clock even though it is unfiled.
+    assert sla.nearest_deadline_utc == "2026-06-23T23:59:59+00:00"
+
+
+def test_flagged_run_is_not_folded_into_sla(tmp_path):
+    # A run that did not pass its per-run signature must never contribute an SLA
+    # number, exactly as the insights fold excludes it.
+    good = _write_run(tmp_path, "run-good.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "NIS2 full notification (72h)",
+                     "correlation_id": "inc-1:nis2",
+                     "deadline": "2026-06-19T02:14:00+00:00"}},
+        {"type": "clock_stopped", "seq": 1,
+         "payload": {"correlation_id": "inc-1:nis2",
+                     "ts": "2026-06-16T02:14:00+00:00"}},
+        {"type": "protocol_event", "seq": 2,
+         "payload": {"event": "human_released", "correlation_id": "inc-1:nis2"}},
+    ])
+    bad = _write_run(tmp_path, "run-bad.jsonl", [
+        {"type": "clock_started", "seq": 0,
+         "payload": {"clock": "DORA major-incident (72h)",
+                     "correlation_id": "inc-2:dora",
+                     "deadline": "2026-06-19T02:14:00+00:00"}},
+        {"type": "clock_stopped", "seq": 1,
+         "payload": {"correlation_id": "inc-2:dora",
+                     "ts": "2026-06-19T20:14:00+00:00"}},
+    ])
+    bad = SealedRun(
+        name=bad.name, log_path=bad.log_path, sig_path=bad.sig_path,
+        sha256=bad.sha256, chain_head=bad.chain_head, signature_valid=False,
+        flag="per-run signature does not verify")
+    sla = portfolio_sla([good, bad])
+    # Only the good run is folded: one filing, no breach (the bad run's late filing
+    # never enters the rollup).
+    assert sla.total_filings == 1
+    assert sla.total_breaches == 0
+    assert sla.ever_breached is False
+    assert [r.name for r in sla.per_run] == ["run-good.jsonl"]
+
+
+def test_sla_is_inside_the_signed_manifest_editing_breaks_signature():
+    # The fleet SLA rollup is folded into the signed manifest, and the portfolio
+    # signature commits to its digest, so editing any rollup number breaks the
+    # signature directly (not only a cross-check).
+    att = attest_portfolio(load_portfolio(DATA))
+    assert "sla" in att.manifest
+    assert att.manifest["sla"]["total_breaches"] == 0
+
+    record = sign_portfolio(
+        att.root, att.run_count, att.manifest_sha256, att.insights_sha256,
+        att.sla_sha256)
+    assert verify_portfolio(
+        att.root, att.run_count, att.insights_sha256, att.sla_sha256, record)
+
+    # Edit one rollup number: claim zero breaches became one. The SLA digest moves,
+    # so the signature no longer verifies over the edited rollup.
+    tampered = sla_dict(att.sla)
+    tampered = {**tampered, "total_breaches": 1, "ever_breached": True}
+    tampered_digest = sla_dict_digest(tampered)
+    assert tampered_digest != att.sla_sha256
+    assert not verify_portfolio(
+        att.root, att.run_count, att.insights_sha256, tampered_digest, record)
+
+
+def test_edited_sla_in_manifest_is_detected_by_verifier(tmp_path, capsys):
+    # Build the manifest over the real data into a temp dir, edit an SLA number in
+    # the written manifest, and re-verify: the verifier must report INVALID.
+    data = _copy_data(tmp_path)
+    manifest_path = data / "portfolio-attestation.json"
+    build(data, manifest_path)
+    assert manifest_path.exists()
+
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    document["manifest"]["sla"]["total_breaches"] = 99
+    manifest_path.write_text(json.dumps(document, indent=2, sort_keys=True),
+                             encoding="utf-8")
+
+    rc = verify(manifest_path, data)
+    out = capsys.readouterr().out
+    assert rc != 0, "editing an SLA number must make the portfolio INVALID"
+    assert "INVALID" in out
+
+
+def test_sla_fold_leaves_sealed_captures_and_replay_unchanged():
+    """Folding the fleet SLA rollup and rebuilding the signed manifest is READ ONLY
+    over the four per-run sealed captures: snapshot the sealed bytes, sidecars, and
+    replay, run the full SLA-bearing attestation, and assert byte-equality plus the
+    four frozen shas."""
+    targets = list(FROZEN_SHAS)
+
+    def snapshot() -> dict:
+        snap: dict = {}
+        for name in targets:
+            log_bytes = (DATA / name).read_bytes()
+            sig_bytes = (DATA / f"{name}.sig.json").read_bytes()
+            log = RunLog.load(DATA / name)
+            snap[name] = (log_bytes, sig_bytes, replay(log).to_jsonl())
+        return snap
+
+    before = snapshot()
+    att = attest_portfolio(load_portfolio(DATA))
+    # The SLA fold ran (it sees no breach on the clean captures) ...
+    assert att.sla.ever_breached is False
+    assert att.sla.total_breaches == 0
     after = snapshot()
     assert before == after, "the sealed per-run captures must not change"
 

@@ -603,3 +603,54 @@ input[type=range]::-moz-range-thumb {
 .cq summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }
 .cq[open] summary { border-bottom: 1px solid var(--line-soft); margin-bottom: 0.35rem; }
 .cq p { margin: 0.3rem 0; line-height: 1.45; }
+
+/* E6.4 fleet SLA / throughput board */
+.fleet-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem; margin: 0.6rem 0 1rem;
+}
+.fleet-stat {
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); padding: 0.7rem 0.8rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.fleet-stat-value {
+  font-family: var(--mono); font-size: 1.35rem; font-weight: 650;
+  color: var(--text); letter-spacing: 0.4px;
+}
+.fleet-stat-label {
+  font-size: 0.72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.3;
+}
+.fleet-stat.ok .fleet-stat-value { color: var(--green); }
+.fleet-stat.warn .fleet-stat-value { color: var(--amber); }
+.fleet-stat.danger .fleet-stat-value { color: var(--red); }
+.fleet-table-wrap { overflow-x: auto; border-radius: 10px; }
+.fleet-table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+}
+.fleet-table th, .fleet-table td {
+  text-align: right; padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+.fleet-table th:first-child, .fleet-table td:first-child { text-align: left; }
+.fleet-table thead th {
+  color: var(--muted); font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--line);
+}
+.fleet-table tbody tr:last-child td { border-bottom: none; }
+.fleet-table td { font-family: var(--mono); color: var(--text); }
+.fleet-run-name {
+  font-family: inherit; color: var(--text); font-weight: 600;
+  text-transform: capitalize;
+}
+.fleet-cell-danger { color: var(--red); }
+.fleet-receipt { margin-top: 0.8rem; display: grid; gap: 0.35rem; }
+.fleet-receipt code {
+  color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--line-soft); border-radius: 6px;
+  padding: 0.2rem 0.4rem; display: inline-block; word-break: break-all;
+}
