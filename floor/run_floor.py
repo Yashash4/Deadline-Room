@@ -126,6 +126,7 @@ from floor.exports_oscal import (  # noqa: E402
 from floor.exports_misp import MispExportError, to_misp_event  # noqa: E402
 from floor.challenger import challenge_filing  # noqa: E402
 from floor.fact_record import fact_record_hash  # noqa: E402
+from floor.idp import idp_provider, signoff_identity_field  # noqa: E402
 from floor.challenge_adjudicate import adjudicate  # noqa: E402
 from floor.claims import emit_claims, parse_claims  # noqa: E402
 from floor.determination import build_determination_record  # noqa: E402
@@ -3102,7 +3103,7 @@ def _submission_phase(*, log, trace, warden, claims_by_branch, filings,
 # the branch stays in awaiting_human_signoff.
 # ----------------------------------------------------------------------------
 def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
-                     *, warden=None, mentions=None, narrate=True) -> bool:
+                     *, warden=None, mentions=None, narrate=True, idp=None) -> bool:
     """Drive the two-key release for one branch. Returns True iff the branch
     reached RELEASED. Records each sign-off and the withheld/released decisions in
     the run log, so the segregation of duties is replay-verifiable.
@@ -3123,15 +3124,25 @@ def _two_key_release(sm, trace, log, release_gate, corr: str, signers=None,
     distinct keys at the amendment timestamps. Every release path goes through
     here; none releases on a single key."""
     branch = corr.split(":", 1)[1] if ":" in corr else corr
+    # The IdP behind the human signers. DEFAULT: the stub (no real IdP), which
+    # authenticates to nothing and contributes NO field, so the release_signoff
+    # event is byte-identical to today and the four sealed shas do not move. When a
+    # real IdP is configured (a non-default run), each signer's verified identity is
+    # bound into the event via the additive `signoff_identity_field` fragment.
+    idp = idp or idp_provider()
     for role, actor, ts in (signers if signers is not None else RELEASE_SIGNERS):
         decision = release_gate.sign(corr, role, actor, ts)
-        log.append("release_signoff", {
+        signoff_payload = {
             "correlation_id": corr, "role": role, "actor": actor, "ts": ts,
             "released": decision.released,
             "have_roles": sorted(decision.have_roles),
             "missing_roles": sorted(decision.missing_roles),
             "reason": decision.reason,
-        })
+        }
+        # Additive ONLY when a real IdP authenticates the signer: empty on the stub,
+        # so the default payload keeps its exact seven keys and byte shape.
+        signoff_payload.update(signoff_identity_field(idp, role))
+        log.append("release_signoff", signoff_payload)
         if not decision.released:
             # First key only: the lock is NOT turned. The Warden does NOT emit
             # HUMAN_RELEASED; the branch waits for the second distinct key.
