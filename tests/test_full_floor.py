@@ -359,17 +359,19 @@ def test_warden_posts_acks_diff_and_release_in_normal_flow(tmp_path):
     # one per-filing ack for each drafter, @mentioning that drafter
     for r in DRAFTER_ROLES:
         acks = [m for m in warden_msgs
-                if f"recorded {r.regime} filing" in m["content"]
+                if f"Recorded the {r.regime} filing" in m["content"]
+                and "State advanced to DRAFT_POSTED" in m["content"]
                 and f"{r.branch}-id" in m["mentions"]]
         assert len(acks) == 1, f"expected one Warden ack for {r.regime}"
     # the green-diff announcement and the CONSOLIDATED release announcements: the
     # room narration is two messages (first key across all branches, then second
     # key across all branches), not six near-identical per-branch broadcasts.
-    assert "Contradiction diff GREEN" in blob
+    assert "contradiction diff is GREEN" in blob
     key1 = [m for m in warden_msgs
-            if "First of two" in m["content"] and "Awaiting" in m["content"]]
+            if "the first of two release keys" in m["content"]
+            and "Awaiting the second key" in m["content"]]
     key2 = [m for m in warden_msgs
-            if "Both keys present on all" in m["content"]
+            if "both keys present on all" in m["content"]
             and "RELEASED, clocks stopped." in m["content"]]
     assert len(key1) == 1, "one consolidated first-key (GC) message, not three"
     assert len(key2) == 1, "one consolidated second-key (Lena) message, not three"
@@ -406,7 +408,8 @@ def test_warden_posts_block_mentioning_conflicting_drafters(tmp_path):
     run_floor(out_dir=str(tmp_path), mode="inject_contradiction", clients=clients,
               draft_fns=_stub_draft_fns())
     warden_msgs = _warden_messages(room)
-    blocks = [m for m in warden_msgs if m["content"].startswith("BLOCKED.")]
+    blocks = [m for m in warden_msgs
+              if m["content"].startswith("BLOCKED on a cross-filing contradiction")]
     assert len(blocks) == 1, "the Warden must post its BLOCK into the room"
     block = blocks[0]
     # the exact conflicting values appear in the Warden's BLOCK
@@ -417,7 +420,7 @@ def test_warden_posts_block_mentioning_conflicting_drafters(tmp_path):
     assert "sec-id" in block["mentions"]
     assert len(block["mentions"]) == 2
     # on the corrected re-run the Warden posts the resolution
-    resolved = [m for m in warden_msgs if m["content"].startswith("Resolved.")]
+    resolved = [m for m in warden_msgs if m["content"].startswith("Resolved:")]
     assert len(resolved) == 1
 
 
@@ -439,12 +442,13 @@ def test_blocked_drafter_visibly_refiles_between_block_and_resolution(tmp_path):
         return -1
 
     block_i = index_of(
-        lambda m: m["sender"] == "warden-id" and m["content"].startswith("BLOCKED."))
+        lambda m: m["sender"] == "warden-id"
+        and m["content"].startswith("BLOCKED on a cross-filing contradiction"))
     refile_i = index_of(
         lambda m: m["sender"] == "sec-id"
         and "corrected re-filing" in m["content"])
     resolved_i = index_of(
-        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved."))
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved:"))
 
     assert block_i != -1, "the Warden must post its BLOCK"
     assert refile_i != -1, "the SEC drafter must post its corrected re-filing"
@@ -501,7 +505,8 @@ def test_contradiction_is_two_way_peer_reconciliation(tmp_path):
         return -1
 
     block_i = index_of(
-        lambda m: m["sender"] == "warden-id" and m["content"].startswith("BLOCKED."))
+        lambda m: m["sender"] == "warden-id"
+        and m["content"].startswith("BLOCKED on a cross-filing contradiction"))
     reconcile_i = index_of(
         lambda m: m["sender"] == "sec-id"
         and m["content"].startswith("@NIS2 Drafter")
@@ -513,7 +518,7 @@ def test_contradiction_is_two_way_peer_reconciliation(tmp_path):
     refile_i = index_of(
         lambda m: m["sender"] == "sec-id" and "corrected re-filing" in m["content"])
     green_i = index_of(
-        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved."))
+        lambda m: m["sender"] == "warden-id" and m["content"].startswith("Resolved:"))
 
     assert block_i != -1, "the Warden must post its BLOCK"
     assert reconcile_i != -1, "SEC must @mention NIS2 to reconcile"
@@ -594,9 +599,9 @@ def test_warden_posts_dedup_drop_on_chaos(tmp_path):
               draft_fns=_stub_draft_fns())
     warden_msgs = _warden_messages(room)
     drops = [m for m in warden_msgs
-             if "Exactly-once held, no double-file." in m["content"]]
+             if "Exactly-once held; no double-file." in m["content"]]
     assert len(drops) == 1, "the Warden must narrate the duplicate drop"
-    assert "duplicate SEC filing dropped" in drops[0]["content"]
+    assert "Duplicate SEC filing dropped by the idempotency ledger" in drops[0]["content"]
     assert "sec-id" in drops[0]["mentions"]
 
 

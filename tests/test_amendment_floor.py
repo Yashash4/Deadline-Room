@@ -254,7 +254,9 @@ def test_warden_narrates_amendment_block_and_release(tmp_path):
     warden_msgs = [m for m in room.messages if m["sender"] == "warden-id"]
     blob = "\n".join(m["content"] for m in warden_msgs)
     # the Warden posts the amendment BLOCK, @mentioning both reconciling drafters
-    blocks = [m for m in warden_msgs if m["content"].startswith("AMENDMENT BLOCKED.")]
+    blocks = [m for m in warden_msgs
+              if m["content"].startswith("AMENDMENT BLOCKED:")
+              and "No re-release until" in m["content"]]
     assert len(blocks) == 1
     assert "sec-id" in blocks[0]["mentions"]
     assert "nis2-id" in blocks[0]["mentions"]
