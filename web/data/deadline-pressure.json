@@ -1,0 +1,106 @@
+{
+ "clock": "SEC 8-K (4 business days)",
+ "calendar": "US_FEDERAL",
+ "naive_hours": 96,
+ "total_business_day_starts": 500,
+ "max_span_hours": 192.0,
+ "max_slack_hours": 96.0,
+ "worst_case_window": [
+  {
+   "start": "2026-12-21",
+   "start_weekday": "Monday",
+   "deadline": "2026-12-28T23:59:59+00:00",
+   "deadline_weekday": "Monday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "Christmas"
+   ]
+  },
+  {
+   "start": "2026-12-22",
+   "start_weekday": "Tuesday",
+   "deadline": "2026-12-29T23:59:59+00:00",
+   "deadline_weekday": "Tuesday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "Christmas"
+   ]
+  },
+  {
+   "start": "2026-12-23",
+   "start_weekday": "Wednesday",
+   "deadline": "2026-12-30T23:59:59+00:00",
+   "deadline_weekday": "Wednesday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "Christmas"
+   ]
+  },
+  {
+   "start": "2026-12-24",
+   "start_weekday": "Thursday",
+   "deadline": "2026-12-31T23:59:59+00:00",
+   "deadline_weekday": "Thursday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "Christmas"
+   ]
+  },
+  {
+   "start": "2026-12-28",
+   "start_weekday": "Monday",
+   "deadline": "2027-01-04T23:59:59+00:00",
+   "deadline_weekday": "Monday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "New Year's Day"
+   ]
+  },
+  {
+   "start": "2026-12-29",
+   "start_weekday": "Tuesday",
+   "deadline": "2027-01-05T23:59:59+00:00",
+   "deadline_weekday": "Tuesday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "New Year's Day"
+   ]
+  },
+  {
+   "start": "2026-12-30",
+   "start_weekday": "Wednesday",
+   "deadline": "2027-01-06T23:59:59+00:00",
+   "deadline_weekday": "Wednesday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "New Year's Day"
+   ]
+  },
+  {
+   "start": "2026-12-31",
+   "start_weekday": "Thursday",
+   "deadline": "2027-01-07T23:59:59+00:00",
+   "deadline_weekday": "Thursday",
+   "span_hours": 192.0,
+   "slack_hours": 96.0,
+   "skipped_weekend_days": 2,
+   "skipped_holidays": [
+    "New Year's Day"
+   ]
+  }
+ ]
+}

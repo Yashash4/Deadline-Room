@@ -84,6 +84,61 @@
       <span class="gate-release-label">Filing set</span>
       <span class="gate-release-state" id="gate-release-state">not yet released</span>
     </div>
+    <div class="gate-drill" id="gate-drill">
+      <span class="gate-release-label">Examiner drill</span>
+      <button id="drill-toggle" class="btn small" aria-pressed="false">Take the drill</button>
+      <span class="drill-score-pill" id="drill-score-pill" hidden>0 / 0</span>
+    </div>
+  </section>
+
+  <!-- Examiner Drill modal: pauses at each gate, hides the verdict, asks the
+       human "release or block?", reveals the deterministic ground truth derived
+       from the sealed run, scores, and on a perfect pass issues a signed
+       certification receipt the browser re-verifies. -->
+  <div id="drill-overlay" class="drill-overlay" role="dialog" aria-modal="true" aria-labelledby="drill-q-title" hidden>
+    <div class="drill-card">
+      <div class="drill-card-head">
+        <span class="drill-eyebrow" id="drill-eyebrow">Gate 1 / 7</span>
+        <button id="drill-quit" class="btn small ghost" aria-label="Leave the drill">Leave drill</button>
+      </div>
+      <h2 id="drill-q-title">Release or block?</h2>
+      <p id="drill-q-prompt" class="drill-prompt"></p>
+      <div class="drill-actions" id="drill-actions">
+        <button id="drill-release" class="btn primary big">Release</button>
+        <button id="drill-block" class="btn big">Block</button>
+      </div>
+      <div id="drill-reveal" class="drill-reveal" hidden>
+        <div class="drill-verdict" id="drill-verdict"></div>
+        <p class="drill-rule small muted" id="drill-rule"></p>
+        <button id="drill-next" class="btn primary big">Next gate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Examiner Drill certification result: shown when the drill completes. On a
+       perfect score the signed certification receipt is shown and re-verified in
+       the browser; otherwise the missed gates are named. -->
+  <div id="drill-result-overlay" class="drill-overlay" role="dialog" aria-modal="true" aria-labelledby="drill-result-title" hidden>
+    <div class="drill-card drill-result-card">
+      <div class="drill-card-head">
+        <span class="drill-eyebrow" id="drill-result-eyebrow">Drill complete</span>
+        <button id="drill-result-close" class="btn small ghost">Close</button>
+      </div>
+      <h2 id="drill-result-title">Your score</h2>
+      <div id="drill-result-body"></div>
+    </div>
+  </div>
+
+  <!-- Deadline-pressure strip (E9.4): the deterministic worst-case start window
+       for the SEC business-day clock, where a naive "4 days = 96 hours" reading
+       is most wrong. Read-only from warden/clocks.add_business_days. -->
+  <section class="panel pressure-strip" id="pressure-strip" aria-label="Deadline pressure worst-case window">
+    <div class="pressure-head">
+      <h2>Deadline pressure: the worst week to be breached</h2>
+      <span class="badge amber" id="pressure-badge">no-AI clock sweep</span>
+    </div>
+    <p class="panel-sub muted small">The SEC 8-K clock is four BUSINESS days, not 96 hours. A team that reads it as 96 hours is most wrong over a holiday cluster. This is the deterministic worst-case start window across the calendar: the days on which a materiality determination pushes the real deadline furthest past the naive guess.</p>
+    <div id="pressure-body" class="pressure-body"></div>
   </section>
 
   <!-- Transport: scrubber -->

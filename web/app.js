@@ -275,6 +275,18 @@ let revealedBeats = new Set();   // beats whose banner/rail have been lit this r
 let bannerTimer = null;
 let tourMode = true;             // Judge Tour: default-on guided run
 
+// ---- Examiner Drill state (E9.4) -------------------------------------------
+// The drill is a self-grading quiz over the gates of the active sealed run. The
+// answer key is the drill manifest (scripts/drill_manifest.py), derived from the
+// cryptographically-fixed bytes. drillManifest holds the decision points + the
+// signed certification receipt; drillIndex is the gate the human is on;
+// drillAnswers records release/block per gate so the score is a pure count of
+// matches against the fixed ground truth.
+let drillManifest = null;
+let drillActive = false;
+let drillIndex = 0;
+let drillAnswers = [];
+
 // ============================================================================
 // Build the ordered timeline of steps from the packet.
 // Each step records what becomes true; render(cursor) reduces all steps up to
@@ -1382,6 +1394,315 @@ async function loadScenario(scn) {
   cursor = 0;
   renderStaticPanels();
   render();
+  await loadDrillManifest(scn);
+}
+
+// ============================================================================
+// Examiner Drill (E9.4): a self-grading drill over the gates of the active run.
+// It pauses at each gate, hides the verdict, asks "release or block?", reveals
+// the deterministic ground truth derived from the sealed bytes, scores the human,
+// and on a perfect pass issues the signed certification receipt (re-verified in
+// the browser against the bundled public key). The answer key is DERIVED, never
+// hand-authored; a wrong answer cannot pass.
+// ============================================================================
+async function loadDrillManifest(scn) {
+  drillActive = false;
+  drillManifest = null;
+  drillIndex = 0;
+  drillAnswers = [];
+  updateDrillScorePill();
+  const mode = scn.id;
+  try {
+    drillManifest = await fetch(`data/drill-${mode}.json`).then((r) => {
+      if (!r.ok) throw new Error(`drill-${mode} not found`);
+      return r.json();
+    });
+  } catch (e) {
+    drillManifest = null; // the drill toggle stays disabled if no manifest
+  }
+  const toggle = $("#drill-toggle");
+  if (toggle) {
+    const ok = !!(drillManifest && (drillManifest.decision_points || []).length);
+    toggle.disabled = !ok;
+    toggle.textContent = "Take the drill";
+    toggle.setAttribute("aria-pressed", "false");
+  }
+}
+
+function drillGates() {
+  return (drillManifest && drillManifest.decision_points) || [];
+}
+
+function startDrill() {
+  if (!drillGates().length) return;
+  stopPlay();
+  drillActive = true;
+  drillIndex = 0;
+  drillAnswers = [];
+  $("#drill-toggle").setAttribute("aria-pressed", "true");
+  updateDrillScorePill();
+  showDrillGate();
+}
+
+function quitDrill() {
+  drillActive = false;
+  $("#drill-overlay").hidden = true;
+  $("#drill-result-overlay").hidden = true;
+  $("#drill-toggle").setAttribute("aria-pressed", "false");
+}
+
+// Show the current gate: hide the verdict, present the prompt and the two
+// answers. The verdict ground truth is NOT in the DOM until the human answers, so
+// there is nothing to peek at.
+function showDrillGate() {
+  const gates = drillGates();
+  const gate = gates[drillIndex];
+  if (!gate) { finishDrill(); return; }
+  const overlay = $("#drill-overlay");
+  overlay.hidden = false;
+  $("#drill-result-overlay").hidden = true;
+  $("#drill-eyebrow").textContent = `Gate ${drillIndex + 1} / ${gates.length}`;
+  $("#drill-q-prompt").textContent = gate.prompt;
+  $("#drill-reveal").hidden = true;
+  $("#drill-actions").hidden = false;
+  $("#drill-release").disabled = false;
+  $("#drill-block").disabled = false;
+}
+
+// The human answered. Record it, reveal whether it matched the cryptographically
+// fixed ground truth, and show the rule that fixes the verdict.
+function answerDrill(answer) {
+  const gates = drillGates();
+  const gate = gates[drillIndex];
+  if (!gate || !drillActive) return;
+  const correct = answer === gate.ground_truth;
+  drillAnswers[drillIndex] = { answer, correct };
+  updateDrillScorePill();
+
+  $("#drill-actions").hidden = true;
+  $("#drill-release").disabled = true;
+  $("#drill-block").disabled = true;
+  const reveal = $("#drill-reveal");
+  reveal.hidden = false;
+  const verdict = $("#drill-verdict");
+  const gt = gate.ground_truth.toUpperCase();
+  const you = answer.toUpperCase();
+  if (correct) {
+    verdict.className = "drill-verdict ok";
+    verdict.textContent = `Correct: the deterministic ground truth was ${gt}.`;
+  } else {
+    verdict.className = "drill-verdict miss";
+    verdict.textContent = `Missed: you said ${you}, but the deterministic ground truth was ${gt}.`;
+  }
+  $("#drill-rule").textContent = gate.rule;
+  const next = $("#drill-next");
+  next.textContent = drillIndex + 1 >= gates.length ? "See your result" : "Next gate";
+}
+
+function nextDrillGate() {
+  drillIndex += 1;
+  if (drillIndex >= drillGates().length) { finishDrill(); return; }
+  showDrillGate();
+}
+
+function updateDrillScorePill() {
+  const pill = $("#drill-score-pill");
+  if (!pill) return;
+  const gates = drillGates();
+  if (!drillActive && !drillAnswers.length) { pill.hidden = true; return; }
+  const score = drillAnswers.filter((a) => a && a.correct).length;
+  pill.hidden = false;
+  pill.textContent = `${score} / ${gates.length}`;
+  pill.className = "drill-score-pill" + (
+    score === gates.length && drillAnswers.length === gates.length ? " perfect" : "");
+}
+
+async function finishDrill() {
+  drillActive = false;
+  $("#drill-overlay").hidden = true;
+  const gates = drillGates();
+  const score = drillAnswers.filter((a) => a && a.correct).length;
+  const perfect = score === gates.length;
+  const overlay = $("#drill-result-overlay");
+  overlay.hidden = false;
+  $("#drill-result-eyebrow").textContent = `Drill complete: ${score} / ${gates.length}`;
+  $("#drill-result-title").textContent = perfect
+    ? "Perfect pass: certification receipt issued"
+    : "Not a perfect pass yet";
+  const body = $("#drill-result-body");
+  body.innerHTML = "";
+
+  if (!perfect) {
+    const missed = [];
+    drillAnswers.forEach((a, i) => {
+      if (!a || !a.correct) missed.push(i + 1);
+    });
+    body.appendChild(el("p", "drill-result-line",
+      `You matched ${score} of ${gates.length} cryptographically-fixed verdicts. The certification receipt is issued only on a perfect pass, because it certifies you matched every fixed verdict for this sealed run.`));
+    body.appendChild(el("p", "small muted",
+      `Gates to revisit: ${missed.length ? missed.join(", ") : "none"}.`));
+    const again = el("button", "btn primary big", "Take the drill again");
+    again.addEventListener("click", startDrill);
+    body.appendChild(again);
+    return;
+  }
+
+  // Perfect pass: present the signed certification receipt and re-verify it in
+  // the browser against the bundled public key.
+  body.appendChild(el("p", "drill-result-line",
+    `You matched all ${gates.length} cryptographically-fixed verdicts for this sealed run. The signed certification receipt below is bound to this exact run (its sha, its chain head, and the answer-key digest). Editing any field breaks the signature.`));
+  await renderCertificationReceipt(body);
+}
+
+// Re-verify the certification receipt in the browser: rebuild the canonical
+// certification bytes Python signed and check the detached Ed25519 signature
+// against the bundled public key. Mirrors verifyAll for the run-log signature.
+async function renderCertificationReceipt(body) {
+  const cert = (drillManifest && drillManifest.certification) || {};
+  const doc = cert.document || {};
+  const sig = cert.signature || {};
+  const box = el("div", "drill-receipt");
+  const kv = el("dl", "kv");
+  addKv(kv, "claim", String(doc.claim || ""));
+  addKv(kv, "incident", `${doc.incident_id || ""} (${doc.mode || ""})`);
+  addKv(kv, "gates passed", `${doc.required_score || 0} / ${doc.gate_count || 0}`);
+  addKv(kv, "run sha256", String(doc.run_sha256 || "").slice(0, 24) + "...");
+  addKv(kv, "answer key sha256", String(doc.answer_key_sha256 || "").slice(0, 24) + "...");
+  addKv(kv, "signed payload", String(sig.signed_payload || ""));
+  addKv(kv, "signer", String(sig.signer || ""));
+  addKv(kv, "key fp", String(sig.pubkey_fingerprint || ""));
+  box.appendChild(kv);
+
+  const pill = el("span", "check-pill pending", "verifying...");
+  const verifyRow = el("div", "drill-receipt-verify");
+  verifyRow.appendChild(el("span", "small muted", "Detached Ed25519 over the certification document, re-checked in your browser: "));
+  verifyRow.appendChild(pill);
+  box.appendChild(verifyRow);
+  body.appendChild(box);
+
+  try {
+    const ok = await verifyCertificationInBrowser(doc, sig);
+    if (ok) {
+      pill.className = "check-pill ok";
+      pill.textContent = "VALID";
+    } else {
+      pill.className = "check-pill fail";
+      pill.textContent = "INVALID";
+    }
+  } catch (e) {
+    pill.className = "check-pill fail";
+    pill.textContent = "error: " + e.message;
+  }
+
+  const caveat = el("p", "small muted",
+    "Honest note: the signature is real (one flipped byte makes it invalid), but the demo key ships with the repo, so it proves 'signed by whoever holds the demo key', not HSM-grade secrecy.");
+  body.appendChild(caveat);
+  const again = el("button", "btn big", "Take the drill again");
+  again.addEventListener("click", startDrill);
+  body.appendChild(again);
+}
+
+// Rebuild the exact canonical bytes
+// scripts/drill_manifest.canonical_certification_bytes produces (sorted keys, no
+// whitespace), recompute the digest, and verify the detached Ed25519 signature
+// against the bundled public key. Mirrors verifySignature / verifyWhatIf: it uses
+// WebCrypto directly and degrades on a browser without Ed25519.
+async function verifyCertificationInBrowser(doc, sig) {
+  const canonical = canonicalize(doc);
+  // 1. The carried digest must equal the digest of THIS document's canonical
+  // bytes: a tampered field moves it.
+  const digestHex = await sha256Hex(canonical);
+  if (digestHex !== sig.certification_digest) return false;
+  if (!(crypto.subtle && crypto.subtle.importKey)) {
+    throw new Error("this browser has no WebCrypto Ed25519");
+  }
+  const pubHex = (await fetch("keys/warden_pubkey.ed25519").then((r) => r.text())).trim();
+  if (sig.public_key && sig.public_key !== pubHex) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", hexToBytes(pubHex), { name: "Ed25519" }, false, ["verify"]);
+  // 2. The detached signature must verify over the canonical certification bytes.
+  return crypto.subtle.verify(
+    { name: "Ed25519" }, key,
+    hexToBytes(sig.signature), new TextEncoder().encode(canonical));
+}
+
+// ============================================================================
+// Deadline-pressure strip (E9.4): the deterministic worst-case start window for
+// the SEC business-day clock, read from scripts/deadline_pressure.py output. A
+// pure presentation of numbers the no-AI sweep already computed; this strip never
+// recomputes a deadline, it only displays the worst-case window so a judge sees
+// the days a naive "4 days = 96 hours" reading is most wrong.
+// ============================================================================
+async function renderPressureStrip() {
+  const body = $("#pressure-body");
+  if (!body) return;
+  let report = null;
+  try {
+    report = await fetch("data/deadline-pressure.json").then((r) => {
+      if (!r.ok) throw new Error("deadline-pressure not found");
+      return r.json();
+    });
+  } catch (e) {
+    $("#pressure-strip").hidden = true;
+    return;
+  }
+  const win = report.worst_case_window || [];
+  body.innerHTML = "";
+
+  const summary = el("div", "pressure-summary");
+  const naive = report.naive_hours;
+  const span = report.max_span_hours;
+  const slack = report.max_slack_hours;
+  summary.appendChild(pressureStat("naive reading", `${naive}h`,
+    `${report.clock.match(/\d+/)[0]} days read as flat hours`));
+  summary.appendChild(pressureStat("worst-case real span", `${span}h`,
+    `${(span / 24).toFixed(1)} calendar days`));
+  summary.appendChild(pressureStat("worst-case slack", `+${slack}h`,
+    "past the naive guess"));
+  summary.appendChild(pressureStat("starts swept", String(report.total_business_day_starts),
+    "business-day determination dates"));
+  body.appendChild(summary);
+
+  if (win.length) {
+    const first = win[0];
+    const last = win[win.length - 1];
+    const head = el("div", "pressure-window-head");
+    head.appendChild(el("strong", null,
+      `Worst-case start window: ${first.start} to ${last.start}`));
+    const holidays = Array.from(new Set(win.flatMap((w) => w.skipped_holidays)));
+    head.appendChild(el("span", "small muted",
+      `${win.length} consecutive determination dates, each pushing the SEC deadline +${slack}h past the naive reading. The holiday cluster responsible: ${holidays.join(", ") || "none"}.`));
+    body.appendChild(head);
+
+    const table = el("table", "pressure-table");
+    const thead = el("thead");
+    const hr = el("tr");
+    ["Determine (materiality)", "Real SEC deadline", "Real span", "Past naive", "Skips"].forEach((h) => hr.appendChild(el("th", null, h)));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const w of win) {
+      const tr = el("tr");
+      tr.appendChild(el("td", null, `${w.start} (${w.start_weekday.slice(0, 3)})`));
+      tr.appendChild(el("td", null, `${w.deadline.slice(0, 10)} (${w.deadline_weekday.slice(0, 3)})`));
+      tr.appendChild(el("td", null, `${w.span_hours}h`));
+      tr.appendChild(el("td", "pressure-slack", `+${w.slack_hours}h`));
+      const skips = `${w.skipped_weekend_days} wknd` +
+        (w.skipped_holidays.length ? `, ${w.skipped_holidays.join(", ")}` : "");
+      tr.appendChild(el("td", "small muted", skips));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    body.appendChild(table);
+  }
+}
+
+function pressureStat(label, value, sub) {
+  const cell = el("div", "pressure-stat");
+  cell.appendChild(el("span", "pressure-stat-label", label));
+  cell.appendChild(el("strong", "pressure-stat-value", value));
+  cell.appendChild(el("span", "pressure-stat-sub small muted", sub));
+  return cell;
 }
 
 // ============================================================================
@@ -1891,6 +2212,18 @@ async function init() {
   $("#verify").addEventListener("click", verifyAll);
   const reorder = $("#reorder-toggle");
   if (reorder) reorder.addEventListener("change", verifyAll);
+
+  // Examiner Drill wiring (E9.4).
+  $("#drill-toggle").addEventListener("click", () => {
+    if (drillActive) quitDrill(); else startDrill();
+  });
+  $("#drill-quit").addEventListener("click", quitDrill);
+  $("#drill-result-close").addEventListener("click", quitDrill);
+  $("#drill-release").addEventListener("click", () => answerDrill("release"));
+  $("#drill-block").addEventListener("click", () => answerDrill("block"));
+  $("#drill-next").addEventListener("click", nextDrillGate);
+
+  await renderPressureStrip();
 
   setupIntro();
 }

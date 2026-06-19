@@ -1,0 +1,130 @@
+{
+ "incident_id": "inc-8842",
+ "mode": "amendment",
+ "run_sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
+ "run_chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+ "decision_points": [
+  {
+   "seq": 15,
+   "kind": "contradiction_diff",
+   "branch": "all",
+   "prompt": "The cross-filing contradiction diff round 1 found no conflicts: every filing agrees on the load-bearing facts. Release, or block?",
+   "ground_truth": "release",
+   "rule": "A clean contradiction diff arms signoff: the deterministic veto has nothing to hold."
+  },
+  {
+   "seq": 20,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 21,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 25,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 26,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 30,
+   "kind": "two_key_release",
+   "branch": "inc-8842:dora",
+   "prompt": "The DORA filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 31,
+   "kind": "two_key_release",
+   "branch": "inc-8842:dora",
+   "prompt": "The DORA filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 49,
+   "kind": "contradiction_diff",
+   "branch": "all",
+   "prompt": "The cross-filing contradiction diff (amendment phase) found no conflicts: every filing agrees on the load-bearing facts. Release, or block?",
+   "ground_truth": "release",
+   "rule": "A clean contradiction diff arms signoff: the deterministic veto has nothing to hold."
+  },
+  {
+   "seq": 52,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 53,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 57,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 58,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  }
+ ],
+ "certification": {
+  "document": {
+   "claim": "examiner_drill_passed",
+   "incident_id": "inc-8842",
+   "mode": "amendment",
+   "signer": "Deadline Warden",
+   "run_sha256": "0ca07fb0a1f975a84de67966d2724137210c4b7ede1b5ddde96a53650d0c8bbc",
+   "run_chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+   "gate_count": 12,
+   "answer_key_sha256": "a5f69935a5f112b91a0b0f5f0d35317562b5a70deb03bf2fdbba8c40632abe4f",
+   "required_score": 12
+  },
+  "signature": {
+   "algorithm": "ed25519",
+   "detached": true,
+   "separate_from_run_log_signature": true,
+   "signed_payload": "canonical_json(drill_certification)",
+   "certification_digest": "29f89d518d4207e39fe89af44428a13f0634d468480ec2fe85b9d802bfd466e3",
+   "signature": "0ba567865231ff39bc9f668d08bef71c88985656cef24085e9dbc2e6ca038e175a2c3fc7d6e362267797c3a3b87bfcc56db9091d7a54d642a7fd8d9e19f1a705",
+   "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+   "pubkey_fingerprint": "46e30f5bff8c221d",
+   "signer": "Deadline Warden",
+   "demo_key": true,
+   "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+  }
+ }
+}

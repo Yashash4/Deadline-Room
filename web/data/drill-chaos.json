@@ -1,0 +1,90 @@
+{
+ "incident_id": "inc-8842",
+ "mode": "chaos",
+ "run_sha256": "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520",
+ "run_chain_head": "723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0",
+ "decision_points": [
+  {
+   "seq": 17,
+   "kind": "contradiction_diff",
+   "branch": "all",
+   "prompt": "The cross-filing contradiction diff round 1 found no conflicts: every filing agrees on the load-bearing facts. Release, or block?",
+   "ground_truth": "release",
+   "rule": "A clean contradiction diff arms signoff: the deterministic veto has nothing to hold."
+  },
+  {
+   "seq": 22,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 23,
+   "kind": "two_key_release",
+   "branch": "inc-8842:nis2",
+   "prompt": "The NIS2 filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 27,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 28,
+   "kind": "two_key_release",
+   "branch": "inc-8842:sec",
+   "prompt": "The SEC filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  },
+  {
+   "seq": 32,
+   "kind": "two_key_release",
+   "branch": "inc-8842:dora",
+   "prompt": "The DORA filing has one release key (general_counsel) but still needs head_of_ir. Release it now, or block it?",
+   "ground_truth": "block",
+   "rule": "SAFE-1: only one distinct release key is present; release is withheld until the second distinct key signs (segregation of duties)."
+  },
+  {
+   "seq": 33,
+   "kind": "two_key_release",
+   "branch": "inc-8842:dora",
+   "prompt": "The DORA filing now has both distinct release keys (general_counsel, head_of_ir). Release it, or block it?",
+   "ground_truth": "release",
+   "rule": "SAFE-1: two DISTINCT release keys (general_counsel and head_of_ir) are present, so release is admitted."
+  }
+ ],
+ "certification": {
+  "document": {
+   "claim": "examiner_drill_passed",
+   "incident_id": "inc-8842",
+   "mode": "chaos",
+   "signer": "Deadline Warden",
+   "run_sha256": "303c437140df55fc6694780d6b54715921e9eed017eb8b9c4a348907b268b520",
+   "run_chain_head": "723c6cba6b22fc5b2035074617e16deb9f9c7f77e29731e3d534ee2785cfe5b0",
+   "gate_count": 7,
+   "answer_key_sha256": "5cc789153ea299f2621cf2033db4971637b93220e02a40eb1126bc7049dc7385",
+   "required_score": 7
+  },
+  "signature": {
+   "algorithm": "ed25519",
+   "detached": true,
+   "separate_from_run_log_signature": true,
+   "signed_payload": "canonical_json(drill_certification)",
+   "certification_digest": "3bdad2ed5af6a01883632d39c368ccc8b927bed8b172ecb2a5e5e730254edb03",
+   "signature": "3d065e40cf7f2521b48b1a3509eef8256a48e849f0f9b2346254e8fa8ece0592d47c4ce244e50173df82ea0790be484efbf0b435c3e7bfd7cadfafca46b3e204",
+   "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+   "pubkey_fingerprint": "46e30f5bff8c221d",
+   "signer": "Deadline Warden",
+   "demo_key": true,
+   "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+  }
+ }
+}

@@ -691,3 +691,81 @@ input[type=range]::-moz-range-thumb {
 .queue-row-meta { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
 .queue-branches { font-family: var(--mono); color: var(--muted-2); }
 .queue-receipt { margin-top: 0.8rem; display: grid; gap: 0.35rem; }
+
+/* ---- Examiner Drill (E9.4) ---- */
+.gate-drill {
+  display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end;
+  padding-left: 1rem; border-left: 1px solid var(--line-soft);
+}
+.drill-score-pill {
+  font-family: var(--mono); font-size: 0.78rem; padding: 0.15rem 0.5rem;
+  border-radius: 6px; border: 1px solid var(--line); color: var(--muted);
+  background: var(--panel-2);
+}
+.drill-score-pill.perfect { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+#drill-toggle[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+.drill-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 9, 16, 0.78); backdrop-filter: blur(3px);
+  padding: 1.2rem;
+}
+.drill-overlay[hidden] { display: none; }
+.drill-card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px; padding: 1.4rem 1.5rem; max-width: 560px; width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.drill-result-card { border-left-color: var(--green); max-width: 600px; }
+.drill-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.drill-eyebrow {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--accent); font-family: var(--mono);
+}
+.drill-card h2 { font-size: 1.2rem; line-height: 1.3; margin-bottom: 0.6rem; }
+.drill-prompt { color: var(--text); font-size: 0.95rem; line-height: 1.5; margin: 0 0 1.1rem; }
+.drill-actions { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.drill-reveal { margin-top: 0.4rem; display: grid; gap: 0.7rem; }
+.drill-verdict {
+  font-size: 0.95rem; font-weight: 600; padding: 0.6rem 0.8rem; border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.drill-verdict.ok { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+.drill-verdict.miss { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+.drill-rule { margin: 0; line-height: 1.45; }
+.drill-result-line { color: var(--text); font-size: 0.92rem; line-height: 1.5; margin: 0 0 0.8rem; }
+.drill-receipt {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 0.9rem 1rem; margin: 0.6rem 0 0.8rem;
+}
+.drill-receipt .kv { margin: 0 0 0.6rem; }
+.drill-receipt-verify { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.drill-result-card .btn { margin-top: 0.4rem; }
+
+/* ---- Deadline-pressure strip (E9.4) ---- */
+.pressure-head { display: flex; align-items: center; gap: 0.7rem; justify-content: space-between; }
+.pressure-head h2 { font-size: 1.05rem; }
+.pressure-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.7rem; margin: 0.8rem 0 1rem;
+}
+.pressure-stat {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 0.6rem 0.7rem;
+}
+.pressure-stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-2); }
+.pressure-stat-value { font-family: var(--mono); font-size: 1.15rem; color: var(--amber); }
+.pressure-window-head { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.7rem; }
+.pressure-window-head strong { color: var(--text); font-size: 0.95rem; }
+.pressure-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.pressure-table th {
+  text-align: left; padding: 0.4rem 0.5rem; color: var(--muted);
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--line);
+}
+.pressure-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line-soft); }
+.pressure-table tr:last-child td { border-bottom: none; }
+.pressure-slack { color: var(--amber); font-family: var(--mono); }
