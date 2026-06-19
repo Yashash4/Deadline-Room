@@ -1,0 +1,72 @@
+# The deterministic no-LLM Warden process, in its own container so its Band agent
+# id owns a single WebSocket connection (last connection wins). The Warden gates,
+# counts, clocks, and releases in pure Python; it is unchanged by the deployment.
+#
+# Its liveness probe runs the one-command post-run audit over the sealed corpus
+# (scripts/audit_run.py): if the gate, the chain, the signatures, or replay ever
+# stop verifying, the probe fails and the cluster restarts the pod. The readiness
+# probe confirms the corpus is mounted before the Warden is marked ready.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-warden
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: warden
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: warden
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: warden
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: warden
+          image: deadline-room-warden:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: warden
+            - name: DEADLINE_ROOM_DATA_DIR
+              value: /data/corpus
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          volumeMounts:
+            - name: corpus
+              mountPath: /data/corpus
+          livenessProbe:
+            exec:
+              command: ["python", "scripts/audit_run.py"]
+            initialDelaySeconds: 10
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 2
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os,sys; sys.exit(0 if os.path.isdir('/data/corpus') else 1)"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: deadline-room-corpus

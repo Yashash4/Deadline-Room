@@ -1,0 +1,60 @@
+{{- range $regime := .Values.drafters }}
+{{- $name := $regime | replace "_" "-" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-drafter-{{ $name }}
+  labels:
+    {{- include "deadline-room.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: drafter
+    deadline-room/regime: {{ $regime | quote }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: drafter
+      deadline-room/regime: {{ $regime | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "deadline-room.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: drafter
+        deadline-room/regime: {{ $regime | quote }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: drafter
+          image: {{ include "deadline-room.image" (dict "repo" $.Values.image.repository "role" "drafter" "tag" $.Values.image.tag) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: drafter
+            - name: DEADLINE_ROOM_REGIME
+              value: {{ $regime | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.secretName }}
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+---
+{{- end }}

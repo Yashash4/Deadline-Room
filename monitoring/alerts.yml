@@ -1,0 +1,55 @@
+# Alerting rules for Deadline Room. The headline SLO is the one a CISO watches: no
+# statutory deadline is ever breached. The metrics come from the E1.6 telemetry
+# folded into the signed portfolio, so an alert here is grounded in the sealed
+# record, not a guess.
+groups:
+  - name: deadline-room-slo
+    rules:
+      # The breached-SLO alert. Any statutory breach across the sealed fleet fires
+      # this, immediately and at critical severity, because a missed regulatory
+      # deadline is the product's single worst outcome.
+      - alert: DeadlineRoomStatutoryBreach
+        expr: deadline_room_breaches_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          slo: statutory-deadline
+        annotations:
+          summary: "A statutory deadline was breached"
+          description: "deadline_room_breaches_total is {{ $value }} (SLO is 0). At least one regulatory filing missed its deadline across the sealed fleet."
+
+      # Early warning: a filing landed inside the near-breach window. Not yet a
+      # breach, but the margin is thin enough that an operator should look.
+      - alert: DeadlineRoomNearBreach
+        expr: deadline_room_near_breach_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          slo: statutory-deadline
+        annotations:
+          summary: "A filing landed close to its deadline"
+          description: "{{ $value }} filing(s) landed inside the near-breach margin window. Tightest margin: {{ printf \"%.2f\" $labels.worst }}h."
+
+      # The worst-case margin dipped below a one-hour cushion: the fleet is running
+      # hot even though nothing has breached yet.
+      - alert: DeadlineRoomMarginThin
+        expr: deadline_room_worst_case_margin_hours < 1
+        for: 5m
+        labels:
+          severity: warning
+          slo: statutory-deadline
+        annotations:
+          summary: "Worst-case statutory margin under one hour"
+          description: "The tightest margin any filing landed inside is {{ $value }}h, under the 1h cushion."
+
+      # The scrape target is down: the standing service is not serving, so the
+      # governance read layer and the approval screen are unavailable.
+      - alert: DeadlineRoomServiceDown
+        expr: up{job="deadline-room-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "The governance service is not being scraped"
+          description: "The deadline-room service /metrics endpoint has been unreachable for over a minute."

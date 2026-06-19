@@ -1,0 +1,103 @@
+{
+  "title": "Deadline Room: governance SLO",
+  "uid": "deadline-room-slo",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["deadline-room", "slo", "compliance"],
+  "timezone": "utc",
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Statutory breaches (SLO: 0)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "deadline_room_breaches_total", "legendFormat": "breaches" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Worst-case margin (hours)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 6 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "deadline_room_worst_case_margin_hours", "legendFormat": "worst-case margin" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Median margin (hours)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "h" } },
+      "targets": [
+        { "expr": "deadline_room_median_margin_hours", "legendFormat": "median margin" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Ever breached",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "no", "color": "green" }, "1": { "text": "yes", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "deadline_room_ever_breached", "legendFormat": "ever breached" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Throughput: drafted, filings, released, suppressed",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "deadline_room_drafted_total", "legendFormat": "drafted" },
+        { "expr": "deadline_room_filings_total", "legendFormat": "filings" },
+        { "expr": "deadline_room_released_total", "legendFormat": "released" },
+        { "expr": "deadline_room_suppressed_total", "legendFormat": "suppressed" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Intake queue depth",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "deadline_room_queue_depth", "legendFormat": "on board" },
+        { "expr": "deadline_room_queue_pending", "legendFormat": "queued" }
+      ]
+    }
+  ]
+}

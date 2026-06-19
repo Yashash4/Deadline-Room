@@ -1,0 +1,29 @@
+# Prometheus scrape configuration for Deadline Room. The standing service exposes
+# the E1.6 operability/SLO telemetry as Prometheus text at /metrics; every series is
+# a deterministic read of the sealed corpus (margins, breaches, throughput), so the
+# scrape reflects the signed record, never a live estimate.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: deadline-room-service
+    metrics_path: /metrics
+    # In Kubernetes the pods are discovered by the prometheus.io/scrape annotation
+    # the service Deployment sets; this static target serves a single-host or
+    # docker-compose bring-up.
+    static_configs:
+      - targets:
+          - service:8000
+        labels:
+          app: deadline-room
+          component: service
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093

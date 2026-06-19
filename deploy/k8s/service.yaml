@@ -1,0 +1,108 @@
+# The standing governance service: the API, the product UI, the /metrics scrape
+# surface, and the approval screen fronting the real two-key release gate.
+#
+# This Deployment carries the cluster's liveness and readiness probes:
+#   liveness  GET /healthz  the process is up and serving.
+#   readiness GET /readyz   the sealed corpus re-derives, so reads can be answered.
+# The deployment WRAPS the system; it does not change the Warden gate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-service
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: service
+          image: deadline-room-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "uvicorn", "web.app_server:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: DEADLINE_ROOM_DATA_DIR
+              value: /data/corpus
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          volumeMounts:
+            - name: corpus
+              mountPath: /data/corpus
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: deadline-room-corpus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deadline-room-service
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: service
+spec:
+  selector:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: service
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: deadline-room-corpus
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: corpus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

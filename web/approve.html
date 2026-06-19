@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deadline Room: approve and release</title>
+<meta name="description" content="The compliance-officer approve-and-release screen. Two distinct human keys, the Head of Investor Relations and the General Counsel, must both sign before a filing branch releases. The screen is a front end over the real two-key release gate; it never turns the lock itself." />
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --green: #2ea043; --amber: #d29922; --red: #da3633;
+    --accent: #2f81f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { margin: 0 0 4px; font-size: 19px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 720px; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 22px; margin-bottom: 20px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, select {
+    width: 100%; padding: 9px 11px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit;
+  }
+  .row { display: flex; gap: 14px; }
+  .row > div { flex: 1; }
+  button {
+    margin-top: 16px; padding: 10px 18px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--text); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .gate {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 16px;
+  }
+  .lock { font-size: 30px; }
+  .pill {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+    font-weight: 600;
+  }
+  .pill.withheld { background: rgba(210,153,34,0.18); color: var(--amber); }
+  .pill.released { background: rgba(46,160,67,0.18); color: var(--green); }
+  .keys { list-style: none; padding: 0; margin: 12px 0 0; }
+  .keys li {
+    display: flex; align-items: center; gap: 10px; padding: 9px 0;
+    border-top: 1px solid var(--line); font-size: 14px;
+  }
+  .keys li:first-child { border-top: none; }
+  .key-state { margin-left: auto; font-size: 12px; }
+  .key-have { color: var(--green); }
+  .key-missing { color: var(--muted); }
+  .reason { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .err { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .note {
+    color: var(--muted); font-size: 12px; margin-top: 18px;
+    border-top: 1px dashed var(--line); padding-top: 14px;
+  }
+  code { color: var(--accent); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Approve and release</h1>
+  <p>Two distinct human keys must both sign before a filing branch leaves the building: the Head of Investor Relations and the General Counsel. This screen collects each sign-off and asks the Warden's real two-key release gate whether the branch may release. It never turns the lock itself; the gate decides.</p>
+</header>
+<main>
+  <div class="card">
+    <label for="branch">Filing branch (correlation id)</label>
+    <input id="branch" value="inc-8842:sec" autocomplete="off" />
+    <div class="row">
+      <div>
+        <label for="role">Your release role</label>
+        <select id="role">
+          <option value="head_of_ir">Head of Investor Relations</option>
+          <option value="general_counsel">General Counsel</option>
+        </select>
+      </div>
+      <div>
+        <label for="actor">Your name</label>
+        <input id="actor" value="" placeholder="e.g. Lena Park" autocomplete="off" />
+      </div>
+    </div>
+    <button id="sign">Sign this branch</button>
+    <button id="reset" class="ghost">Reset branch lock</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card" id="gate-card">
+    <div class="gate">
+      <span class="lock" id="lock" aria-hidden="true">&#128274;</span>
+      <div>
+        <span class="pill withheld" id="state-pill">withheld</span>
+        <div class="reason" id="reason">Load a branch to see the gate decision.</div>
+      </div>
+    </div>
+    <ul class="keys" id="keys"></ul>
+    <p class="note">This page is a front end over <code>warden/release_gate.py</code>. Each sign-off is recorded through the gate's real <code>sign(...)</code>; the released verdict, the keys present, and the keys still missing all come from the gate's <code>decision(...)</code>. Two of the same key never release, an unknown role is refused, and resetting forces both keys to be collected again. <a href="/ui/index.html">Back to the console</a>.</p>
+  </div>
+</main>
+<script src="approve.js"></script>
+</body>
+</html>

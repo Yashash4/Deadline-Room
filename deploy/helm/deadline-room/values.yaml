@@ -1,0 +1,41 @@
+# Default values for the Deadline Room chart. Override with --set or -f.
+
+image:
+  # A deployer points this at its own registry. The role images are built from the
+  # one Dockerfile via its per-role targets (service, warden, drafter).
+  repository: deadline-room
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# The Kubernetes Secret (provisioned by Terraform in infra/) holding the Band and
+# model API keys and the signing-key custody handle. Referenced by name; never
+# inlined here.
+secretName: deadline-room-secrets
+
+# The sealed-artifact corpus the service reads and the Warden audits.
+corpus:
+  mountPath: /data/corpus
+  storageSize: 5Gi
+  storageClassName: ""
+
+service:
+  replicas: 2
+  port: 8000
+
+warden:
+  replicas: 1
+
+# One drafter pod per regime. Each is its own Band agent (container-per-agent).
+drafters:
+  - nis2
+  - dora
+  - sec
+  - uk_ico
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi

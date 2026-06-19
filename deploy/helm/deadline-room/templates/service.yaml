@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-service
+  labels:
+    {{- include "deadline-room.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service
+spec:
+  replicas: {{ .Values.service.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: service
+  template:
+    metadata:
+      labels:
+        {{- include "deadline-room.labels" . | nindent 8 }}
+        app.kubernetes.io/component: service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.service.port | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: service
+          image: {{ include "deadline-room.image" (dict "repo" .Values.image.repository "role" "service" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "uvicorn", "web.app_server:app", "--host", "0.0.0.0", "--port", {{ .Values.service.port | quote }}]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: DEADLINE_ROOM_DATA_DIR
+              value: {{ .Values.corpus.mountPath | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          volumeMounts:
+            - name: corpus
+              mountPath: {{ .Values.corpus.mountPath }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-corpus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-service
+  labels:
+    {{- include "deadline-room.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service
+spec:
+  selector:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: service
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-corpus
+  labels:
+    {{- include "deadline-room.labels" . | nindent 4 }}
+    app.kubernetes.io/component: corpus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.corpus.storageClassName }}
+  storageClassName: {{ .Values.corpus.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.corpus.storageSize }}

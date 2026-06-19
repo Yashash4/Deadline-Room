@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-warden
+  labels:
+    {{- include "deadline-room.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+spec:
+  replicas: {{ .Values.warden.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: warden
+  template:
+    metadata:
+      labels:
+        {{- include "deadline-room.labels" . | nindent 8 }}
+        app.kubernetes.io/component: warden
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: warden
+          image: {{ include "deadline-room.image" (dict "repo" .Values.image.repository "role" "warden" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: warden
+            - name: DEADLINE_ROOM_DATA_DIR
+              value: {{ .Values.corpus.mountPath | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          volumeMounts:
+            - name: corpus
+              mountPath: {{ .Values.corpus.mountPath }}
+          livenessProbe:
+            exec:
+              command: ["python", "scripts/audit_run.py"]
+            initialDelaySeconds: 10
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 2
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os,sys; sys.exit(0 if os.path.isdir('{{ .Values.corpus.mountPath }}') else 1)"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-corpus

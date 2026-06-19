@@ -1,0 +1,252 @@
+# One drafter Deployment per regulatory regime: container-per-agent, so each
+# drafter is its own Band agent with its own WebSocket connection. The same drafter
+# image serves every regime; DEADLINE_ROOM_REGIME selects which regulator this pod
+# drafts for. The drafters are LLM agents (content + rationale only); they never
+# enter the deterministic gate path.
+#
+# Each pod's liveness probe is a process check (the floor module imports cleanly);
+# readiness confirms the model-gateway secret is present before the pod is marked
+# ready to accept work.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-drafter-nis2
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: drafter
+    deadline-room/regime: nis2
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: drafter
+      deadline-room/regime: nis2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: drafter
+        deadline-room/regime: nis2
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: drafter
+          image: deadline-room-drafter:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: drafter
+            - name: DEADLINE_ROOM_REGIME
+              value: nis2
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-drafter-dora
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: drafter
+    deadline-room/regime: dora
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: drafter
+      deadline-room/regime: dora
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: drafter
+        deadline-room/regime: dora
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: drafter
+          image: deadline-room-drafter:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: drafter
+            - name: DEADLINE_ROOM_REGIME
+              value: dora
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-drafter-sec
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: drafter
+    deadline-room/regime: sec
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: drafter
+      deadline-room/regime: sec
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: drafter
+        deadline-room/regime: sec
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: drafter
+          image: deadline-room-drafter:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: drafter
+            - name: DEADLINE_ROOM_REGIME
+              value: sec
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deadline-room-drafter-uk-ico
+  labels:
+    app.kubernetes.io/name: deadline-room
+    app.kubernetes.io/component: drafter
+    deadline-room/regime: uk_ico
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deadline-room
+      app.kubernetes.io/component: drafter
+      deadline-room/regime: uk_ico
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deadline-room
+        app.kubernetes.io/component: drafter
+        deadline-room/regime: uk_ico
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: drafter
+          image: deadline-room-drafter:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEADLINE_ROOM_ROLE
+              value: drafter
+            - name: DEADLINE_ROOM_REGIME
+              value: uk_ico
+          envFrom:
+            - secretRef:
+                name: deadline-room-secrets
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import floor.run_floor"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

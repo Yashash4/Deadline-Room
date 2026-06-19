@@ -1,0 +1,13 @@
+apiVersion: v2
+name: deadline-room
+description: A deterministic multi-agent regulated breach-reporting war room. Container-per-agent topology, the standing governance service and product UI, the no-LLM Warden, and one LLM drafter per regime.
+type: application
+version: 0.1.0
+appVersion: "1"
+keywords:
+  - compliance
+  - breach-reporting
+  - governance
+  - deterministic
+  - audit
+home: https://app.band.ai

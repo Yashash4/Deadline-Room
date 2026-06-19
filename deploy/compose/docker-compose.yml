@@ -1,0 +1,82 @@
+# Local container-per-agent bring-up of Deadline Room, the same topology the k8s
+# manifests deploy: the standing governance service (API + product UI + /metrics +
+# the approval screen), the deterministic no-LLM Warden, and one LLM drafter per
+# regime. Each service builds from the one Dockerfile via its per-role target.
+#
+#   docker compose -f deploy/compose/docker-compose.yml up --build
+#
+# The service serves on http://localhost:8000 (console at /, approval at /approve,
+# metrics at /metrics). The Band and model API keys and the signing custody handle
+# come from the host environment; offline, the service and the Warden audit the
+# sealed corpus with no keys.
+services:
+  service:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: service
+    command: ["python", "-m", "uvicorn", "web.app_server:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DEADLINE_ROOM_DATA_DIR: /data/corpus
+      BAND_API_KEY: ${BAND_API_KEY:-}
+      FEATHERLESS_API_KEY: ${FEATHERLESS_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - corpus:/data/corpus
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  warden:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: warden
+    command: ["python", "scripts/audit_run.py"]
+    environment:
+      DEADLINE_ROOM_ROLE: warden
+      DEADLINE_ROOM_DATA_DIR: /data/corpus
+    volumes:
+      - corpus:/data/corpus
+
+  drafter-nis2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: drafter
+    environment:
+      DEADLINE_ROOM_ROLE: drafter
+      DEADLINE_ROOM_REGIME: nis2
+
+  drafter-dora:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: drafter
+    environment:
+      DEADLINE_ROOM_ROLE: drafter
+      DEADLINE_ROOM_REGIME: dora
+
+  drafter-sec:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: drafter
+    environment:
+      DEADLINE_ROOM_ROLE: drafter
+      DEADLINE_ROOM_REGIME: sec
+
+  drafter-uk-ico:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: drafter
+    environment:
+      DEADLINE_ROOM_ROLE: drafter
+      DEADLINE_ROOM_REGIME: uk_ico
+
+volumes:
+  corpus:
