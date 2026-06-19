@@ -634,6 +634,86 @@ def _render_assertion(a: dict) -> str:
     return "".join(parts)
 
 
+def _render_egress(e: dict) -> str:
+    """Render the signed EGRESS ATTESTATION (E5.8): zero breach facts left the
+    perimeter.
+
+    A regulated bank can require that no breach fact be handed to a closed,
+    third-party hosted model. A --sovereign run is one in which EVERY drafting role
+    resolves to an open, self-hostable model (floor/roster.resolve), so no incident
+    detail leaves the bank's perimeter. This block states that property, enumerates
+    each role with its resolved provider and model and its open/closed posture, and
+    carries the SEPARATE, DETACHED Ed25519 signature over the egress record.
+
+    It is a PURE DERIVED summary of the roster under the active provider set
+    (floor/egress_attestation.py): zero LLM, no now(); it never enters the hashed
+    run-log and gates nothing. The egress digest is signed under a DISTINCT label
+    in its OWN sidecar, NOT folded into the run-log bound payload, so the run-log
+    seal, the four sealed .sig.json signatures, and byte-identical replay are
+    untouched. The honest demo-key caveat travels with the signature. A reader
+    re-derives the attestation, recomputes the digest, and verifies the signature
+    with scripts/verify_egress.py. Rendered ONLY when present (a --sovereign run);
+    omitted entirely otherwise."""
+    if not e or not e.get("document"):
+        return ""
+    doc = e.get("document", {}) or {}
+    sovereign = e.get("sovereign", False)
+    self_hosted = e.get("self_hosted_count", 0)
+    total = e.get("total", 0)
+    digest = e.get("digest", "")
+    provider_set = doc.get("provider_set", "")
+    top_cls = "ok" if sovereign else "bad"
+    headline = (
+        f"Sovereign: all {_esc(total)} drafting roles resolve to a self-hosted "
+        "open model, so ZERO breach facts left the perimeter."
+        if sovereign else
+        f"NOT sovereign: only {_esc(self_hosted)} of {_esc(total)} roles are "
+        "self-hosted; the others route breach facts to a closed hosted model.")
+    parts = [
+        "<h2>14. Egress attestation (air-gapped / data-sovereignty, signed)</h2>",
+        f"<p class='{top_cls}'><strong>{headline}</strong></p>",
+        "<p class='sub'>A regulated bank may require that no breach fact leave its "
+        "perimeter. In <code>--sovereign</code> mode the run REFUSES to start if "
+        "any role would route to a closed hosted model, and emits this signed "
+        "attestation that every drafting role resolves to an open, self-hostable "
+        f"model under provider set <code>{_esc(provider_set)}</code>. The egress "
+        "digest is signed by a SEPARATE, DETACHED Ed25519 signature under a "
+        "DISTINCT label in its own sidecar; it is NOT folded into the run-log "
+        "payload, so the run-log seal and byte-identical replay are untouched. A "
+        "reader re-derives the attestation, recomputes the digest, and verifies "
+        "the signature with <code>scripts/verify_egress.py</code>.</p>",
+    ]
+    roles = doc.get("roles", []) or []
+    if roles:
+        rows = ["<table><tr><th>Role</th><th>Provider</th><th>Model</th>"
+                "<th>Posture</th></tr>"]
+        for r in roles:
+            posture = ("self-hosted (open)" if r.get("self_hosted")
+                       else "hosted (closed)")
+            cls = "ok" if r.get("self_hosted") else "bad"
+            rows.append(
+                f"<tr><td>{_esc(r.get('role_label', ''))}</td>"
+                f"<td>{_esc(r.get('provider', ''))}</td>"
+                f"<td><code>{_esc(r.get('model', ''))}</code></td>"
+                f"<td class='{cls}'>{_esc(posture)}</td></tr>")
+        rows.append("</table>")
+        parts.append("".join(rows))
+    if digest:
+        parts.append(
+            f"<p class='sub'>Egress digest (the signed value): "
+            f"<span class='hash'>{_esc(digest)}</span>. A single edited field in "
+            "the egress record moves this digest and the detached Ed25519 "
+            "signature over it turns INVALID.</p>")
+    sig = e.get("signature", {}) or {}
+    fp = sig.get("pubkey_fingerprint", "")
+    if fp:
+        parts.append(
+            f"<p class='sub'>Signed by {_esc(sig.get('signer', 'Deadline Warden'))} "
+            f"(key fp <code>{_esc(fp)}</code>), detached under label "
+            f"<code>{_esc(sig.get('signed_payload', ''))}</code>.</p>")
+    return "".join(parts)
+
+
 def _render_sod(s: dict) -> str:
     """Render the SEPARATION-OF-DUTIES MATRIX (E4.5): the segregation of duties proven
     across the WHOLE run, not only at the two-key release gate.
@@ -2873,6 +2953,7 @@ def _render_html(p: dict) -> str:
     controls_block = _render_controls(p.get("controls", {}))
     sod_block = _render_sod(p.get("sod", {}))
     assertion_block = _render_assertion(p.get("assertion", {}))
+    egress_block = _render_egress(p.get("egress", {}))
     chaos_block = _render_chaos(p.get("chaos", {}))
     security_block = _render_security(p.get("security", {}))
     regime_expert_block = _render_regime_expert(p.get("regime_expert", {}))
@@ -3126,6 +3207,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {sod_block}
 
 {assertion_block}
+
+{egress_block}
 
 {attestation_block}
 

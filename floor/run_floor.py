@@ -931,7 +931,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               reportability_facts: dict | None = None,
               affected_party: bool = False, high_risk_fn=None,
               affected_party_facts: dict | None = None,
-              failover: bool = False, route: bool = False) -> dict:
+              failover: bool = False, route: bool = False,
+              sovereign: bool = False) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -968,7 +969,7 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            affected_party=affected_party,
                            high_risk_fn=high_risk_fn,
                            affected_party_facts=affected_party_facts,
-                           failover=failover, route=route)
+                           failover=failover, route=route, sovereign=sovereign)
 
 
 # (cross_border has no public-API kwarg: it is selected purely by mode ==
@@ -998,7 +999,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     affected_party: bool = False,
                     high_risk_fn=None,
                     affected_party_facts: dict | None = None,
-                    failover: bool = False, route: bool = False) -> dict:
+                    failover: bool = False, route: bool = False,
+                    sovereign: bool = False) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -1758,6 +1760,7 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         deficiency=deficiency_record,
         legal_hold=legal_hold_record,
         submission=submission_record,
+        sovereign=sovereign,
     )
     json_path, html_path = write_packet(packet, out_dir)
     run_log_path = Path(out_dir) / f"run-{INCIDENT_ID}-{mode}.jsonl"
@@ -4633,7 +4636,8 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
                      recovered_retries: int = 0, operability=None,
                      attestation=None, reportability=None,
                      cross_border=None, affected_party=None,
-                     deficiency=None, legal_hold=None, submission=None) -> dict:
+                     deficiency=None, legal_hold=None, submission=None,
+                     sovereign: bool = False) -> dict:
     clock_rows = _clock_rows(clocks)
     lifecycle = [{"message_id": mid, "states": states}
                  for mid, states in trace.lifecycle.items()]
@@ -4888,6 +4892,19 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     assertion = assertion_record(packet)
     if assertion:
         packet["assertion"] = assertion
+    # E5.8 signed egress attestation: when the run was started in --sovereign mode,
+    # attach the "zero breach facts left the perimeter" attestation (the resolved
+    # roles, all self-hosted, and the sovereign verdict) with its SEPARATE DETACHED
+    # Ed25519 signature under a DISTINCT label, in this packet block. It is a PURE
+    # DERIVED function of the provider set (floor/egress_attestation.py): zero LLM,
+    # no now(). It is NOT folded into the run-log 4-field bound payload, it never
+    # enters the hashed run-log, and it gates nothing, so the run-log sha, the chain
+    # head, the four sealed .sig.json bound signatures, and byte-identical replay
+    # are all untouched. Additive and render-time: omitted entirely unless
+    # --sovereign was set, so the four default sealed captures are unchanged.
+    if sovereign:
+        from floor.egress_attestation import egress_record
+        packet["egress"] = egress_record(provider_set)
     # Reliability receipt: how many transient network failures a later attempt
     # recovered this run. Additive, rendered only when nonzero (a clean run, and
     # every offline test, has zero and omits the field). It is read from the live
@@ -5595,6 +5612,16 @@ def main() -> int:
                              "(DeepSeek-V3.2 + MiniMax-M2.7); a pure-Python reconcile "
                              "collapses them into one verdict (agree, or conservative "
                              "proceed plus human escalation on disagreement)")
+    parser.add_argument("--sovereign", action="store_true",
+                        help="E5.8 air-gapped / data-sovereignty mode: REFUSE to start "
+                             "(clear error, nonzero exit) if any drafting role resolves "
+                             "to a closed hosted model, so no breach fact ever leaves "
+                             "the bank's perimeter. When every role is self-hosted "
+                             "(provider dev is all-Featherless) the run proceeds and "
+                             "emits a SIGNED 'zero breach facts left the perimeter' "
+                             "egress attestation (a SEPARATE detached Ed25519 signature "
+                             "in its own sidecar; the per-run seal is untouched). "
+                             "Default off, exactly today's behavior")
     args = parser.parse_args()
     if args.concurrent:
         # Offline, deterministic, no Band / no LLM keys required. Drives two
@@ -5659,6 +5686,24 @@ def main() -> int:
     sec_facts = SEC_IMMATERIAL_FACTS if (args.materiality and args.immaterial) \
         else SEC_MATERIAL_FACTS if args.materiality else None
 
+    # E5.8 sovereign pre-flight: REFUSE to start (clear error, nonzero) BEFORE any
+    # credential load, Band room, or LLM call if any role would route a breach fact
+    # to a closed hosted model. Default off: without --sovereign this branch never
+    # runs, so the run behaves exactly as before. It runs ahead of the key checks
+    # so a sovereignty refusal never depends on having credentials loaded: a bank
+    # that forbids egress is told so before anything reaches for a key.
+    if args.sovereign:
+        from floor.egress_attestation import SovereigntyError, assert_sovereign
+        try:
+            attestation = assert_sovereign(args.provider)
+        except SovereigntyError as e:
+            print("=== Deadline Room SOVEREIGN pre-flight: REFUSED ===")
+            print(str(e))
+            return 1
+        print("=== Deadline Room SOVEREIGN pre-flight: PASSED ===")
+        print(attestation.verdict)
+        print()
+
     try:
         from _env import load_env  # spikes/_env.py
         load_env()
@@ -5681,7 +5726,8 @@ def main() -> int:
                        nydfs_recruit=args.nydfs_recruit,
                        reportability=args.reportability,
                        affected_party=args.affected_party,
-                       failover=args.failover, route=args.route)
+                       failover=args.failover, route=args.route,
+                       sovereign=args.sovereign)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0
