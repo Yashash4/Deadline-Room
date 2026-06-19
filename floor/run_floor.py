@@ -2148,6 +2148,20 @@ def _challenger_phase(*, challenger, drafter_client, trace, branch,
               f"{result.confirmed} confirmed, {result.overturned} overturned "
               f"by the grounding oracle (msg {reply_mid})")
 
+    # 4. The deterministic anti-gaming cross-check (E9.6). Independently of the
+    #    Challenger's text, the adjudicator swept the grounding oracle's own
+    #    flagged spans: any provable hallucination the Challenger did NOT object
+    #    to (silenced by a prompt-injection, blanked by a malformed [CHALLENGE]
+    #    block, or wasted on an out-of-field target) is a MISSED defect and the
+    #    review is RED. This never gates; it is a printed receipt that the oracle,
+    #    not the LLM, decides the outcome.
+    if result.red:
+        missed_txt = "; ".join(
+            f"{d.kind} '{d.span}' ({d.reason})" for d in result.missed_defects)
+        trace.say(f"    [adjudicator] RED: the Challenger missed "
+                  f"{result.missed} deterministically-provable hallucination(s) "
+                  f"the grounding oracle independently flagged: {missed_txt}")
+
     record = {
         "branch": branch,
         "regime": regime,
@@ -2157,7 +2171,10 @@ def _challenger_phase(*, challenger, drafter_client, trace, branch,
         "raised": result.raised,
         "confirmed": result.confirmed,
         "overturned": result.overturned,
+        "missed": result.missed,
+        "red": result.red,
         "objections": [o.as_dict() for o in result.objections],
+        "missed_defects": [d.as_dict() for d in result.missed_defects],
         "challenge_message_id": ch_mid,
         "reply_message_id": reply_mid,
     }
@@ -4720,6 +4737,11 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
             "objections_raised": sum(c["raised"] for c in trace.challenges),
             "objections_confirmed": sum(c["confirmed"] for c in trace.challenges),
             "objections_overturned": sum(c["overturned"] for c in trace.challenges),
+            # The E9.6 anti-gaming cross-check totals: defects the Challenger
+            # missed (a provable hallucination it did not object to) and whether
+            # any review went RED. Derived at packet time, never in the run-log.
+            "missed_defects": sum(c.get("missed", 0) for c in trace.challenges),
+            "any_red": any(c.get("red", False) for c in trace.challenges),
         } if trace.challenges else {},
         "chaos": {
             "events": trace.chaos_events,

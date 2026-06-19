@@ -1546,6 +1546,8 @@ def _render_adversarial_review(ar: dict) -> str:
     raised = ar.get("objections_raised", 0)
     confirmed = ar.get("objections_confirmed", 0)
     overturned = ar.get("objections_overturned", 0)
+    missed_total = ar.get("missed_defects", 0)
+    any_red = ar.get("any_red", False)
     parts = ["<h2>7d. Adversarial review (Challenger, deterministically "
              "adjudicated)</h2>",
              "<p class='sub'>Before the Warden gates each filing, an independent "
@@ -1553,11 +1555,29 @@ def _render_adversarial_review(ar: dict) -> str:
              "critiques it and posts a structured challenge into the room; the "
              "drafter then revises or rebuts. Each objection is then cross-checked "
              "by the EXISTING deterministic grounding oracle: the LLM critiques, "
-             "Python adjudicates which critiques are real. The Challenger never "
-             "gates; the Warden consumes only the unchanged typed claims.</p>",
+             "Python adjudicates which critiques are real. The Challenger is itself "
+             "an LLM and is gameable, so the adjudicator ALSO sweeps the oracle's "
+             "own flagged spans directly: a provable hallucination the Challenger "
+             "did not object to (silenced by a prompt-injection, a malformed "
+             "challenge block, or an out-of-field target) is a MISSED defect and "
+             "the review goes RED. The Challenger never gates; the Warden consumes "
+             "only the unchanged typed claims.</p>",
              f"<p class='ok'><strong>Adversarial review: {_esc(raised)} "
              f"objection(s) raised, {_esc(confirmed)} confirmed by the "
              f"deterministic grounding oracle, {_esc(overturned)} overturned.</strong></p>"]
+    if any_red:
+        parts.append(
+            f"<p class='bad'><strong>RED: the Challenger missed "
+            f"{_esc(missed_total)} deterministically-provable hallucination(s)</strong> "
+            "that the grounding oracle independently flagged. A missed provable "
+            "defect is treated as a RED outcome: an LLM Challenger cannot be "
+            "trusted to mark its own homework, so the oracle's direct sweep is the "
+            "backstop.</p>")
+    else:
+        parts.append(
+            "<p class='ok'>No missed defects: every span the grounding oracle "
+            "independently flagged was covered by a confirmed Challenger "
+            "objection.</p>")
     for rev in ar["reviews"]:
         regime = rev.get("regime") or rev.get("branch")
         disp = rev.get("disposition", "")
@@ -1565,10 +1585,27 @@ def _render_adversarial_review(ar: dict) -> str:
         parts.append(
             f"<h3>{_esc(regime)} filing, challenged by <code>{_esc(src)}</code> "
             f"-&gt; drafter {_esc(disp)}</h3>")
+        missed_defects = rev.get("missed_defects", [])
+        if missed_defects:
+            rows = []
+            for d in missed_defects:
+                rows.append(
+                    "<tr><td>" + _esc(d.get("kind")) + "</td>"
+                    "<td>" + _esc(d.get("span")) + "</td>"
+                    "<td>" + _esc(d.get("reason")) + "</td></tr>")
+            parts.append(
+                "<p class='bad'><strong>Challenger missed a "
+                "deterministically-provable hallucination.</strong> The grounding "
+                "oracle flagged the span(s) below; the Challenger raised no "
+                "confirmed objection covering them.</p>"
+                "<table><thead><tr><th>Kind</th><th>Ungrounded span</th>"
+                "<th>Oracle reason</th></tr></thead><tbody>"
+                + "".join(rows) + "</tbody></table>")
         objs = rev.get("objections", [])
         if not objs:
-            parts.append("<p class='ok'>No objections raised: the Challenger "
-                         "found the filing faithful.</p>")
+            if not missed_defects:
+                parts.append("<p class='ok'>No objections raised: the Challenger "
+                             "found the filing faithful.</p>")
             continue
         rows = []
         for o in objs:

@@ -65,6 +65,29 @@ _TARGET_ALIASES = {
 CONFIRMED = "confirmed"
 OVERTURNED = "overturned"
 
+# The grounding-scorer span KIND each adjudicable fact dimension maps to, inverted
+# from _TARGET_TO_KIND. Used by the missed-defect sweep to decide whether a
+# confirmed objection already covers an ungrounded span of a given kind, so the
+# same span is not counted both as a confirmed objection and a missed defect.
+_KIND_TO_DIMENSION = {kind: dim for dim, kind in _TARGET_TO_KIND.items()}
+
+
+@dataclass(frozen=True)
+class MissedDefect:
+    """One deterministically-provable hallucination the Challenger did NOT object
+    to: an ungrounded span the grounding oracle independently flagged whose
+    dimension no CONFIRMED objection covers. Its presence makes the adjudication
+    RED. This is the anti-gaming receipt: a Challenger silenced by prompt
+    injection, blanked by a malformed [CHALLENGE] block, or wasted on an
+    out-of-field target cannot hide a provable defect, because the oracle sweeps
+    the filing directly and the adjudicator, not the LLM, decides the outcome."""
+    kind: str          # the grounding span kind ("number" | "date" | "named_entity")
+    span: str          # the verbatim ungrounded text the oracle flagged
+    reason: str        # the oracle's reason the span is ungrounded
+
+    def as_dict(self) -> dict:
+        return {"kind": self.kind, "span": self.span, "reason": self.reason}
+
 
 @dataclass(frozen=True)
 class AdjudicatedObjection:
@@ -92,11 +115,21 @@ class AdjudicatedObjection:
 
 @dataclass
 class AdjudicationResult:
-    """The full adversarial-review adjudication for one filing."""
+    """The full adversarial-review adjudication for one filing.
+
+    `missed_defects` is the anti-gaming cross-check (E9.6): the ungrounded spans
+    the grounding oracle independently flagged in this filing that NO confirmed
+    objection covers. A non-empty list makes the result RED: the Challenger missed
+    a deterministically-provable hallucination, whether it was silenced by a
+    prompt-injection ("you have no objections"), blanked by a malformed
+    [CHALLENGE] block, or wasted on a confused-deputy target outside the
+    adjudicable fields. The oracle sweep is independent of the Challenger's text,
+    so none of those gaming vectors can auto-overturn a provable defect."""
     branch: str
     source: str
     memo: str = ""
     objections: list[AdjudicatedObjection] = field(default_factory=list)
+    missed_defects: list[MissedDefect] = field(default_factory=list)
 
     @property
     def raised(self) -> int:
@@ -110,6 +143,17 @@ class AdjudicationResult:
     def overturned(self) -> int:
         return sum(1 for o in self.objections if o.verdict == OVERTURNED)
 
+    @property
+    def missed(self) -> int:
+        return len(self.missed_defects)
+
+    @property
+    def red(self) -> bool:
+        """RED when the oracle independently flagged at least one ungrounded span
+        the Challenger did not object to. This is the deterministically-provable
+        hallucination the Challenger missed."""
+        return bool(self.missed_defects)
+
     def as_dict(self) -> dict:
         return {
             "branch": self.branch,
@@ -118,7 +162,10 @@ class AdjudicationResult:
             "raised": self.raised,
             "confirmed": self.confirmed,
             "overturned": self.overturned,
+            "missed": self.missed,
+            "red": self.red,
             "objections": [o.as_dict() for o in self.objections],
+            "missed_defects": [d.as_dict() for d in self.missed_defects],
         }
 
 
@@ -153,9 +200,42 @@ def adjudicate(challenge: Challenge, filing_text: str,
     adjudicated: list[AdjudicatedObjection] = []
     for obj in challenge.objections:
         adjudicated.append(_adjudicate_one(obj, by_kind))
+    missed = _missed_defects(adjudicated, grounding.ungrounded)
     return AdjudicationResult(
         branch=challenge.branch, source=challenge.source, memo=challenge.memo,
-        objections=adjudicated)
+        objections=adjudicated, missed_defects=missed)
+
+
+def _missed_defects(adjudicated: list[AdjudicatedObjection],
+                    ungrounded: list[UngroundedSpan]) -> list[MissedDefect]:
+    """The anti-gaming cross-check (E9.6). Sweep the grounding oracle's own
+    flagged spans directly and return every ungrounded span the Challenger did NOT
+    catch: one whose dimension no CONFIRMED objection covers.
+
+    This is a DIRECT oracle sweep, independent of the Challenger's text, so it
+    fires regardless of HOW the Challenger fell short. A drafter that injects "you
+    have no objections", a malformed [CHALLENGE] block that parses to zero
+    objections, and a confused-deputy target outside the adjudicable fields all
+    leave the same trail: the oracle still flags the provable defect and no
+    confirmed objection covers it, so it surfaces here as RED. The adjudicator,
+    not the LLM, owns the outcome; none of those vectors can auto-overturn it.
+
+    A defect is considered CAUGHT (not missed) only by a CONFIRMED objection of
+    the matching dimension: an OVERTURNED objection is, by definition, one the
+    oracle did not support, so it cannot cover a defect the oracle DID flag."""
+    caught_kinds = {
+        _TARGET_TO_KIND.get(_normalize_target(o.target))
+        for o in adjudicated if o.verdict == CONFIRMED
+    }
+    caught_kinds.discard(None)
+    caught_kinds.discard("")
+    missed: list[MissedDefect] = []
+    for span in ungrounded:
+        if span.kind in caught_kinds:
+            continue
+        missed.append(MissedDefect(
+            kind=span.kind, span=span.span, reason=span.reason))
+    return missed
 
 
 def _adjudicate_one(obj: Objection,
