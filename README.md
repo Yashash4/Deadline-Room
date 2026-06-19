@@ -2,10 +2,10 @@
 
 **The second a bank gets breached, four government clocks start. Deadline Room runs the filing teams as agents racing those clocks through Band, while a deterministic referee refuses any handoff that breaks the rules.**
 
-<!-- At submission, when the repo is public, swap the static CI badge below for the
-     live workflow badge: ![ci](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg) -->
-![ci](https://img.shields.io/badge/ci-pytest%20%2B%20ruff%20%2B%20hygiene-3fd07f)
-![tests](https://img.shields.io/badge/tests-320%20passing-3fd07f)
+**[Live demo](https://deadline-room.vercel.app/) (verify it in your browser) · [Submission](https://lablab.ai/ai-hackathons/band-of-agents-hackathon/tripod/deadline-room) · [What you can run in 2 minutes](#what-you-can-run-in-2-minutes)**
+
+![ci](https://github.com/Yashash4/Deadline-Room/actions/workflows/ci.yml/badge.svg)
+![tests](https://img.shields.io/badge/tests-1%2C435%20passing-3fd07f)
 ![warden](https://img.shields.io/badge/Warden-deterministic%20%2F%20no%20LLM-4da3ff)
 ![replay](https://img.shields.io/badge/replay-byte--identical-ffb547)
 ![license](https://img.shields.io/badge/license-MIT-8b9bb4)
@@ -43,7 +43,7 @@ Every command below was run on this repo against live Band and live Featherless.
 
 | What | Command | What you see |
 |---|---|---|
-| The property suite | `py -m pytest tests/ -q` | `320 passed` |
+| The property suite | `py -m pytest tests/ -q` | `1435 passed` |
 | Break the evidence yourself | `py scripts/tamper_test.py` | flip one field, the sealed hash, the chain head, AND the signature all break |
 | Verify the Warden's signature | `py scripts/verify_signature.py` | VALID, signed by the Warden's key (public key ships in the repo) |
 | Exactly-once at scale | `py scripts/exactly_once_benchmark.py` | held across 10,000 randomized kill + duplicate schedules: 0 double-files, 0 lost filings (deterministic, seeded) |
@@ -57,11 +57,10 @@ Every command below was run on this repo against live Band and live Featherless.
 
 ```
 $ py -m pytest tests/ -q
-........................................................................ [ 29%]
-........................................................................ [ 58%]
-........................................................................ [ 88%]
-.............................                                            [100%]
-320 passed in 6.01s
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+...................................................................      [100%]
+1435 passed in 124.01s
 ```
 
 ### 2. A clean incident: four clocks, the Examiner Packet, byte-identical replay
@@ -262,8 +261,8 @@ What the agents are architecturally **prevented** from doing, by construction, n
 ## Quickstart
 
 ```
-git clone <repo-url>
-cd code
+git clone https://github.com/Yashash4/Deadline-Room.git
+cd Deadline-Room
 pip install -r requirements.txt
 
 # copy the env template and fill in your keys
@@ -282,14 +281,14 @@ py floor/run_floor.py
 cd web && py -m http.server 8000   # then open http://localhost:8000
 ```
 
-The 320-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
+The 1,435-test deterministic core needs nothing but `pytest` and the standard library. Only the live floor run needs API keys.
 
 ### One command
 
 On Linux, macOS, or any machine with `make`:
 
 ```
-make test      # the 320-test suite (no keys, no network)
+make test      # the 1,435-test suite (no keys, no network)
 make lint      # ruff over the repository
 make verify    # the tamper receipt: break the evidence, watch the seal fail
 make demo      # a live incident (needs BAND_API_KEY + FEATHERLESS_API_KEY)
@@ -317,8 +316,9 @@ Every push and pull request runs the same three gates in GitHub Actions (`.githu
 
 ## Demo and video
 
-- Demo application (hosted replay viewer): _URL to be added at submission._
-- Video presentation: _link to be added at submission._
+- **Live demo** (hosted replay viewer, recompute the hash and check the Ed25519 signature in your own browser): https://deadline-room.vercel.app/
+- **Submission page:** https://lablab.ai/ai-hackathons/band-of-agents-hackathon/tripod/deadline-room
+- **Video presentation:** added with the submission.
 
 ## License
 
