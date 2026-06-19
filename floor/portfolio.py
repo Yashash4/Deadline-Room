@@ -1163,3 +1163,221 @@ def queue_dict(board: QueueBoard) -> dict:
             for it in board.items
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Per-entity / per-subsidiary segmentation with a two-level signed tree (E6.5). A
+# standing ops center serves a GROUP with subsidiaries, each a regulated entity
+# with its own incidents and regulator exposure. The board wants the fleet
+# segmented by entity, AND a per-subsidiary signed SUB-ATTESTATION a subsidiary GC
+# can hand to its own regulator WITHOUT exposing the rest of the group.
+#
+# The two-level tree: group each attested SealedRun by its regulated entity,
+# fold a per-entity Merkle SUB-ROOT over that entity's SORTED chain heads, sign
+# each sub-root (a DISTINCT sub-attestation label, warden/portfolio_signing.py),
+# and fold the SORTED sub-roots into the GROUP root. Editing one of an entity's
+# runs moves its chain head, which moves that entity's sub-root, which moves the
+# group root; dropping a whole entity moves the group root over a smaller set.
+#
+# Pure grouping over READ-ONLY per-run bytes: the four sealed shas and replay are
+# untouched. The entity itself is resolved OUTSIDE the sealed spine (an in-band
+# fact-record field if a capture carries it, else a declarative tenant entity map
+# beside the captures), so multi-tenant/entity state never enters the hashed JSONL.
+# ---------------------------------------------------------------------------
+
+# The bucket a run lands in when no entity resolves (matches floor.tenancy so the
+# two layers name the same sentinel). A run is always in exactly one segment, so
+# the per-entity run counts sum to the attested total; nothing is silently dropped.
+UNASSIGNED_ENTITY = "(unassigned)"
+
+
+def resolve_entity(run: SealedRun, entity_map: dict[str, str] | None = None) -> str:
+    """Resolve one run's regulated entity, most-specific source first.
+
+    1. An in-band `regulated_entity` on a run-log payload wins when present (a
+       future capture that carries the filer in its sealed bytes needs no external
+       map). This is a read-only fold over the canonical bytes, identical to the
+       insights path's `_run_regulated_entity`.
+    2. Else the declarative `entity_map` (run-log name -> entity), tenant
+       configuration that lives OUTSIDE the sealed spine, assigns it.
+    3. Else `UNASSIGNED_ENTITY`, a named bucket, so the run is still counted.
+
+    Deterministic and read-only: the same run plus the same map always resolves the
+    same entity, and nothing is written back to the sealed log."""
+    in_band = _run_regulated_entity(_entries_of(_canonical_jsonl(run.log_path)))
+    if in_band:
+        return in_band
+    mapped = (entity_map or {}).get(run.name, "")
+    return mapped or UNASSIGNED_ENTITY
+
+
+@dataclass(frozen=True)
+class EntitySegment:
+    """One regulated entity's slice of the fleet and its signed sub-root.
+
+    `entity` is the regulated entity (the subsidiary); `runs` are ONLY that
+    entity's attested runs, SORTED by name; `chain_heads` are their sorted chain
+    heads; `sub_root` is the Merkle root over those heads (the per-entity sub-root
+    in the two-level tree); `run_count` is the number of that entity's runs. Every
+    value derives read-only from the sealed bytes of this entity's runs alone, so a
+    sub-attestation built from it exposes nothing about any other entity."""
+    entity: str
+    runs: list[SealedRun]
+    chain_heads: list[str]
+    sub_root: str
+    run_count: int
+
+
+@dataclass(frozen=True)
+class PortfolioSegmentation:
+    """The fleet segmented into per-entity slices plus the two-level tree roots.
+
+    `segments` is the per-entity slice list, SORTED by entity name, each carrying
+    its own signed-able sub-root; `group_root` is the Merkle root over the SORTED
+    per-entity sub-roots (the top of the two-level tree); `flat_root` is the Merkle
+    root over ALL the attested chain heads (the single-level portfolio root the
+    group attestation already signs). Holding both lets a verifier confirm the
+    segmentation covers exactly the attested set: the flat root is the one
+    `attest_portfolio` signs, and the group-of-sub-roots is the segmented view of
+    the same runs."""
+    segments: list[EntitySegment]
+    group_root: str
+    flat_root: str
+
+
+def segment_by_entity(
+    runs: list[SealedRun], entity_map: dict[str, str] | None = None
+) -> PortfolioSegmentation:
+    """Group the ATTESTED runs by regulated entity and fold the two-level tree.
+
+    Only runs that passed their per-run signature are grouped (a flagged run is
+    never folded), so the segmentation attests the same verified set as the flat
+    portfolio root. Each run is resolved to its entity (in-band field, else the
+    declarative map, else the named UNASSIGNED bucket); runs are grouped, each
+    group's SORTED chain heads fold into a per-entity sub-root, the sub-roots fold
+    (sorted) into the group root, and all attested heads fold into the flat root.
+    Pure grouping over read-only bytes: same runs plus same map yield the same tree
+    on every platform, and no sealed byte is touched."""
+    attested = sorted(
+        (r for r in runs if r.signature_valid), key=lambda r: r.name)
+    buckets: dict[str, list[SealedRun]] = defaultdict(list)
+    for run in attested:
+        buckets[resolve_entity(run, entity_map)].append(run)
+
+    segments: list[EntitySegment] = []
+    for entity in sorted(buckets):
+        entity_runs = sorted(buckets[entity], key=lambda r: r.name)
+        heads = sorted(r.chain_head for r in entity_runs)
+        segments.append(EntitySegment(
+            entity=entity,
+            runs=entity_runs,
+            chain_heads=heads,
+            sub_root=merkle_root(heads),
+            run_count=len(entity_runs),
+        ))
+
+    group_root = merkle_root(sorted(s.sub_root for s in segments))
+    flat_root = merkle_root(sorted(r.chain_head for r in attested))
+    return PortfolioSegmentation(
+        segments=segments, group_root=group_root, flat_root=flat_root)
+
+
+def _entity_sub_manifest(segment: EntitySegment) -> dict:
+    """The canonical, sorted sub-manifest a per-entity sub-attestation is taken
+    over: the entity name, its sub-root, its run count, and its runs by name with
+    their recomputed sha256 and chain head. It lists ONLY this entity's runs, so a
+    subsidiary GC can hand it to a regulator without exposing any sibling entity.
+    Mirrors `_canonical_manifest`'s shape so a verifier rebuilds identical bytes."""
+    return {
+        "portfolio_version": "1",
+        "entity": segment.entity,
+        "run_count": segment.run_count,
+        "sub_root": segment.sub_root,
+        "runs": [
+            {"name": r.name, "sha256": r.sha256, "chain_head": r.chain_head}
+            for r in segment.runs
+        ],
+    }
+
+
+def entity_sub_manifest_bytes(sub_manifest: dict) -> bytes:
+    """The exact bytes a per-entity sub-manifest renders to: sorted keys, no
+    whitespace, UTF-8. Same recipe as the group manifest, so a verifier (Python or
+    browser) rebuilds identical bytes and the same digest."""
+    return json.dumps(
+        sub_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def entity_sub_manifest_digest(sub_manifest: dict) -> str:
+    """The sha256 of a canonical per-entity sub-manifest bytes: the digest a
+    sub-attestation signature carries alongside the entity, sub-root, and count."""
+    return hashlib.sha256(entity_sub_manifest_bytes(sub_manifest)).hexdigest()
+
+
+@dataclass(frozen=True)
+class ScopedAttestation:
+    """A signed sub-attestation scoped to ONE regulated entity.
+
+    `entity` is the entity; `sub_manifest` is the canonical sub-manifest listing
+    ONLY this entity's runs; `sub_root` is the per-entity Merkle root; `run_count`
+    is this entity's run count; `sub_manifest_sha256` is the sub-manifest digest;
+    `runs` are this entity's attested runs. The detached signature is added by
+    warden/portfolio_signing.sign_subattestation and stored beside this object. By
+    construction it carries no run, head, or sha belonging to any OTHER entity, so a
+    subsidiary can hand it to its regulator without leaking the rest of the group."""
+    entity: str
+    sub_manifest: dict
+    sub_root: str
+    run_count: int
+    sub_manifest_sha256: str
+    runs: list[SealedRun]
+
+
+def scoped_attestation(
+    runs: list[SealedRun], entity: str,
+    entity_map: dict[str, str] | None = None
+) -> ScopedAttestation:
+    """Build the scoped sub-attestation for exactly one entity over the attested runs.
+
+    Segments the fleet, selects ONLY the requested entity's slice, and builds a
+    sub-manifest and digest from that slice alone. A request for an entity with no
+    runs yields an empty-but-valid scoped attestation (sub-root over the empty set,
+    zero runs), never an error, so the board can always render a scope. The returned
+    object provably contains only the named entity's runs: that is the isolation
+    property the tests assert. Pure and deterministic; no sealed byte is touched."""
+    segmentation = segment_by_entity(runs, entity_map)
+    match = next((s for s in segmentation.segments if s.entity == entity), None)
+    if match is None:
+        match = EntitySegment(
+            entity=entity, runs=[], chain_heads=[],
+            sub_root=merkle_root([]), run_count=0)
+    sub_manifest = _entity_sub_manifest(match)
+    return ScopedAttestation(
+        entity=entity,
+        sub_manifest=sub_manifest,
+        sub_root=match.sub_root,
+        run_count=match.run_count,
+        sub_manifest_sha256=entity_sub_manifest_digest(sub_manifest),
+        runs=match.runs,
+    )
+
+
+def segmentation_dict(segmentation: PortfolioSegmentation) -> dict:
+    """The canonical, sorted-key dict the segmentation serializes to for the web
+    panel and any verifier: the group root, the flat root, and per-entity rows
+    (entity, sub-root, run count, run names). Every value is a count or a sorted
+    grouping; no field carries generated prose, mirroring the rest of the read
+    layer's canonical shapes."""
+    return {
+        "group_root": segmentation.group_root,
+        "flat_root": segmentation.flat_root,
+        "segments": [
+            {
+                "entity": s.entity,
+                "sub_root": s.sub_root,
+                "run_count": s.run_count,
+                "runs": [r.name for r in s.runs],
+            }
+            for s in segmentation.segments
+        ],
+    }

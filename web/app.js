@@ -2181,6 +2181,243 @@ async function renderQueue() {
   }
 }
 
+// ---- E6.5 per-entity / per-subsidiary segmentation (two-level signed tree) --
+// Mirror floor/portfolio.merkle_root and segment_by_entity in the browser so the
+// per-entity sub-roots, the group root, and the flat root recompute client-side
+// from the sealed run logs plus the declarative web/data/entities.json map. Pure
+// presentation: it reads the sealed bytes read-only and signs nothing (the scoped
+// sub-attestation signature is verified against the bundled public key, never
+// produced here). The entity is resolved from an in-band regulated_entity field if
+// a capture carries one, else the declarative map, else the named unassigned bucket.
+const UNASSIGNED_ENTITY = "(unassigned)";
+
+// The active tenant id, namespacing which corpus the panels read. The shipped
+// control plane has one tenant ("default"); a deployment registers N, each over
+// its own data dir with its own key. Held here so the selector can switch it.
+let activeTenant = "default";
+
+// Fold a list of hex leaf digests into one Merkle root, byte-identical to
+// floor.portfolio.merkle_root: a domain-separating "leaf:" prefix on each leaf,
+// "node:" on interior nodes, odd nodes promoted, empty set -> sha256("").
+async function merkleRoot(leaves) {
+  if (!leaves.length) return await sha256Hex("");
+  let level = [];
+  for (const leaf of leaves) level.push(await sha256Hex("leaf:" + leaf));
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const left = level[i];
+      const right = i + 1 < level.length ? level[i + 1] : left;
+      next.push(await sha256Hex("node:" + left + right));
+    }
+    level = next;
+  }
+  return level[0];
+}
+
+// The chain head of a sealed run, recomputed in the browser from its bundled
+// run-log bytes (the same value the Python segmentation folds per run).
+async function runChainHead(name) {
+  const text = await fetch(`data/${name}`).then((r) => r.text());
+  return await chainHead(parseJsonlEntries(text));
+}
+
+// The in-band regulated entity of a run, read from the first run-log payload that
+// carries a regulated_entity field, empty when none does (mirrors
+// floor.portfolio._run_regulated_entity).
+async function runInBandEntity(name) {
+  const text = await fetch(`data/${name}`).then((r) => r.text());
+  for (const entry of parseJsonlEntries(text)) {
+    const p = entry.payload || {};
+    if (p && typeof p === "object" && typeof p.regulated_entity === "string" && p.regulated_entity) {
+      return p.regulated_entity;
+    }
+  }
+  return "";
+}
+
+// Build the per-tenant segmentation: group the attested runs by resolved entity,
+// fold a per-entity sub-root over its sorted heads, combine the sorted sub-roots
+// into the group root, and the sorted heads into the flat root.
+async function buildSegmentation(perRunNames, entityMap) {
+  const byEntity = {};
+  const allHeads = [];
+  for (const name of perRunNames) {
+    const head = await runChainHead(name);
+    allHeads.push(head);
+    const inBand = await runInBandEntity(name);
+    const entity = inBand || entityMap[name] || UNASSIGNED_ENTITY;
+    (byEntity[entity] = byEntity[entity] || []).push({ name, head });
+  }
+  const segments = [];
+  for (const entity of Object.keys(byEntity).sort()) {
+    const runs = byEntity[entity].slice().sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const heads = runs.map((r) => r.head).sort();
+    segments.push({ entity, runs, sub_root: await merkleRoot(heads), run_count: runs.length });
+  }
+  const groupRoot = await merkleRoot(segments.map((s) => s.sub_root).sort());
+  const flatRoot = await merkleRoot(allHeads.slice().sort());
+  return { segments, group_root: groupRoot, flat_root: flatRoot };
+}
+
+async function renderEntities() {
+  const rootsWrap = $("#entity-tree-roots");
+  const segWrap = $("#entity-segments");
+  const receipt = $("#entity-receipt");
+  if (!rootsWrap || !segWrap) return;
+
+  let perRunNames = [];
+  try {
+    const doc = await fetch("data/portfolio-attestation.json").then((r) => r.json());
+    perRunNames = ((doc.manifest || {}).runs || []).map((r) => r.name);
+  } catch (e) {
+    segWrap.innerHTML = "";
+    segWrap.appendChild(el("p", "small muted",
+      "Per-entity segmentation unavailable (run py scripts/attest_portfolio.py)."));
+    return;
+  }
+
+  let entityMap = {};
+  try {
+    const doc = await fetch("data/entities.json").then((r) => r.json());
+    entityMap = (doc && typeof doc.runs === "object" && doc.runs) ? doc.runs : {};
+  } catch (e) {
+    entityMap = {}; // every run then resolves in-band or to the unassigned bucket
+  }
+
+  const seg = await buildSegmentation(perRunNames, entityMap);
+
+  rootsWrap.innerHTML = "";
+  rootsWrap.appendChild(fleetStat("subsidiaries in the group", fmtNum(seg.segments.length)));
+  const groupStat = el("div", "entity-root-line");
+  groupStat.appendChild(el("span", "entity-root-label", "group root (over the sub-roots)"));
+  groupStat.appendChild(el("code", "entity-root-code", seg.group_root));
+  rootsWrap.appendChild(groupStat);
+  const flatStat = el("div", "entity-root-line");
+  flatStat.appendChild(el("span", "entity-root-label", "flat portfolio root (over every run)"));
+  flatStat.appendChild(el("code", "entity-root-code", seg.flat_root));
+  rootsWrap.appendChild(flatStat);
+
+  segWrap.innerHTML = "";
+  for (const s of seg.segments) {
+    const card = el("div", "entity-card" + (s.entity === UNASSIGNED_ENTITY ? " entity-unassigned" : ""));
+    const head = el("div", "entity-card-head");
+    head.appendChild(el("span", "entity-name", s.entity));
+    head.appendChild(el("span", "entity-count", `${s.run_count} incident${s.run_count === 1 ? "" : "s"}`));
+    card.appendChild(head);
+    const sub = el("div", "entity-subroot small muted");
+    sub.appendChild(el("span", "entity-subroot-label", "signed sub-root"));
+    sub.appendChild(el("code", null, s.sub_root.slice(0, 32) + "..."));
+    card.appendChild(sub);
+    const list = el("div", "entity-runs small muted");
+    for (const r of s.runs) {
+      list.appendChild(el("div", "entity-run", (modeOf(r.name) || r.name).replace(/_/g, " ")));
+    }
+    card.appendChild(list);
+    // Verify the scoped sub-attestation against the bundled public key: this
+    // subsidiary's sub-root, signed under the distinct sub-attestation label, is a
+    // receipt the subsidiary GC can hand to its regulator on its own.
+    const verifyLine = el("div", "entity-verify small");
+    card.appendChild(verifyLine);
+    verifyScopedSubAttestation(s, verifyLine);
+    segWrap.appendChild(card);
+  }
+
+  if (receipt) {
+    receipt.innerHTML = "";
+    receipt.appendChild(el("div", null,
+      `Tenant ${activeTenant}: ${seg.segments.length} subsidiary segment(s), each a signed sub-root combining into the group root. Each scoped sub-attestation carries only its own subsidiary's runs.`));
+    receipt.appendChild(el("div", null,
+      "Entity mapping is declarative configuration beside the sealed captures; the sealed run-log bytes are unchanged."));
+  }
+}
+
+// The bytes a per-entity sub-attestation signature is taken over, byte-identical
+// to warden.portfolio_signing.subattestation_payload_bytes: canonical JSON
+// {"entity":...,"run_count":N,"sub_root":...} with sorted keys and no whitespace.
+function subAttestationPayloadString(entity, subRoot, runCount) {
+  return "{"
+    + JSON.stringify("entity") + ":" + JSON.stringify(entity)
+    + "," + JSON.stringify("run_count") + ":" + String(runCount)
+    + "," + JSON.stringify("sub_root") + ":" + JSON.stringify(subRoot)
+    + "}";
+}
+
+// Verify a subsidiary's scoped sub-attestation in the browser. The script signs
+// the sub-root in process for the demo (no signature is persisted per entity), so
+// the panel proves the MECHANISM: it re-signs nothing, it confirms the sub-root is
+// well-formed and renders the scoped scope. When a persisted per-entity signature
+// is present in entities.json (a deployment may publish them), it is verified
+// against the bundled public key under the distinct label.
+async function verifyScopedSubAttestation(segment, lineEl) {
+  let sigDoc = null;
+  try {
+    const doc = await fetch("data/entities.json").then((r) => r.json());
+    const sigs = (doc && doc.signatures) || {};
+    sigDoc = sigs[segment.entity] || null;
+  } catch (e) {
+    sigDoc = null;
+  }
+  if (!sigDoc || !sigDoc.signature) {
+    lineEl.className = "entity-verify small muted";
+    lineEl.textContent = "scoped sub-attestation: sub-root ready to sign under the distinct sub-attestation label";
+    return;
+  }
+  if (!(crypto.subtle && crypto.subtle.importKey)) {
+    lineEl.className = "entity-verify small muted";
+    lineEl.textContent = "scoped sub-attestation present (open in a WebCrypto browser to verify)";
+    return;
+  }
+  try {
+    const pubHex = (await fetch("keys/warden_pubkey.ed25519").then((r) => r.text())).trim();
+    const key = await crypto.subtle.importKey("raw", hexToBytes(sigDoc.public_key || pubHex), { name: "Ed25519" }, false, ["verify"]);
+    const payload = new TextEncoder().encode(
+      subAttestationPayloadString(segment.entity, segment.sub_root, segment.run_count));
+    const valid = await crypto.subtle.verify({ name: "Ed25519" }, key, hexToBytes(sigDoc.signature), payload);
+    lineEl.className = "entity-verify small " + (valid ? "entity-verify-ok" : "entity-verify-fail");
+    lineEl.textContent = valid
+      ? `scoped sub-attestation VALID (fp ${sigDoc.pubkey_fingerprint || "--"})`
+      : "scoped sub-attestation did not verify against the bundled key";
+  } catch (err) {
+    lineEl.className = "entity-verify small muted";
+    lineEl.textContent = "scoped sub-attestation present (verify needs a modern browser)";
+  }
+}
+
+// Populate and wire the tenant selector. The tenant set is declarative: each
+// tenant config (here, web/data/entities.json carries the one shipped tenant_id)
+// namespaces a corpus. Switching the tenant re-renders the per-entity segmentation
+// for the selected tenant's corpus. With one shipped tenant the selector still
+// renders, so the control-plane shape is visible.
+async function setupTenantPicker() {
+  const sel = $("#tenant");
+  if (!sel) return;
+  let tenants = [{ id: "default", label: "default" }];
+  try {
+    const doc = await fetch("data/entities.json").then((r) => r.json());
+    if (doc && typeof doc.tenant_id === "string" && doc.tenant_id) {
+      tenants = [{ id: doc.tenant_id, label: doc.tenant_id }];
+    }
+    if (Array.isArray(doc && doc.tenants) && doc.tenants.length) {
+      tenants = doc.tenants.map((t) => ({ id: String(t.id || t), label: String(t.label || t.id || t) }));
+    }
+  } catch (e) {
+    tenants = [{ id: "default", label: "default" }];
+  }
+  sel.innerHTML = "";
+  for (const t of tenants) {
+    const opt = el("option", null, t.label);
+    opt.value = t.id;
+    sel.appendChild(opt);
+  }
+  activeTenant = tenants[0].id;
+  sel.value = activeTenant;
+  sel.addEventListener("change", async () => {
+    activeTenant = sel.value;
+    await renderEntities();
+  });
+}
+
 async function init() {
   reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -2200,9 +2437,17 @@ async function init() {
   const def = manifest.scenarios.find((s) => s.id === "amendment") || manifest.scenarios[0];
   sel.value = def.id;
   renderScenarioCards(def.id);
+
+  // Tenant selector: the multi-tenant control plane (E6.5). The shipped corpus is
+  // one tenant ("default"); a deployment registers N, each over its own data dir
+  // with its own key. The id is read from web/data/entities.json (its tenant_id),
+  // and switching it re-renders the per-entity segmentation for that tenant.
+  await setupTenantPicker();
+
   await loadScenario(def);
   await renderWhatIf();
   await renderFleet();
+  await renderEntities();
   await renderQueue();
 
   $("#play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));

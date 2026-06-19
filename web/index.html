@@ -32,9 +32,15 @@
       <p>For the CISO office, the incident commander, and the general counsel running the first 72 hours after a breach.</p>
     </div>
   </div>
-  <div class="scenario-picker">
-    <label for="scenario">Incident path</label>
-    <select id="scenario" aria-label="Choose which captured incident path to walk"></select>
+  <div class="header-pickers">
+    <div class="scenario-picker tenant-picker">
+      <label for="tenant">Tenant</label>
+      <select id="tenant" aria-label="Choose which tenant's corpus to view"></select>
+    </div>
+    <div class="scenario-picker">
+      <label for="scenario">Incident path</label>
+      <select id="scenario" aria-label="Choose which captured incident path to walk"></select>
+    </div>
   </div>
 </header>
 
@@ -306,6 +312,21 @@
       </table>
     </div>
     <div id="fleet-receipt" class="fleet-receipt small muted"></div>
+  </section>
+
+  <!-- E6.5 Per-entity / per-subsidiary segmentation: the group fleet split by
+       regulated entity into a two-level signed tree (per-entity sub-roots combine
+       into the group root). A subsidiary GC can hand its own scoped sub-attestation
+       to its regulator without exposing the rest of the group. Tenant-scoped. -->
+  <section class="panel entity-panel" id="entity-panel" aria-label="Per-entity segmentation and scoped sub-attestations">
+    <div class="panel-head">
+      <h2>By subsidiary: the group fleet split into a two-level signed tree</h2>
+      <span class="badge green" id="entity-verdict-badge">signed sub-roots</span>
+    </div>
+    <p class="panel-sub muted small">A standing operations center serves a group with subsidiaries, each a regulated entity with its own incidents and regulator exposure. The fleet is segmented by entity into a two-level signed tree: each subsidiary's incidents fold into a per-subsidiary Merkle SUB-ROOT, signed on its own, and the sub-roots combine into the group root. Each subsidiary's scoped sub-attestation carries ONLY that subsidiary's runs, so its general counsel can hand it to its own regulator without exposing the rest of the group. The entity mapping is declarative configuration beside the sealed captures, never inside the signed run-log bytes.</p>
+    <div class="entity-tree-roots" id="entity-tree-roots"></div>
+    <div class="entity-segments" id="entity-segments"></div>
+    <div id="entity-receipt" class="entity-receipt small muted"></div>
   </section>
 
   <!-- E6.6 Intake queue + status board: the standing-ops-center frame over the

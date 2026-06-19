@@ -1,0 +1,11 @@
+{
+  "_comment": "Declarative run-to-entity map for the multi-tenant control plane (E6.5). The regulated entity (the filer) is a fact-record field posted into the room, NOT folded into the sealed run-log bytes, so it lives here BESIDE the sealed captures, outside the signed spine. This map seals nothing and edits no run-log byte. It segments the default tenant's incidents across the legal entities of one banking group, so the board can show a per-subsidiary roll-up and emit a per-subsidiary signed sub-attestation a subsidiary GC hands to its own regulator without exposing the rest of the group. A run not listed here resolves to its in-band regulated_entity if it carries one, else to the named unassigned bucket; it is never silently dropped.",
+  "tenant_id": "default",
+  "runs": {
+    "run-inc-8842-normal.jsonl": "Meridian Trust Bank N.V.",
+    "run-inc-8842-inject_contradiction.jsonl": "Meridian Trust Bank N.V.",
+    "run-inc-8842-submit.jsonl": "Meridian Trust Bank N.V.",
+    "run-inc-8842-chaos.jsonl": "Meridian Markets Ltd.",
+    "run-inc-8842-amendment.jsonl": "Meridian Markets Ltd."
+  }
+}

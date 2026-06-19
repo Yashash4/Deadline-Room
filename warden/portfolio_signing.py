@@ -145,3 +145,105 @@ def verify_portfolio(portfolio_root: str, run_count: int,
         signature_record.get("signature", ""),
         signature_record.get("public_key"),
     )
+
+
+# A standing operations center serves a GROUP with subsidiaries (E6.5). The board
+# wants the fleet segmented by regulated entity, AND a per-subsidiary signed
+# sub-attestation a subsidiary GC can hand to its own regulator without exposing
+# the rest of the group. The two-level tree is: a per-entity Merkle SUB-ROOT (over
+# that entity's chain heads) is signed with this DISTINCT sub-attestation label,
+# and the per-entity sub-roots combine into the group portfolio root. A third
+# label keeps a sub-attestation from ever being confused with a group portfolio
+# receipt OR a per-run receipt: the three carry three different `signed_payload`
+# strings, so a verifier reading the label knows exactly which claim it holds and
+# none can be replayed as another.
+PORTFOLIO_SUBATTESTATION_PAYLOAD = (
+    "canonical_json{entity,run_count,sub_root}")
+
+
+def subattestation_payload_bytes(entity: str, sub_root: str,
+                                 run_count: int) -> bytes:
+    """The exact bytes a per-ENTITY sub-attestation signature is taken over: a
+    small canonical JSON object binding the regulated entity name, the Merkle
+    sub-root over THAT entity's sorted chain heads, and the count of that entity's
+    attested runs.
+
+      * entity     : the regulated entity (the subsidiary) the sub-attestation is
+                     scoped to. Binding the name means a sub-attestation for entity
+                     A can never be presented as entity B's, even at the same root.
+      * sub_root   : the Merkle root over the SORTED chain heads of only this
+                     entity's runs. Edit one byte of any of this entity's runs and
+                     its chain head moves, which moves the sub-root.
+      * run_count  : the number of this entity's attested runs. Drop one and the
+                     count falls and the sub-root folds over a smaller set, so a
+                     silently dropped run breaks this signature.
+
+    The encoding mirrors the run log's canonicalization, so the object renders as
+    `{"entity":"...","run_count":N,"sub_root":"..."}` with no whitespace. A valid
+    signature reads as "this exact set of runs, all filed by this exact entity,
+    attested by this key": the scoped receipt a subsidiary hands its regulator."""
+    obj = {
+        "entity": entity,
+        "sub_root": sub_root,
+        "run_count": run_count,
+    }
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def sign_subattestation(entity: str, sub_root: str, run_count: int,
+                        sub_manifest_sha256: str,
+                        provider: object | None = None) -> dict:
+    """Sign one entity's sub-attestation and return the detached signature record.
+
+    The signature is taken over the sub-attestation payload (the entity name, its
+    Merkle sub-root, and its attested run count) under the DISTINCT sub-attestation
+    label. The signing key is a `provider` (a `warden/custody.SigningProvider`): the
+    DEFAULT is the committed demo Warden key, so the signature is byte-identical to
+    today; a per-tenant deployment passes the tenant's OWN provider, so one
+    subsidiary's group never signs as another's. The record also carries the
+    sub-manifest digest (so a verifier can confirm the scoped manifest it holds is
+    the one signed) and the honest demo-key caveat. Like every signing path here, it
+    is metadata stored BESIDE the scoped manifest; it covers no hashed run-log and
+    changes no sealed byte."""
+    if provider is None:
+        from .custody import warden_signing_provider as _warden_provider
+        provider = _warden_provider()
+    payload = subattestation_payload_bytes(entity, sub_root, run_count)
+    pub_hex = provider.public_key_hex()
+    return {
+        "algorithm": "ed25519",
+        "detached": True,
+        "signed_payload": PORTFOLIO_SUBATTESTATION_PAYLOAD,
+        "entity": entity,
+        "sub_root": sub_root,
+        "run_count": run_count,
+        "sub_manifest_sha256": sub_manifest_sha256,
+        "signature": provider.sign(payload),
+        "public_key": pub_hex,
+        "pubkey_fingerprint": provider.fingerprint(),
+        "signer": "Deadline Warden",
+        "demo_key": True,
+        "caveat": DEMO_KEY_CAVEAT,
+    }
+
+
+def verify_subattestation(entity: str, sub_root: str, run_count: int,
+                          signature_record: dict) -> bool:
+    """Verify an entity sub-attestation record against an entity, sub-root, and run
+    count.
+
+    True only when the detached signature is valid over the sub-attestation payload
+    (the entity name, the sub-root, and the run count) rebuilt from the values
+    passed in, under the record's public key. All three are passed by the caller
+    (recomputed from that entity's sealed runs), NOT read from the record, so a
+    tamper that edits the entity, the sub-root, or the count breaks the signature.
+    Because each tenant signs with its OWN key, a sub-attestation signed by one
+    tenant's key fails verification under another tenant's public key, which is the
+    cross-tenant isolation proof. Returns False on any invalid signature or
+    malformed input rather than raising."""
+    payload = subattestation_payload_bytes(entity, sub_root, run_count)
+    return verify_bytes(
+        payload,
+        signature_record.get("signature", ""),
+        signature_record.get("public_key"),
+    )

@@ -38,18 +38,25 @@ if str(REPO_ROOT) not in sys.path:
 from floor.portfolio import (  # noqa: E402
     PortfolioAttestation,
     PortfolioInsights,
+    PortfolioSegmentation,
     PortfolioSla,
+    ScopedAttestation,
     attest_portfolio,
     insights_dict,
     insights_dict_digest,
     load_portfolio,
     manifest_digest,
+    scoped_attestation,
+    segment_by_entity,
     sla_dict,
     sla_dict_digest,
 )
+from floor.tenancy import load_entity_map  # noqa: E402
 from warden.portfolio_signing import (  # noqa: E402
     sign_portfolio,
+    sign_subattestation,
     verify_portfolio,
+    verify_subattestation,
 )
 from warden.signing import DEMO_KEY_CAVEAT  # noqa: E402
 
@@ -297,12 +304,133 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
     return 0
 
 
+def _print_segmentation(segmentation: PortfolioSegmentation,
+                        signatures: dict[str, dict]) -> None:
+    """Print the per-entity segmentation and the two-level signed tree.
+
+    The per-entity sub-roots (each signed under the distinct sub-attestation label)
+    are the lower level; the group root over the SORTED sub-roots is the upper
+    level. The flat root over every attested chain head is printed too, so a reader
+    can confirm the segmented view covers exactly the runs the group attestation
+    signs."""
+    print("Per-entity segmentation (the two-level signed tree):")
+    ent_w = max((len(s.entity) for s in segmentation.segments), default=6)
+    for seg in segmentation.segments:
+        sig = signatures.get(seg.entity, {})
+        fp = sig.get("pubkey_fingerprint", "--")
+        print(f"  {seg.entity.ljust(ent_w)}  runs {seg.run_count}  "
+              f"sub-root {seg.sub_root[:16]}...  signed-by {fp}")
+        for run in seg.runs:
+            print(f"      {run.name}  head {run.chain_head[:16]}...")
+    print("  ----")
+    print(f"  Sub-roots -> group root : {segmentation.group_root}")
+    print(f"  Flat portfolio root     : {segmentation.flat_root}")
+    print()
+
+
+def by_entity(data_dir: Path) -> int:
+    """Print the per-entity segmentation and the two-level signed tree.
+
+    Discovers the sealed runs, groups the attested set by regulated entity (in-band
+    field first, else the declarative web/data/entities.json map), folds a signed
+    per-entity sub-root, and combines the sub-roots into the group root. Read-only:
+    it signs sub-roots in memory for display and writes no sealed byte."""
+    print("=" * 78)
+    print("PORTFOLIO BY ENTITY: the fleet segmented into per-subsidiary sub-roots")
+    print("=" * 78)
+    entity_map = load_entity_map(data_dir)
+    runs = load_portfolio(data_dir)
+    segmentation = segment_by_entity(runs, entity_map)
+    signatures = {
+        seg.entity: sign_subattestation(
+            seg.entity, seg.sub_root, seg.run_count,
+            # The sub-manifest digest is recomputed from the scoped slice so the
+            # printed signature commits to the same sub-manifest --entity emits.
+            scoped_attestation(runs, seg.entity, entity_map).sub_manifest_sha256)
+        for seg in segmentation.segments
+    }
+    _print_segmentation(segmentation, signatures)
+    print(f"Note: {DEMO_KEY_CAVEAT}")
+    print("=" * 78)
+    return 0
+
+
+def emit_entity(data_dir: Path, entity: str) -> int:
+    """Emit and verify a scoped sub-attestation for ONE entity.
+
+    Builds the scoped sub-attestation (only that entity's runs), signs the
+    sub-root under the distinct sub-attestation label, re-verifies the signature in
+    process, and PROVES the scope contains only the requested entity's runs (no run
+    belonging to any other entity appears). Prints VALID only when the signature
+    verifies AND the scope is clean. Read-only over the sealed captures."""
+    print("=" * 78)
+    print(f"SCOPED SUB-ATTESTATION: entity {entity!r}")
+    print("=" * 78)
+    entity_map = load_entity_map(data_dir)
+    runs = load_portfolio(data_dir)
+    scoped: ScopedAttestation = scoped_attestation(runs, entity, entity_map)
+    signature = sign_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count,
+        scoped.sub_manifest_sha256)
+
+    print(f"Entity         : {scoped.entity}")
+    print(f"Sub-root       : {scoped.sub_root}")
+    print(f"Run count      : {scoped.run_count}")
+    print("Scoped runs (ONLY this entity's runs are in this attestation):")
+    for run in scoped.runs:
+        print(f"  {run.name}  head {run.chain_head}")
+
+    # Isolation: every run in the scope must resolve to the requested entity, so
+    # no sibling entity's run can have leaked into this subsidiary's attestation.
+    leaked = [
+        r.name for r in scoped.runs
+        if _resolved(r, entity_map) != scoped.entity
+    ]
+    sig_ok = verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count, signature)
+
+    print()
+    print(f"Signer fp      : {signature['pubkey_fingerprint']}")
+    print(f"Signature      : {'verifies' if sig_ok else 'INVALID'}")
+    print(f"Scope isolation: {'clean' if not leaked else 'LEAK ' + ', '.join(leaked)}")
+    print()
+    if sig_ok and not leaked:
+        print("VALID. The scoped sub-attestation verifies under the committed key and")
+        print("contains ONLY this entity's runs: a subsidiary GC can hand this to its")
+        print("regulator without exposing the rest of the group.")
+        print(f"Note: {DEMO_KEY_CAVEAT}")
+        print("=" * 78)
+        return 0
+    print("INVALID. The scoped sub-attestation did not verify or leaked another")
+    print("entity's run.")
+    print(f"Note: {DEMO_KEY_CAVEAT}")
+    print("=" * 78)
+    return 1
+
+
+def _resolved(run, entity_map: dict[str, str]) -> str:
+    """The resolved entity for a run, via the same two-step rule the segmentation
+    uses (in-band field, else the declarative map, else unassigned)."""
+    from floor.portfolio import resolve_entity
+    return resolve_entity(run, entity_map)
+
+
 def main(argv: list[str]) -> int:
     if "--verify" in argv:
         idx = argv.index("--verify")
         rest = [a for a in argv[idx + 1:] if not a.startswith("--")]
         manifest_path = (Path(rest[0]).resolve() if rest else DEFAULT_MANIFEST)
         return verify(manifest_path, DATA_DIR)
+    if "--by-entity" in argv:
+        return by_entity(DATA_DIR)
+    if "--entity" in argv:
+        idx = argv.index("--entity")
+        rest = [a for a in argv[idx + 1:] if not a.startswith("--")]
+        if not rest:
+            print("attest_portfolio: --entity needs an entity name",
+                  file=sys.stderr)
+            return 2
+        return emit_entity(DATA_DIR, rest[0])
     return build(DATA_DIR, DEFAULT_MANIFEST)
 
 
