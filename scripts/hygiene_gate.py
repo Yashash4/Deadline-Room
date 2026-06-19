@@ -145,6 +145,7 @@ PLACEHOLDER_MARKERS = (
 SECRET_SCAN_SKIP_FILES = frozenset(
     {
         "scripts/hygiene_gate.py",
+        "tests/test_hygiene_gate.py",
     }
 )
 
