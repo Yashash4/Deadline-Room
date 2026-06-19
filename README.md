@@ -323,3 +323,5 @@ Every push and pull request runs the same three gates in GitHub Actions (`.githu
 ## License
 
 MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Yashash S S.
+
+The exactly-once lifecycle layer is extracted into the standalone, MIT-licensed [`band-once/`](band-once/) library (its own proof and public conformance check); Deadline Room consumes it (dogfooding).
