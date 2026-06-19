@@ -20,9 +20,11 @@ from pathlib import Path
 from floor.portfolio import (
     NEAR_BREACH_HOURS,
     QUEUE_STAGES,
+    UNASSIGNED_ENTITY,
     SealedRun,
     attest_portfolio,
     cross_incident_patterns,
+    entity_sub_manifest_digest,
     insights_dict,
     insights_dict_digest,
     load_portfolio,
@@ -30,11 +32,26 @@ from floor.portfolio import (
     portfolio_sla,
     queue_dict,
     queue_view,
+    resolve_entity,
+    scoped_attestation,
+    segment_by_entity,
+    segmentation_dict,
     sla_dict,
     sla_dict_digest,
 )
+from floor.tenancy import (
+    TenantConfig,
+    isolated_demo_provider,
+    load_entity_map,
+    tenant_from_dir,
+)
 from scripts.attest_portfolio import build, verify
-from warden.portfolio_signing import sign_portfolio, verify_portfolio
+from warden.portfolio_signing import (
+    sign_portfolio,
+    sign_subattestation,
+    verify_portfolio,
+    verify_subattestation,
+)
 from warden.replay import RunLog, replay
 from warden.signing import verify_run_log_jsonl
 
@@ -865,3 +882,294 @@ def monkeypatch_data_dir(build_fn, data: Path, manifest_path: Path) -> None:
     The build entry point takes (data_dir, out_path) directly, so this is a thin
     call wrapper kept for read clarity at the call site."""
     build_fn(data, manifest_path)
+
+
+# ---------------------------------------------------------------------------
+# E6.5 per-entity / per-subsidiary segmentation with a two-level signed tree and
+# the multi-tenant control plane. The board segments the fleet by regulated
+# entity, signs a per-entity Merkle SUB-ROOT (the sub-roots combine into the group
+# root), and emits a scoped sub-attestation a subsidiary GC hands to its regulator.
+# The CRITICAL property is ISOLATION: a scoped sub-attestation contains ONLY that
+# entity's runs, never another tenant's, and one tenant's key never verifies
+# another's. Every fold is pure grouping over read-only bytes; the four sealed shas
+# and replay are unchanged.
+# ---------------------------------------------------------------------------
+
+
+def _entity_run(data: Path, name: str, entity: str | None, head: str) -> SealedRun:
+    """A synthetic attested run for the segmentation tests. When `entity` is given
+    it is written in-band on a room payload (so resolve_entity reads it from the
+    sealed bytes); otherwise the run carries no entity and must be resolved from a
+    declarative map or fall to the unassigned bucket. `head` drives the chain head
+    so the sub-roots are distinguishable."""
+    payload: dict = {"correlation_id": "inc-x:nis2"}
+    if entity is not None:
+        payload["regulated_entity"] = entity
+    path = data / name
+    path.write_text(
+        json.dumps({"type": "room", "seq": 0, "payload": payload},
+                   sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8")
+    return SealedRun(
+        name=name, log_path=path, sig_path=path.with_suffix(".sig.json"),
+        sha256="00", chain_head=head, signature_valid=True, flag="")
+
+
+def test_resolve_entity_prefers_in_band_then_map_then_unassigned(tmp_path):
+    in_band = _entity_run(tmp_path, "run-a.jsonl", "Acme Bank N.V.", "aa")
+    mapped = _entity_run(tmp_path, "run-b.jsonl", None, "bb")
+    orphan = _entity_run(tmp_path, "run-c.jsonl", None, "cc")
+    entity_map = {"run-b.jsonl": "Acme Markets Ltd."}
+    # The in-band field wins even when a map entry would say otherwise.
+    assert resolve_entity(in_band, {"run-a.jsonl": "Wrong"}) == "Acme Bank N.V."
+    assert resolve_entity(mapped, entity_map) == "Acme Markets Ltd."
+    # No in-band field and no map entry: the named unassigned bucket, never dropped.
+    assert resolve_entity(orphan, entity_map) == UNASSIGNED_ENTITY
+
+
+def test_two_sub_roots_combine_into_the_group_root(tmp_path):
+    # Two entities, two runs each. Each entity's sub-root is the Merkle root over
+    # its OWN sorted heads, and the group root is the Merkle root over the SORTED
+    # sub-roots: the two-level tree, recomputed independently here.
+    runs = [
+        _entity_run(tmp_path, "run-a1.jsonl", "Entity A", "a1"),
+        _entity_run(tmp_path, "run-a2.jsonl", "Entity A", "a2"),
+        _entity_run(tmp_path, "run-b1.jsonl", "Entity B", "b1"),
+        _entity_run(tmp_path, "run-b2.jsonl", "Entity B", "b2"),
+    ]
+    seg = segment_by_entity(runs)
+    by_entity = {s.entity: s for s in seg.segments}
+    assert set(by_entity) == {"Entity A", "Entity B"}
+    assert by_entity["Entity A"].sub_root == merkle_root(["a1", "a2"])
+    assert by_entity["Entity B"].sub_root == merkle_root(["b1", "b2"])
+    # The group root is the Merkle root over the SORTED sub-roots.
+    expected_group = merkle_root(sorted(
+        [by_entity["Entity A"].sub_root, by_entity["Entity B"].sub_root]))
+    assert seg.group_root == expected_group
+    # The flat root is over every attested head, matching the single-level root.
+    assert seg.flat_root == merkle_root(sorted(["a1", "a2", "b1", "b2"]))
+
+
+def test_scoped_attestation_contains_only_that_entitys_runs_isolation(tmp_path):
+    # THE ISOLATION PROPERTY: a scoped sub-attestation for one entity carries ONLY
+    # that entity's runs, and not one run, head, or sha of any sibling entity.
+    runs = [
+        _entity_run(tmp_path, "run-a1.jsonl", "Subsidiary A", "a1"),
+        _entity_run(tmp_path, "run-a2.jsonl", "Subsidiary A", "a2"),
+        _entity_run(tmp_path, "run-b1.jsonl", "Subsidiary B", "b1"),
+    ]
+    scoped = scoped_attestation(runs, "Subsidiary A")
+    names = {r.name for r in scoped.runs}
+    assert names == {"run-a1.jsonl", "run-a2.jsonl"}
+    assert "run-b1.jsonl" not in names
+    # Subsidiary B's head and name never appear anywhere in the scoped sub-manifest.
+    manifest_runs = scoped.sub_manifest["runs"]
+    manifest_names = {r["name"] for r in manifest_runs}
+    manifest_heads = {r["chain_head"] for r in manifest_runs}
+    assert "run-b1.jsonl" not in manifest_names
+    assert "b1" not in manifest_heads
+    assert scoped.run_count == 2
+    assert scoped.sub_manifest["entity"] == "Subsidiary A"
+
+
+def test_scoped_sub_attestation_verifies_independently(tmp_path):
+    # A scoped sub-attestation signs its own sub-root under the distinct label and
+    # verifies on its own, with no reference to the group manifest.
+    runs = [
+        _entity_run(tmp_path, "run-a1.jsonl", "Subsidiary A", "a1"),
+        _entity_run(tmp_path, "run-a2.jsonl", "Subsidiary A", "a2"),
+        _entity_run(tmp_path, "run-b1.jsonl", "Subsidiary B", "b1"),
+    ]
+    scoped = scoped_attestation(runs, "Subsidiary A")
+    record = sign_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count,
+        scoped.sub_manifest_sha256)
+    assert verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count, record)
+    # Editing the entity, sub-root, or count breaks the signature.
+    assert not verify_subattestation(
+        "Subsidiary B", scoped.sub_root, scoped.run_count, record)
+    assert not verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count + 1, record)
+    moved = merkle_root(["a1", "a2", "tamper"])
+    assert not verify_subattestation(
+        scoped.entity, moved, scoped.run_count, record)
+
+
+def test_editing_one_run_moves_only_its_entitys_sub_root_and_the_group(tmp_path):
+    # Editing a run in entity A moves A's sub-root and the group root, but leaves
+    # B's sub-root untouched: the segmentation localizes a tamper to its entity.
+    runs = [
+        _entity_run(tmp_path, "run-a1.jsonl", "Entity A", "a1"),
+        _entity_run(tmp_path, "run-b1.jsonl", "Entity B", "b1"),
+    ]
+    before = {s.entity: s.sub_root for s in segment_by_entity(runs).segments}
+    before_group = segment_by_entity(runs).group_root
+
+    moved = [
+        _entity_run(tmp_path, "run-a1.jsonl", "Entity A", "a1-moved"),
+        runs[1],
+    ]
+    after_seg = segment_by_entity(moved)
+    after = {s.entity: s.sub_root for s in after_seg.segments}
+    assert after["Entity A"] != before["Entity A"]
+    assert after["Entity B"] == before["Entity B"]
+    assert after_seg.group_root != before_group
+
+
+def test_per_tenant_keys_isolate_one_tenant_from_another(tmp_path):
+    # Two tenants, two DISTINCT signing keys. A sub-attestation signed by tenant A's
+    # key must NOT verify under tenant B's key: the cross-tenant isolation proof.
+    runs = [_entity_run(tmp_path, "run-a1.jsonl", "Tenant A Co", "a1")]
+    scoped = scoped_attestation(runs, "Tenant A Co")
+    provider_a = isolated_demo_provider("tenant-a")
+    provider_b = isolated_demo_provider("tenant-b")
+    assert provider_a.public_key_hex() != provider_b.public_key_hex()
+
+    record_a = sign_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count,
+        scoped.sub_manifest_sha256, provider=provider_a)
+    # It verifies under A's own key (carried in the record) ...
+    assert verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count, record_a)
+    # ... but forging B's public key into the record breaks verification: B's key
+    # never validates a signature A's key produced.
+    forged = {**record_a, "public_key": provider_b.public_key_hex()}
+    assert not verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count, forged)
+
+
+def test_tenant_data_dir_isolation_no_cross_tenant_runs(tmp_path):
+    # Two tenants, two SEPARATE data dirs. Attesting tenant A discovers only A's
+    # runs; tenant B's runs never leak into A's segmentation, and vice versa.
+    dir_a = tmp_path / "tenant-a"
+    dir_b = tmp_path / "tenant-b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    runs_a = [_entity_run(dir_a, "run-a1.jsonl", "Alpha Bank", "a1")]
+    runs_b = [_entity_run(dir_b, "run-b1.jsonl", "Beta Bank", "b1")]
+
+    seg_a = segment_by_entity(runs_a)
+    seg_b = segment_by_entity(runs_b)
+    entities_a = {s.entity for s in seg_a.segments}
+    entities_b = {s.entity for s in seg_b.segments}
+    assert entities_a == {"Alpha Bank"}
+    assert entities_b == {"Beta Bank"}
+    # No overlap: a tenant's segmentation references only its own entity.
+    assert entities_a.isdisjoint(entities_b)
+    # The two tenants' group roots differ (different runs, different heads).
+    assert seg_a.group_root != seg_b.group_root
+
+
+def test_tenant_config_loads_entity_map_from_its_data_dir(tmp_path):
+    # The tenant config layer namespaces the data dir and loads the declarative
+    # entity map from beside that tenant's captures.
+    data = tmp_path / "acme"
+    data.mkdir()
+    (data / "entities.json").write_text(
+        json.dumps({"tenant_id": "acme",
+                    "runs": {"run-x.jsonl": "Acme Markets Ltd."}}),
+        encoding="utf-8")
+    cfg = tenant_from_dir("acme", data)
+    assert isinstance(cfg, TenantConfig)
+    assert cfg.tenant_id == "acme"
+    assert cfg.data_dir == data
+    assert cfg.entity_map == {"run-x.jsonl": "Acme Markets Ltd."}
+    # The default provider is the committed demo provider (byte-identical to today).
+    assert cfg.provider().public_key_hex()
+
+
+def test_load_entity_map_degrades_gracefully(tmp_path):
+    # A missing map yields an empty dict (segmentation still runs); a malformed one
+    # does too, rather than raising.
+    assert load_entity_map(tmp_path) == {}
+    (tmp_path / "entities.json").write_text("{ not json", encoding="utf-8")
+    assert load_entity_map(tmp_path) == {}
+    (tmp_path / "entities.json").write_text(
+        json.dumps({"runs": {"r.jsonl": "E", "bad": 7}}), encoding="utf-8")
+    # Non-string values are skipped; the valid pair survives.
+    assert load_entity_map(tmp_path) == {"r.jsonl": "E"}
+
+
+def test_flagged_run_is_not_segmented(tmp_path):
+    # A run that failed its per-run signature is never grouped, matching the rest of
+    # the portfolio path (no flagged run in any sub-root).
+    good = _entity_run(tmp_path, "run-good.jsonl", "Entity A", "g1")
+    bad = _entity_run(tmp_path, "run-bad.jsonl", "Entity A", "b1")
+    bad = SealedRun(
+        name=bad.name, log_path=bad.log_path, sig_path=bad.sig_path,
+        sha256=bad.sha256, chain_head=bad.chain_head, signature_valid=False,
+        flag="per-run signature does not verify")
+    seg = segment_by_entity([good, bad])
+    segment = next(s for s in seg.segments if s.entity == "Entity A")
+    assert [r.name for r in segment.runs] == ["run-good.jsonl"]
+    assert segment.run_count == 1
+
+
+def test_segmentation_is_deterministic_over_the_real_captures():
+    # Two independent segmentations over the shipped captures plus the shipped
+    # entity map produce identical trees and dicts.
+    entity_map = load_entity_map(DATA)
+    a = segment_by_entity(load_portfolio(DATA), entity_map)
+    b = segment_by_entity(load_portfolio(DATA), entity_map)
+    assert segmentation_dict(a) == segmentation_dict(b)
+    assert a.group_root == b.group_root
+    # Every shipped capture is assigned to a real entity (no unassigned bucket).
+    assert UNASSIGNED_ENTITY not in {s.entity for s in a.segments}
+    # The flat root over the segmentation equals the group attestation's root.
+    assert a.flat_root == attest_portfolio(load_portfolio(DATA)).root
+
+
+def test_scoped_attestation_on_real_captures_is_isolated_and_signed():
+    # On the shipped data, a scoped sub-attestation for one subsidiary verifies and
+    # carries only that subsidiary's runs (the real-data isolation proof).
+    entity_map = load_entity_map(DATA)
+    seg = segment_by_entity(load_portfolio(DATA), entity_map)
+    entities = [s.entity for s in seg.segments]
+    assert len(entities) >= 2, "expected the shipped map to span >= 2 entities"
+    target = entities[0]
+    scoped = scoped_attestation(load_portfolio(DATA), target, entity_map)
+    # Every run in the scope resolves back to the target entity (no leak).
+    for run in scoped.runs:
+        assert resolve_entity(run, entity_map) == target
+    record = sign_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count,
+        scoped.sub_manifest_sha256)
+    assert verify_subattestation(
+        scoped.entity, scoped.sub_root, scoped.run_count, record)
+    # The sub-manifest digest is stable.
+    assert entity_sub_manifest_digest(scoped.sub_manifest) == \
+        scoped.sub_manifest_sha256
+
+
+def test_segmentation_leaves_sealed_captures_and_replay_unchanged():
+    """The segmentation path is READ ONLY over the four per-run sealed captures:
+    snapshot the sealed bytes, sidecars, and replay, run the full segmentation and a
+    scoped sub-attestation, and assert byte-equality plus the four frozen shas."""
+    targets = list(FROZEN_SHAS)
+
+    def snapshot() -> dict:
+        snap: dict = {}
+        for name in targets:
+            log_bytes = (DATA / name).read_bytes()
+            sig_bytes = (DATA / f"{name}.sig.json").read_bytes()
+            log = RunLog.load(DATA / name)
+            snap[name] = (log_bytes, sig_bytes, replay(log).to_jsonl())
+        return snap
+
+    before = snapshot()
+    entity_map = load_entity_map(DATA)
+    seg = segment_by_entity(load_portfolio(DATA), entity_map)
+    for s in seg.segments:
+        scoped = scoped_attestation(load_portfolio(DATA), s.entity, entity_map)
+        sign_subattestation(
+            scoped.entity, scoped.sub_root, scoped.run_count,
+            scoped.sub_manifest_sha256)
+    after = snapshot()
+    assert before == after, "the sealed per-run captures must not change"
+
+    import hashlib
+    for name, sha_prefix in FROZEN_SHAS.items():
+        jsonl = (DATA / name).read_text(encoding="utf-8")
+        sha = hashlib.sha256(jsonl.encode("utf-8")).hexdigest()
+        assert sha.startswith(sha_prefix), f"{name} sha drifted: {sha}"
