@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "band-once"
-version = "0.1.0"
+version = "0.1.1"
 description = "Exactly-once lifecycle shell for Band agents, with a runnable proof and a public conformance check."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-authors = [{ name = "Deadline Room" }]
+authors = [{ name = "Yashash S S" }]
 keywords = ["band", "agents", "exactly-once", "idempotency", "lifecycle"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -26,6 +26,7 @@ test = ["pytest>=7"]
 
 [project.urls]
 Homepage = "https://app.band.ai"
+Repository = "https://github.com/Yashash4/Deadline-Room"
 
 [project.scripts]
 band-once-proof = "band_once.proof:cli"

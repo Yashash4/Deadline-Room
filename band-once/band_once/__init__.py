@@ -33,4 +33,4 @@ __all__ = [
     "clean_echo_agent",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
