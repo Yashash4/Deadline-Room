@@ -252,6 +252,20 @@
     </div>
     <div id="fleet-receipt" class="fleet-receipt small muted"></div>
   </section>
+
+  <!-- E6.6 Intake queue + status board: the standing-ops-center frame over the
+       REAL sealed runs plus the declarative pending intake set. Each running
+       incident's status is READ from its sealed log; pending records sit queued. -->
+  <section class="panel queue-panel" id="queue-panel" aria-label="Incident intake queue and status board">
+    <div class="panel-head">
+      <h2>The intake queue: every incident on the board, by deadline</h2>
+      <span class="badge green" id="queue-badge">live status board</span>
+    </div>
+    <p class="panel-sub muted small">A standing operations center does not watch one incident, it watches a queue. New incidents arrive and sit queued; the running ones move queued to active to released as the Warden settles each filing. Every running incident's status here is READ from its sealed log, never asserted, and the board is sorted by the nearest statutory deadline so the next thing due is always on top.</p>
+    <div id="queue-summary" class="queue-summary"></div>
+    <div class="queue-board" id="queue-board"></div>
+    <div id="queue-receipt" class="queue-receipt small muted"></div>
+  </section>
 </main>
 
 <footer class="footer">

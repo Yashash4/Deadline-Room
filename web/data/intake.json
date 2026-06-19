@@ -1,0 +1,26 @@
+{
+  "description": "Declarative intake queue for the standing ops center. Each record is an incident that has ARRIVED at the desk but has NOT yet been run through the Warden, so it sits in the board's queued lane: the status board never asserts a run status (released / suppressed / failed) for an incident with no sealed log. The board reads these into the queued lane and sorts them against the running incidents by nearest statutory deadline. Edit this set to stage new intake; it never touches a sealed run log.",
+  "pending": [
+    {
+      "id": "intake-inc-9001-nis2",
+      "incident_id": "inc-9001",
+      "regime": "nis2",
+      "nearest_deadline_utc": "2026-06-16T18:00:00+00:00",
+      "label": "inc-9001 ransomware at a payments processor (NIS2 early warning due first)"
+    },
+    {
+      "id": "intake-inc-9014-dora",
+      "incident_id": "inc-9014",
+      "regime": "dora",
+      "nearest_deadline_utc": "2026-06-18T09:30:00+00:00",
+      "label": "inc-9014 ICT outage at a clearing member (DORA major-incident report)"
+    },
+    {
+      "id": "intake-inc-9020-sec",
+      "incident_id": "inc-9020",
+      "regime": "sec",
+      "nearest_deadline_utc": "2026-06-21T16:00:00+00:00",
+      "label": "inc-9020 data exfiltration under SEC materiality review"
+    }
+  ]
+}

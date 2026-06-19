@@ -872,3 +872,294 @@ def attest_portfolio(runs: list[SealedRun]) -> PortfolioAttestation:
         attested=attested,
         flagged=flagged,
     )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic incident intake queue + status board (E6.6). A standing ops
+# center is not a single incident: incidents arrive, are triaged, and move
+# through states (queued -> active -> released -> closed). The operator watches
+# a status board, and each running incident's status is READ from its sealed
+# log, never asserted. This is a pure read over the same sealed entries the SLA
+# rollup folds (the branch state-machine transitions and the started deadlines),
+# plus a declarative set of PENDING intake records (web/data/intake.json) that
+# have arrived but not yet run, and therefore sit in `queued`. The board sorts by
+# nearest statutory deadline and surfaces the fleet worst-case. Zero LLM, no
+# now(): same captures plus the same pending set yield the same board everywhere.
+# ---------------------------------------------------------------------------
+
+# The lifecycle a standing ops center moves an incident through, in order. The
+# index in this tuple is the deterministic sort key for "stage": a queued
+# incident outranks an active one on the board's nearest-deadline-then-stage sort
+# only when their deadlines tie. These are the REAL dispositions the sealed log
+# supports (a branch terminal state of `released`, `suppressed`, or `failed`), not
+# a cosmetic relabel. `queued` is reserved for declarative pending records that
+# have not run; the four running states below are read from a run's branches.
+QUEUE_STAGES = ("queued", "active", "released", "suppressed", "failed", "closed")
+
+# The settled (non-amendable in normal flow) terminal branch dispositions. A
+# `released` branch is settled but reopenable via amendment; `suppressed` and
+# `failed` are hard-terminal. A branch still in any other state is in flight.
+_SETTLED_BRANCH_STATES = frozenset({"released", "suppressed", "failed"})
+
+
+def _branch_terminal_states(entries: list[dict]) -> dict[str, str]:
+    """The LAST state-machine `to_state` reached on each branch (correlation id),
+    read straight from the run's `protocol_event` entries in log order. Each
+    admitted protocol event carries the `to_state` the branch moved to, so the
+    final one per correlation id is that branch's terminal status in the sealed
+    record. Read-only: this asserts nothing the entries do not already say."""
+    terminal: dict[str, str] = {}
+    for entry in entries:
+        if entry.get("type") != "protocol_event":
+            continue
+        payload = entry.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("admitted") is False:
+            continue
+        corr = str(payload.get("correlation_id", ""))
+        to_state = payload.get("to_state")
+        if corr and isinstance(to_state, str) and to_state:
+            terminal[corr] = to_state
+    return terminal
+
+
+def _run_status(branch_states: dict[str, str]) -> str:
+    """Roll a run's branch terminal states up to one honest board status.
+
+    The status only ever reflects what the branches actually reached, never a
+    greener label than the data supports:
+
+      * any branch NOT in a settled disposition (still drafting, amending,
+        awaiting signoff, ...) -> `active` (the incident is still in flight);
+      * every branch settled and at least one `failed` -> `failed`;
+      * every branch settled and at least one `suppressed` (none failed) ->
+        `suppressed`;
+      * every branch settled to `released` -> `released`;
+      * no branches at all (no transitions in the log) -> `active` (it ran but
+        the board cannot assert a terminal status, so it is never called closed).
+
+    A run is reported `closed` only by the caller, never inferred here, because
+    closure is an operator disposition layered over a settled record, not a state
+    the Warden writes."""
+    if not branch_states:
+        return "active"
+    states = set(branch_states.values())
+    if not states <= _SETTLED_BRANCH_STATES:
+        return "active"
+    if "failed" in states:
+        return "failed"
+    if "suppressed" in states:
+        return "suppressed"
+    return "released"
+
+
+@dataclass(frozen=True)
+class QueueItem:
+    """One incident on the status board, queued or running.
+
+    `key` is a stable board identifier (the run-log name for a running incident,
+    or the pending record's id for a queued one); `incident_id` is the incident it
+    belongs to; `kind` is `run` for a sealed run or `pending` for a declarative
+    intake record; `status` is the lifecycle stage (a value in QUEUE_STAGES),
+    READ from the sealed log for a run and fixed to `queued` for a pending record;
+    `mode` is the run's scenario branch (empty for pending); `regime` is the
+    pending record's target regime (empty for a run, which spans regimes);
+    `nearest_deadline_utc` is the earliest statutory deadline driving the sort
+    (from the sealed clocks for a run, declared on a pending record); `branches`
+    is the per-branch terminal state map for a run (empty for pending); `label` is
+    a short human title for the board. Every field is a pure read."""
+    key: str
+    incident_id: str
+    kind: str
+    status: str
+    mode: str
+    regime: str
+    nearest_deadline_utc: str | None
+    branches: dict[str, str]
+    label: str
+
+
+def _pending_item(record: dict) -> QueueItem:
+    """Build a `queued` board item from one declarative pending intake record.
+
+    A pending record is an incident that has ARRIVED but not yet run, so its
+    status is fixed to `queued`: the board never asserts a run status for an
+    incident with no sealed log. The record declares its own nearest statutory
+    deadline (it has not run, so no clock entry exists to read), an incident id, an
+    optional target regime, and a short label. Missing fields degrade to empty
+    strings / None rather than raising, so a sparse record still sorts."""
+    incident_id = str(record.get("incident_id", ""))
+    deadline = record.get("nearest_deadline_utc")
+    if not isinstance(deadline, str) or not deadline:
+        deadline = None
+    key = str(record.get("id") or incident_id or "pending")
+    label = str(record.get("label") or incident_id or key)
+    return QueueItem(
+        key=key,
+        incident_id=incident_id,
+        kind="pending",
+        status="queued",
+        mode="",
+        regime=str(record.get("regime", "")),
+        nearest_deadline_utc=deadline,
+        branches={},
+        label=label,
+    )
+
+
+def _run_item(run: SealedRun) -> QueueItem:
+    """Build a board item from one sealed run, reading its terminal status.
+
+    The per-branch terminal states are read from the run's protocol events and
+    rolled up to one honest run status; the nearest deadline is the earliest the
+    run STARTED a clock on (the same value the SLA rollup uses), so a still-active
+    incident sorts by its tightest live deadline. Pure read of the sealed log."""
+    entries = _entries_of(_canonical_jsonl(run.log_path))
+    branch_states = _branch_terminal_states(entries)
+    started = _run_started_deadlines(entries)
+    incident_ids = sorted(_run_incident_ids(entries))
+    incident_id = incident_ids[0] if incident_ids else ""
+    return QueueItem(
+        key=run.name,
+        incident_id=incident_id,
+        kind="run",
+        status=_run_status(branch_states),
+        mode=_mode_of(run.name),
+        regime="",
+        nearest_deadline_utc=started[0] if started else None,
+        branches=dict(sorted(branch_states.items())),
+        label=(_mode_of(run.name) or run.name).replace("_", " "),
+    )
+
+
+def _queue_sort_key(item: QueueItem) -> tuple:
+    """The deterministic board sort: nearest statutory deadline first, then by
+    lifecycle stage, then by a stable identifier. An item with no deadline sorts
+    LAST (a high sentinel) so a dated incident never hides behind an undated one;
+    ties on the deadline break by stage index (queued before active before
+    settled) and finally by key, so the board is total-ordered and identical on
+    every platform."""
+    deadline = item.nearest_deadline_utc or "9999-12-31T23:59:59+00:00"
+    try:
+        stage = QUEUE_STAGES.index(item.status)
+    except ValueError:
+        stage = len(QUEUE_STAGES)
+    return (deadline, stage, item.key)
+
+
+@dataclass(frozen=True)
+class QueueBoard:
+    """The intake queue + status board over the sealed fleet and the pending set.
+
+    `items` is every incident, running or queued, SORTED by nearest statutory
+    deadline then lifecycle stage; `queued` / `active` / `released` / `suppressed`
+    / `failed` / `closed` are the counts per stage (a closed count is always 0
+    here because closure is an operator disposition the sealed log never asserts);
+    `nearest_deadline_utc` is the single earliest deadline anywhere on the board
+    (the next thing due), and `nearest_deadline_key` names the item that owns it;
+    `worst_case_margin_hours` / `worst_case_run` / `worst_case_clock` surface the
+    fleet worst-case statutory margin (folded by the SLA rollup), so the board
+    flags the tightest filing the ops center has on record; `ever_breached` is the
+    fleet-level breach flag. Every value is a pure, deterministic read."""
+    items: list[QueueItem]
+    queued: int
+    active: int
+    released: int
+    suppressed: int
+    failed: int
+    closed: int
+    nearest_deadline_utc: str | None
+    nearest_deadline_key: str
+    worst_case_margin_hours: float | None
+    worst_case_run: str
+    worst_case_clock: str
+    ever_breached: bool
+
+
+def queue_view(
+    runs: list[SealedRun], pending: list[dict] | None = None
+) -> QueueBoard:
+    """Build the deterministic intake queue + status board over the sealed fleet.
+
+    Each ATTESTED sealed run becomes one board item whose status is READ from its
+    last per-branch state-machine transition (released / suppressed / failed /
+    active), never asserted; a flagged run is excluded, matching the rest of the
+    portfolio path. Declarative `pending` intake records (incidents that arrived
+    but have not run) sit in `queued`, since the board never reports a run status
+    for an incident with no sealed log. The combined set is sorted by nearest
+    statutory deadline then lifecycle stage, and the fleet worst-case margin (from
+    the SLA rollup) is surfaced so the tightest filing on record is flagged. Pure
+    and deterministic: the same sealed runs plus the same pending set yield the
+    same board on every platform, with no now() and no LLM."""
+    attested = sorted(
+        (r for r in runs if r.signature_valid), key=lambda r: r.name)
+    items = [_run_item(r) for r in attested]
+    for record in pending or []:
+        if isinstance(record, dict):
+            items.append(_pending_item(record))
+    items.sort(key=_queue_sort_key)
+
+    counts = {stage: 0 for stage in QUEUE_STAGES}
+    for item in items:
+        if item.status in counts:
+            counts[item.status] += 1
+
+    dated = [it for it in items if it.nearest_deadline_utc is not None]
+    nearest_item = min(
+        dated, key=_queue_sort_key) if dated else None
+
+    sla = portfolio_sla(runs)
+    return QueueBoard(
+        items=items,
+        queued=counts["queued"],
+        active=counts["active"],
+        released=counts["released"],
+        suppressed=counts["suppressed"],
+        failed=counts["failed"],
+        closed=counts["closed"],
+        nearest_deadline_utc=nearest_item.nearest_deadline_utc
+        if nearest_item else None,
+        nearest_deadline_key=nearest_item.key if nearest_item else "",
+        worst_case_margin_hours=sla.worst_margin_hours,
+        worst_case_run=sla.worst_margin_run,
+        worst_case_clock=sla.worst_margin_clock,
+        ever_breached=sla.ever_breached,
+    )
+
+
+def queue_dict(board: QueueBoard) -> dict:
+    """The canonical, sorted-key dict the queue board serializes to for the web
+    panel and any verifier. Every value is a count, a deadline, or a sorted board
+    row; no field carries generated prose, so it mirrors the rest of the read
+    layer's canonical shapes."""
+    return {
+        "counts": {
+            "queued": board.queued,
+            "active": board.active,
+            "released": board.released,
+            "suppressed": board.suppressed,
+            "failed": board.failed,
+            "closed": board.closed,
+        },
+        "nearest_deadline_utc": board.nearest_deadline_utc,
+        "nearest_deadline_key": board.nearest_deadline_key,
+        "worst_case_margin_hours": board.worst_case_margin_hours,
+        "worst_case_run": board.worst_case_run,
+        "worst_case_clock": board.worst_case_clock,
+        "ever_breached": board.ever_breached,
+        "items": [
+            {
+                "key": it.key,
+                "incident_id": it.incident_id,
+                "kind": it.kind,
+                "status": it.status,
+                "mode": it.mode,
+                "regime": it.regime,
+                "nearest_deadline_utc": it.nearest_deadline_utc,
+                "branches": dict(sorted(it.branches.items())),
+                "label": it.label,
+            }
+            for it in board.items
+        ],
+    }

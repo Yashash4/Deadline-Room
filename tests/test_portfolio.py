@@ -19,6 +19,7 @@ from pathlib import Path
 
 from floor.portfolio import (
     NEAR_BREACH_HOURS,
+    QUEUE_STAGES,
     SealedRun,
     attest_portfolio,
     cross_incident_patterns,
@@ -27,6 +28,8 @@ from floor.portfolio import (
     load_portfolio,
     merkle_root,
     portfolio_sla,
+    queue_dict,
+    queue_view,
     sla_dict,
     sla_dict_digest,
 )
@@ -661,6 +664,192 @@ def test_sla_fold_leaves_sealed_captures_and_replay_unchanged():
     # The SLA fold ran (it sees no breach on the clean captures) ...
     assert att.sla.ever_breached is False
     assert att.sla.total_breaches == 0
+    after = snapshot()
+    assert before == after, "the sealed per-run captures must not change"
+
+    import hashlib
+    for name, sha_prefix in FROZEN_SHAS.items():
+        jsonl = (DATA / name).read_text(encoding="utf-8")
+        sha = hashlib.sha256(jsonl.encode("utf-8")).hexdigest()
+        assert sha.startswith(sha_prefix), f"{name} sha drifted: {sha}"
+
+
+# ---------------------------------------------------------------------------
+# E6.6 deterministic incident intake queue + status board. The queue reads each
+# running incident's status from its sealed log (a released run shows released,
+# never a status the log does not support), the pending intake records sit in the
+# queued lane, the board sorts by nearest deadline, and the whole path leaves the
+# sealed captures and replay byte-unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_queue_reads_real_terminal_status_from_the_sealed_captures():
+    # Every committed capture released all four filings, so each running incident
+    # on the board must read `released`, never an unsupported status. No item is
+    # green-washed: the status comes straight from the branch transitions.
+    board = queue_view(load_portfolio(DATA))
+    run_items = [it for it in board.items if it.kind == "run"]
+    assert run_items, "expected the sealed runs to populate the board"
+    for it in run_items:
+        assert it.status == "released", f"{it.key} read as {it.status}"
+        # The status is supported by the branches: every branch terminal state is
+        # `released`, so the rolled-up run status is honest.
+        assert set(it.branches.values()) == {"released"}, it.branches
+    # The released lane counts exactly the sealed runs; nothing is closed (closure
+    # is an operator disposition the sealed log never asserts).
+    assert board.released == len(run_items)
+    assert board.closed == 0
+
+
+def test_queued_intake_record_shows_queued_not_released():
+    # A declarative pending record has NOT run, so the board must place it in the
+    # queued lane and never assert a run status (released) for it.
+    pending = [{
+        "id": "intake-inc-7000-nis2",
+        "incident_id": "inc-7000",
+        "regime": "nis2",
+        "nearest_deadline_utc": "2026-06-16T12:00:00+00:00",
+        "label": "inc-7000 fresh intake",
+    }]
+    board = queue_view(load_portfolio(DATA), pending=pending)
+    queued = [it for it in board.items if it.kind == "pending"]
+    assert len(queued) == 1
+    item = queued[0]
+    assert item.status == "queued"
+    assert item.status != "released"
+    assert item.incident_id == "inc-7000"
+    assert item.branches == {}
+    assert board.queued == 1
+
+
+def test_queue_sorts_by_nearest_deadline():
+    # The board is total-ordered by nearest statutory deadline. A pending record
+    # due BEFORE the sealed runs sorts ahead of them; one due AFTER sorts behind.
+    pending = [
+        {"id": "early", "incident_id": "inc-e", "regime": "nis2",
+         "nearest_deadline_utc": "2026-06-16T00:00:00+00:00", "label": "early"},
+        {"id": "late", "incident_id": "inc-l", "regime": "sec",
+         "nearest_deadline_utc": "2026-12-01T00:00:00+00:00", "label": "late"},
+    ]
+    board = queue_view(load_portfolio(DATA), pending=pending)
+    deadlines = [
+        it.nearest_deadline_utc for it in board.items
+        if it.nearest_deadline_utc is not None]
+    assert deadlines == sorted(deadlines), "board not sorted by nearest deadline"
+    # The earliest pending record owns the head of the board and the nearest
+    # deadline; the late one is strictly behind the sealed runs.
+    assert board.items[0].key == "early"
+    assert board.nearest_deadline_key == "early"
+    keys = [it.key for it in board.items]
+    assert keys.index("early") < keys.index("late")
+    sealed_positions = [
+        i for i, it in enumerate(board.items) if it.kind == "run"]
+    assert all(keys.index("early") < p for p in sealed_positions)
+    assert all(keys.index("late") > p for p in sealed_positions)
+
+
+def test_queue_flags_the_fleet_worst_case_margin():
+    # The board surfaces the SLA worst-case margin so the tightest filing on
+    # record is flagged. On the clean captures nothing breached.
+    board = queue_view(load_portfolio(DATA))
+    sla = portfolio_sla(load_portfolio(DATA))
+    assert board.worst_case_margin_hours == sla.worst_margin_hours
+    assert board.worst_case_run == sla.worst_margin_run
+    assert board.worst_case_clock == sla.worst_margin_clock
+    assert board.ever_breached is False
+
+
+def test_an_in_flight_branch_keeps_a_run_active_never_released(tmp_path):
+    # A run with a branch still drafting (not settled) must read `active`, never a
+    # terminal status the log does not support. Green-washing is impossible.
+    run = _write_run(tmp_path, "run-active.jsonl", [
+        {"type": "protocol_event", "seq": 0, "payload": {
+            "correlation_id": "inc-1:nis2", "event": "human_released",
+            "admitted": True, "to_state": "released"}},
+        {"type": "protocol_event", "seq": 1, "payload": {
+            "correlation_id": "inc-1:sec", "event": "draft_started",
+            "admitted": True, "to_state": "drafting"}},
+    ])
+    board = queue_view([run])
+    item = board.items[0]
+    assert item.status == "active", item.branches
+    assert item.status != "released"
+    assert board.active == 1
+    assert board.released == 0
+
+
+def test_a_suppressed_branch_reads_suppressed_not_released(tmp_path):
+    # A run whose branches all settled and one was suppressed reads `suppressed`,
+    # the real disposition, never `released`.
+    run = _write_run(tmp_path, "run-suppressed.jsonl", [
+        {"type": "protocol_event", "seq": 0, "payload": {
+            "correlation_id": "inc-2:nis2", "event": "human_released",
+            "admitted": True, "to_state": "released"}},
+        {"type": "protocol_event", "seq": 1, "payload": {
+            "correlation_id": "inc-2:sec", "event": "suppress",
+            "admitted": True, "to_state": "suppressed"}},
+    ])
+    board = queue_view([run])
+    item = board.items[0]
+    assert item.status == "suppressed"
+    assert item.status != "released"
+    assert board.suppressed == 1
+
+
+def test_flagged_run_is_not_placed_on_the_board(tmp_path):
+    # A run that failed its per-run signature is excluded from the board, matching
+    # the rest of the portfolio path (never silently folded in).
+    flagged = SealedRun(
+        name="run-bad.jsonl", log_path=tmp_path / "run-bad.jsonl",
+        sig_path=tmp_path / "run-bad.jsonl.sig.json",
+        sha256="00", chain_head="00", signature_valid=False,
+        flag="per-run signature does not verify")
+    board = queue_view([flagged])
+    assert board.items == []
+    assert board.released == 0
+
+
+def test_queue_is_deterministic_across_two_builds():
+    pending = [{
+        "id": "intake-inc-7777", "incident_id": "inc-7777", "regime": "dora",
+        "nearest_deadline_utc": "2026-06-20T00:00:00+00:00", "label": "x"}]
+    a = queue_dict(queue_view(load_portfolio(DATA), pending=pending))
+    b = queue_dict(queue_view(load_portfolio(DATA), pending=pending))
+    assert a == b
+    # Stages are a closed, known set.
+    for it in a["items"]:
+        assert it["status"] in QUEUE_STAGES
+
+
+def test_intake_json_fixture_loads_and_queues():
+    # The shipped declarative intake set loads and every record sits in queued.
+    doc = json.loads((DATA / "intake.json").read_text(encoding="utf-8"))
+    pending = doc["pending"]
+    assert pending, "expected shipped pending intake records"
+    board = queue_view(load_portfolio(DATA), pending=pending)
+    pend_items = [it for it in board.items if it.kind == "pending"]
+    assert len(pend_items) == len(pending)
+    assert all(it.status == "queued" for it in pend_items)
+    assert board.queued == len(pending)
+
+
+def test_queue_view_leaves_sealed_captures_and_replay_unchanged():
+    # The queue path is a pure read: the four sealed captures and their replay are
+    # byte-identical before and after building the board.
+    targets = list(FROZEN_SHAS)
+
+    def snapshot() -> dict:
+        snap: dict = {}
+        for name in targets:
+            log_bytes = (DATA / name).read_bytes()
+            sig_bytes = (DATA / f"{name}.sig.json").read_bytes()
+            log = RunLog.load(DATA / name)
+            snap[name] = (log_bytes, sig_bytes, replay(log).to_jsonl())
+        return snap
+
+    before = snapshot()
+    doc = json.loads((DATA / "intake.json").read_text(encoding="utf-8"))
+    queue_view(load_portfolio(DATA), pending=doc["pending"])
     after = snapshot()
     assert before == after, "the sealed per-run captures must not change"
 

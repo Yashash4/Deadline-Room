@@ -1629,6 +1629,237 @@ async function renderFleet() {
   }
 }
 
+// ---- E6.6 intake queue + status board --------------------------------------
+// Render the deterministic intake queue over the REAL sealed runs (status read
+// from each run's last branch transition) plus the declarative pending intake
+// set (web/data/intake.json), built in the browser by mirroring queue_view from
+// floor/portfolio.py. This is pure presentation: it reads the sealed run logs and
+// the pending records and never asserts a status the log does not support.
+
+// Lifecycle stages, in the same order floor.portfolio.QUEUE_STAGES carries them,
+// so the board's stage tiebreak matches the Python sort exactly.
+const QUEUE_STAGES = ["queued", "active", "released", "suppressed", "failed", "closed"];
+const SETTLED_BRANCH_STATES = new Set(["released", "suppressed", "failed"]);
+
+// The last admitted to_state per branch (correlation id) in a run's log, the
+// real terminal status the Python reader folds.
+function branchTerminalStates(entries) {
+  const terminal = {};
+  for (const entry of entries) {
+    if (entry.type !== "protocol_event") continue;
+    const p = entry.payload || {};
+    if (p.admitted === false) continue;
+    const corr = String(p.correlation_id || "");
+    const to = p.to_state;
+    if (corr && typeof to === "string" && to) terminal[corr] = to;
+  }
+  return terminal;
+}
+
+// Roll a run's branch states up to one honest status, mirroring _run_status:
+// any unsettled branch keeps the run active; otherwise the worst settled
+// disposition wins (failed, then suppressed, then released).
+function runStatus(branchStates) {
+  const states = Object.values(branchStates);
+  if (states.length === 0) return "active";
+  if (!states.every((s) => SETTLED_BRANCH_STATES.has(s))) return "active";
+  if (states.includes("failed")) return "failed";
+  if (states.includes("suppressed")) return "suppressed";
+  return "released";
+}
+
+function runStartedDeadlines(entries) {
+  const out = [];
+  for (const entry of entries) {
+    if (entry.type !== "clock_started") continue;
+    const d = (entry.payload || {}).deadline;
+    if (typeof d === "string" && d) out.push(d);
+  }
+  out.sort();
+  return out;
+}
+
+function runIncidentId(entries) {
+  const found = new Set();
+  for (const entry of entries) {
+    const p = entry.payload || {};
+    if (typeof p !== "object" || p === null) continue;
+    if (typeof p.incident_id === "string" && p.incident_id) found.add(p.incident_id);
+    const corr = String(p.correlation_id || "");
+    if (corr.includes(":")) found.add(corr.split(":", 1)[0]);
+    else if (corr) found.add(corr);
+  }
+  return [...found].sort()[0] || "";
+}
+
+function modeOf(name) {
+  let stem = name.endsWith(".jsonl") ? name.slice(0, -6) : name;
+  if (!stem.includes("-")) return "";
+  return stem.slice(stem.lastIndexOf("-") + 1);
+}
+
+const QUEUE_NO_DEADLINE = "9999-12-31T23:59:59+00:00";
+
+function queueSortKey(item) {
+  const deadline = item.nearest_deadline_utc || QUEUE_NO_DEADLINE;
+  let stage = QUEUE_STAGES.indexOf(item.status);
+  if (stage < 0) stage = QUEUE_STAGES.length;
+  return [deadline, stage, item.key];
+}
+
+function compareQueue(a, b) {
+  const ka = queueSortKey(a);
+  const kb = queueSortKey(b);
+  for (let i = 0; i < ka.length; i++) {
+    if (ka[i] < kb[i]) return -1;
+    if (ka[i] > kb[i]) return 1;
+  }
+  return 0;
+}
+
+async function buildQueueBoard(perRunNames, pending) {
+  const items = [];
+  for (const name of perRunNames) {
+    let text;
+    try {
+      text = await fetch(`data/${name}`).then((r) => r.text());
+    } catch (e) {
+      continue;
+    }
+    const entries = parseJsonlEntries(text);
+    const branches = branchTerminalStates(entries);
+    const started = runStartedDeadlines(entries);
+    items.push({
+      key: name,
+      incident_id: runIncidentId(entries),
+      kind: "run",
+      status: runStatus(branches),
+      mode: modeOf(name),
+      regime: "",
+      nearest_deadline_utc: started.length ? started[0] : null,
+      branches,
+      label: (modeOf(name) || name).replace(/_/g, " "),
+    });
+  }
+  for (const rec of pending || []) {
+    if (!rec || typeof rec !== "object") continue;
+    const deadline = (typeof rec.nearest_deadline_utc === "string" && rec.nearest_deadline_utc)
+      ? rec.nearest_deadline_utc : null;
+    const incident = String(rec.incident_id || "");
+    const key = String(rec.id || incident || "pending");
+    items.push({
+      key,
+      incident_id: incident,
+      kind: "pending",
+      status: "queued",
+      mode: "",
+      regime: String(rec.regime || ""),
+      nearest_deadline_utc: deadline,
+      branches: {},
+      label: String(rec.label || incident || key),
+    });
+  }
+  items.sort(compareQueue);
+  return items;
+}
+
+function statusPill(status) {
+  const pill = el("span", "queue-pill queue-pill-" + status, status);
+  return pill;
+}
+
+async function renderQueue() {
+  const summary = $("#queue-summary");
+  const board = $("#queue-board");
+  const receipt = $("#queue-receipt");
+  if (!summary || !board) return;
+
+  // The sealed runs come from the fleet attestation manifest (the attested set);
+  // the pending intake set is the declarative web/data/intake.json.
+  let perRunNames = [];
+  let worst = null;
+  try {
+    const doc = await fetch("data/portfolio-attestation.json").then((r) => r.json());
+    const manifest = doc.manifest || {};
+    perRunNames = (manifest.runs || []).map((r) => r.name);
+    const sla = manifest.sla || {};
+    worst = {
+      hours: sla.worst_margin_hours,
+      run: sla.worst_margin_run,
+      clock: sla.worst_margin_clock,
+      breached: !!sla.ever_breached,
+    };
+  } catch (e) {
+    summary.appendChild(el("p", "small muted",
+      "Queue unavailable (run py scripts/attest_portfolio.py)."));
+    return;
+  }
+
+  let pending = [];
+  try {
+    const intake = await fetch("data/intake.json").then((r) => r.json());
+    pending = Array.isArray(intake.pending) ? intake.pending : [];
+  } catch (e) {
+    pending = []; // the queue still renders the running incidents
+  }
+
+  const items = await buildQueueBoard(perRunNames, pending);
+
+  const counts = { queued: 0, active: 0, released: 0, suppressed: 0, failed: 0, closed: 0 };
+  for (const it of items) if (it.status in counts) counts[it.status] += 1;
+
+  summary.innerHTML = "";
+  summary.appendChild(fleetStat("queued (awaiting a run)", fmtNum(counts.queued),
+    counts.queued > 0 ? "warn" : ""));
+  summary.appendChild(fleetStat("active (in flight)", fmtNum(counts.active),
+    counts.active > 0 ? "warn" : ""));
+  summary.appendChild(fleetStat("released", fmtNum(counts.released), "ok"));
+  summary.appendChild(fleetStat("suppressed", fmtNum(counts.suppressed)));
+  summary.appendChild(fleetStat("breached", fmtNum(counts.failed),
+    counts.failed > 0 ? "danger" : "ok"));
+
+  board.innerHTML = "";
+  for (const it of items) {
+    const row = el("div", "queue-row queue-kind-" + it.kind);
+    const head = el("div", "queue-row-head");
+    head.appendChild(statusPill(it.status));
+    head.appendChild(el("span", "queue-row-label", it.label));
+    if (it.kind === "pending") {
+      head.appendChild(el("span", "queue-tag", "intake, not yet run"));
+    }
+    row.appendChild(head);
+
+    const meta = el("div", "queue-row-meta small muted");
+    const due = it.nearest_deadline_utc
+      ? `nearest deadline ${it.nearest_deadline_utc}` : "no clock yet";
+    meta.appendChild(el("span", null, due));
+    if (it.incident_id) meta.appendChild(el("span", null, `incident ${it.incident_id}`));
+    if (it.regime) meta.appendChild(el("span", null, `regime ${it.regime}`));
+    const branchKeys = Object.keys(it.branches);
+    if (branchKeys.length) {
+      const branchTxt = branchKeys.sort()
+        .map((c) => `${c.split(":").pop()}: ${it.branches[c]}`).join("  ");
+      meta.appendChild(el("span", "queue-branches", branchTxt));
+    }
+    row.appendChild(meta);
+    board.appendChild(row);
+  }
+
+  if (receipt) {
+    receipt.innerHTML = "";
+    const dated = items.filter((it) => it.nearest_deadline_utc);
+    const nearest = dated.length
+      ? `next due: ${dated[0].label} at ${dated[0].nearest_deadline_utc}` : "";
+    const worstLine = (worst && worst.hours !== null && worst.hours !== undefined && worst.run)
+      ? `fleet worst-case margin ${Number(worst.hours).toFixed(2)}h in ${(worst.run || "").replace(/_/g, " ")} on ${worst.clock}`
+      : "";
+    const line = [nearest, worstLine].filter(Boolean).join(" | ");
+    if (line) receipt.appendChild(el("div", null, line));
+    receipt.appendChild(el("div", null,
+      "Status read from each run's sealed log; pending records are declarative intake. No status is asserted that the log does not support."));
+  }
+}
+
 async function init() {
   reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1651,6 +1882,7 @@ async function init() {
   await loadScenario(def);
   await renderWhatIf();
   await renderFleet();
+  await renderQueue();
 
   $("#play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
   $("#restart").addEventListener("click", () => { stopPlay(); revealedBeats = new Set(); hideBeatBanner(); setCursor(0); });

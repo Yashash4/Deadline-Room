@@ -654,3 +654,40 @@ input[type=range]::-moz-range-thumb {
   border: 1px solid var(--line-soft); border-radius: 6px;
   padding: 0.2rem 0.4rem; display: inline-block; word-break: break-all;
 }
+
+/* E6.6 intake queue + status board */
+.queue-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem; margin: 0.6rem 0 1rem;
+}
+.queue-board { display: grid; gap: 0.5rem; }
+.queue-row {
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); padding: 0.65rem 0.8rem;
+  border-left: 3px solid var(--line);
+  display: grid; gap: 0.4rem;
+}
+.queue-kind-pending { border-left-color: var(--amber); background: var(--panel); }
+.queue-row-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.queue-row-label { font-weight: 600; color: var(--text); }
+.queue-tag {
+  font-size: 0.68rem; color: var(--amber);
+  border: 1px solid var(--amber-soft); background: var(--amber-soft);
+  border-radius: 999px; padding: 0.1rem 0.45rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.queue-pill {
+  font-family: var(--mono); font-size: 0.7rem;
+  padding: 0.14rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+}
+.queue-pill-queued { color: var(--amber); border-color: var(--amber-soft); background: var(--amber-soft); }
+.queue-pill-active { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
+.queue-pill-released { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
+.queue-pill-suppressed { color: var(--violet); border-color: var(--line); }
+.queue-pill-failed, .queue-pill-closed { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }
+.queue-row-meta { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.queue-branches { font-family: var(--mono); color: var(--muted-2); }
+.queue-receipt { margin-top: 0.8rem; display: grid; gap: 0.35rem; }
