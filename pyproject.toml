@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deadline-room"
+version = "0.1.0"
+description = "A deterministic multi-agent regulated breach-reporting war room with a standing governance service over a sealed and signed run-log corpus."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Deadline Room" }]
+keywords = [
+    "band",
+    "agents",
+    "compliance",
+    "breach-reporting",
+    "governance",
+    "deterministic",
+    "audit",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "cryptography>=41",
+    "PyYAML>=6",
+    "requests>=2.28",
+    "websocket-client>=1.6",
+]
+
+[project.optional-dependencies]
+# The standing governance service (E6.7): the HTTP API plus its ASGI server.
+service = ["fastapi>=0.110", "uvicorn>=0.27"]
+test = ["pytest>=7", "httpx>=0.27"]
+
+[project.urls]
+Homepage = "https://app.band.ai"
+
+[project.scripts]
+deadline-room = "service.cli:main"
+
+[tool.setuptools]
+# The shipped product packages. The standing service plus the deterministic floor
+# and Warden core; tests and one-off scripts are intentionally excluded from the
+# wheel.
+packages = ["service", "floor", "warden"]
+
+[tool.setuptools.package-data]
+# The committed Ed25519 demo keys and the regulation corpus index travel with the
+# wheel so a fresh install can sign, verify, and ground offline.
+warden = ["keys/*"]
+floor = ["corpus/*", "regimes.yaml"]
