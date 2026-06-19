@@ -1533,6 +1533,122 @@ def _render_reliability(rel: dict) -> str:
         "than an aborted filing.</p>")
 
 
+def _render_routing(gw: dict) -> str:
+    """Render the E5.7 multi-model gateway receipt: the tiered-routing ledger (per
+    filing complexity tier + RELATIVE-cost estimate), the cross-family failover
+    record (which model served each filing and which it fell back from), and the
+    advisory vision triage (validated and grounding-scored).
+
+    Every number here is derived OUT-OF-LOG from the drafting trace; it is
+    render-only and never enters the hashed run-log, so the run-log sha and
+    byte-identical replay are untouched. Empty unless a gateway feature was
+    exercised, so the default packet is unchanged. The cost figures are RELATIVE
+    weights (unitless), never a currency amount, so this is a relative-cost
+    estimate, never a fabricated invoice."""
+    if not gw:
+        return ""
+    parts = ["<h2>8e. Multi-model gateway (routing, failover, vision triage)</h2>"]
+
+    failover = gw.get("failover", {})
+    if failover.get("rows"):
+        any_fo = failover.get("any_failed_over", False)
+        cls = "bad" if any_fo else "ok"
+        msg = ("A primary model was down: the filing FAILED OVER to the next "
+               "model in its cross-family chain and served from there."
+               if any_fo else
+               "Every filing was served by its primary model; the failover chain "
+               "was ready but not needed.")
+        parts.append(f"<p class='{cls}'><strong>{msg}</strong></p>")
+        rows = []
+        for r in failover["rows"]:
+            fell = r.get("fell_back_from", [])
+            fell_txt = (", ".join(f"{f['provider']}:{f['model']}" for f in fell)
+                        if fell else "(none, primary served)")
+            rows.append([
+                r.get("regime") or r.get("branch"),
+                f"{r.get('served_by_provider')}:{r.get('served_by_model')}",
+                fell_txt,
+                "yes" if r.get("did_fail_over") else "no",
+            ])
+        parts.append("<p class='sub'>Cross-family failover: the model that served "
+                     "each filing and the models it fell back from. The served_by / "
+                     "fell_back_from record is OUT-OF-LOG, never in the hashed "
+                     "[CLAIMS], so replay stays byte-identical.</p>")
+        parts.append(_rows(
+            ["Filing", "Served by", "Fell back from", "Failed over"], rows))
+
+    routing = gw.get("routing", {})
+    if routing.get("rows"):
+        rows = []
+        for r in routing["rows"]:
+            rows.append([
+                r.get("regime") or r.get("branch"),
+                r.get("complexity"),
+                r.get("tier"),
+                f"{r.get('provider')}:{r.get('model')}",
+                f"{r.get('cost_weight')}x",
+                r.get("score"),
+            ])
+        parts.append("<p class='sub'>Deterministic complexity routing: each filing "
+                     "is scored from declared signals (regime weight, regulator "
+                     "factor count, record magnitude, grounding) and banded into a "
+                     "cost tier. The decision is OUT-OF-LOG and gates nothing.</p>")
+        parts.append(_rows(
+            ["Filing", "Complexity", "Tier", "Model", "Relative cost", "Score"],
+            rows))
+        ledger = routing.get("cost_ledger", {})
+        if ledger:
+            saving = ledger.get("relative_saving_fraction", 0.0)
+            parts.append(
+                "<p class='sub'>Relative-cost estimate (unitless weights, NOT a "
+                "currency amount, never an invoice): routing this run cost "
+                f"<code>{_esc(ledger.get('relative_cost_total'))}</code> relative "
+                "weight versus "
+                f"<code>{_esc(ledger.get('all_premium_relative_cost'))}</code> had "
+                "every filing gone premium, a relative saving of "
+                f"<strong>{_esc(round(saving * 100, 1))}%</strong>.</p>")
+
+    vision = gw.get("vision", {})
+    triages = vision.get("triages", [])
+    if triages:
+        parts.append("<h3>Advisory vision triage (breach screenshot)</h3>")
+        for t in triages:
+            cleared = t.get("cleared", False)
+            cls = "ok" if cleared else "bad"
+            badge = "CLEARED" if cleared else "HELD FOR REVIEW"
+            src = t.get("source", "")
+            parts.append(
+                f"<p class='{cls}'><strong>{badge}</strong> "
+                f"(source: {_esc(src)}, model: {_esc(t.get('model'))}). "
+                "Vision output is ADVISORY: it gates nothing, never enters the "
+                "canonical fact-record or the [CLAIMS] block, and must clear the "
+                "deterministic validator AND the grounding scorer before it is "
+                "shown.</p>")
+            parts.append(f"<p class='sub'>{_esc(t.get('advisory_prose'))}</p>")
+            fields = t.get("fields", {})
+            if fields:
+                frows = [[k, v] for k, v in fields.items()]
+                parts.append(_rows(["Extracted field (advisory)", "Value"], frows))
+            rejected = t.get("rejected_lines", [])
+            if rejected:
+                parts.append(
+                    "<p class='sub'>Validator REJECTED (out-of-schema or bad type, "
+                    "dropped before it could be surfaced as a fact): "
+                    + "; ".join(f"<code>{_esc(x)}</code>" for x in rejected)
+                    + "</p>")
+            g = t.get("grounding", {})
+            spans = g.get("ungrounded", [])
+            if spans:
+                parts.append(
+                    "<p class='bad'>Grounding scorer flagged an extracted value as "
+                    "UNGROUNDED against the fact-record (this is why it was held): "
+                    + "; ".join(
+                        f"{_esc(s.get('kind'))}: <code>{_esc(s.get('span'))}</code>"
+                        for s in spans)
+                    + ".</p>")
+    return "".join(parts)
+
+
 def _render_operability(op: dict) -> str:
     """Render the operability / SLO block: the operations numbers an enterprise
     judge and a CISO watch. Per regime the deadline MARGIN (how much statutory time
@@ -2777,6 +2893,7 @@ def _render_html(p: dict) -> str:
     attestation_block = _render_attestation(p.get("attestation", {}))
     timestamp_block = _render_timestamp(p.get("timestamp", {}))
     reliability_block = _render_reliability(p.get("reliability", {}))
+    gateway_block = _render_routing(p.get("gateway", {}))
     operability_block = _render_operability(p.get("operability", {}))
     privilege_block = _render_privilege(p.get("privilege", {}))
     timeline_block = _render_timeline(p.get("timeline", {}))
@@ -3015,6 +3132,8 @@ federal holidays (Juneteenth, etc.), not another country's.</p>
 {timestamp_block}
 
 {reliability_block}
+
+{gateway_block}
 
 {operability_block}
 

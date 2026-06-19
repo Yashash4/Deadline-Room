@@ -572,6 +572,134 @@ def draft_filing(fact_record: dict, *, model: str = DEFAULT_MODEL,
         max_attempts=max_attempts)
 
 
+# ---------------------------------------------------------------------------
+# E5.7 part 1: cross-family FAILOVER over draft_filing.
+#
+# When the model a role wants is DOWN with a terminal error, a production gateway
+# fails over to the next model in an ordered chain rather than aborting the
+# filing. draft_filing_with_failover walks roster.fallback_chain over the plain
+# draft_filing, recording which model SERVED and which it FELL BACK FROM. That
+# record is OUT-OF-LOG (the caller rides it on the trace like recovered_retries),
+# NEVER in the hashed [CLAIMS], and the failover path is only taken when a caller
+# opts in, so the default single-model draft_filing path stays byte-identical.
+# ---------------------------------------------------------------------------
+
+
+def _is_failover_terminal(e: BaseException) -> bool:
+    """A DrafterError is a FAILOVER-worthy terminal error (the model itself is
+    unusable: a 404 model-not-found, a forbidden key, a hard refusal, an empty
+    completion) iff it is a plain DrafterError that the within-model retry already
+    declined to recover. A _TransientDrafterError is NOT failover-worthy on its own
+    (retry handles transients in place); if retry exhausted its attempts it
+    re-raises the _TransientDrafterError, and at that point the model is effectively
+    down for this run, so we DO fail over on it too. Any non-DrafterError (a real
+    bug) is never failover-worthy and surfaces unchanged."""
+    return isinstance(e, DrafterError)
+
+
+def draft_filing_with_failover(fact_record: dict, *, chain: list[tuple[str, str]],
+                               api_key: str | None = None, regime: str = "NIS2",
+                               format_profile=None, expert_profile=None,
+                               emit_confidence: bool = False, grounding_chunks=None,
+                               max_tokens: int = 700, timeout: int = 90,
+                               max_attempts: int = 1):
+    """Draft one filing over an ORDERED model chain, failing over across families
+    when a model is terminally down. Returns a floor.model_fallback.FailoverResult
+    whose .value is the drafted text and whose .served_by / .fell_back_from /
+    .attempts record the routing OUT-OF-LOG.
+
+    chain is the ordered list of (provider, model) pairs from
+    roster.fallback_chain(role, provider_set): the active primary first, then the
+    cross-family open-model fallbacks. Each entry is drafted with the SAME prompt
+    inputs (regime, format_profile, expert_profile, grounding_chunks, ...), so the
+    only thing that changes across the chain is which model produced the prose; the
+    structured [CLAIMS] block the Warden diffs is attached by the drafter process
+    afterwards exactly as before and is identical regardless of which model served.
+
+    Each entry is attempted with the within-model transient retry (max_attempts);
+    only a TERMINAL DrafterError advances the chain. If the whole chain is down,
+    floor.model_fallback.FailoverExhausted surfaces with the full per-entry error
+    list, so a total outage is reported structurally and never swallowed.
+
+    The served_by / fell_back_from record rides the trace like recovered_retries
+    and NEVER enters the hashed run-log, and this function is only called when a
+    caller opts into failover, so the default draft_filing path is byte-identical."""
+    from floor import model_fallback
+
+    def attempt(provider: str, model: str) -> str:
+        return draft_filing(
+            fact_record, model=model, provider=provider, api_key=api_key,
+            regime=regime, format_profile=format_profile,
+            expert_profile=expert_profile, emit_confidence=emit_confidence,
+            grounding_chunks=grounding_chunks, max_tokens=max_tokens,
+            timeout=timeout, max_attempts=max_attempts)
+
+    return model_fallback.call_with_failover(
+        chain, attempt, classify_terminal=_is_failover_terminal)
+
+
+# The fence the deterministic ROUTING decision is wrapped in (E5.7 part 2). It is
+# NOT a Warden control envelope: it carries no gated value, it never feeds the
+# diff, a clock, or a release, and it is sanitized to an inert form if a MODEL ever
+# emits it (the authoritative routing is computed by floor/router.py, not the
+# model). The drafter PROCESS attaches the real [ROUTE] block out-of-log when
+# routing is on, carrying only the coarse low|high complexity label the router
+# decided; it never carries a model-chosen value. Like RATIONALE and CONFIDENCE it
+# rides the prose half, never the hashed run-log, so replay stays byte-identical.
+ROUTE_OPEN = "[ROUTE]"
+ROUTE_CLOSE = "[/ROUTE]"
+_ROUTE_COMPLEXITY = ("low", "high")
+
+
+def emit_route_block(complexity: str) -> str:
+    """Build the deterministic out-of-log [ROUTE] block carrying ONLY the coarse
+    complexity label the router decided (low|high). The drafter process attaches
+    this; the model never fills it, so it can carry no model-chosen value. Raises
+    ValueError on an unrecognized label so a malformed routing can never be
+    emitted. Pure string work."""
+    label = str(complexity).strip().lower()
+    if label not in _ROUTE_COMPLEXITY:
+        raise ValueError(f"route complexity must be low|high, got {complexity!r}")
+    return f"{ROUTE_OPEN}complexity={label}{ROUTE_CLOSE}"
+
+
+def parse_route_block(text: str) -> str:
+    """Parse the coarse complexity label out of an out-of-log [ROUTE] block, or ""
+    if none is present or the label is unrecognized. Pure deterministic string
+    work used by the packet renderer only; it never feeds a gate, a clock, the
+    diff, or the hashed run-log. Tolerant: no block, an unclosed block, or the
+    close before the open all return ""."""
+    start = text.find(ROUTE_OPEN)
+    if start == -1:
+        return ""
+    inner_start = start + len(ROUTE_OPEN)
+    end = text.find(ROUTE_CLOSE, inner_start)
+    if end == -1:
+        return ""
+    inner = text[inner_start:end].strip()
+    for part in inner.split(";"):
+        key, sep, value = part.partition("=")
+        if sep and key.strip().lower() == "complexity":
+            label = value.strip().lower()
+            if label in _ROUTE_COMPLEXITY:
+                return label
+    return ""
+
+
+def strip_route_block(text: str) -> str:
+    """Return the filing body with the [ROUTE] block removed, so the
+    human-readable prose renders clean. A body with no block is returned
+    unchanged. Pure string work; never touches the [CLAIMS] block."""
+    start = text.find(ROUTE_OPEN)
+    if start == -1:
+        return text
+    end = text.find(ROUTE_CLOSE, start + len(ROUTE_OPEN))
+    if end == -1:
+        return text
+    end += len(ROUTE_CLOSE)
+    return (text[:start].rstrip() + "\n" + text[end:].lstrip()).strip()
+
+
 def draft_characterization(*, regime: str, old_records: int, new_records: int,
                            role: str, counterpart_text: str = "",
                            model: str = DEFAULT_MODEL,

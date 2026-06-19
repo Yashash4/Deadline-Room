@@ -1,0 +1,15 @@
+{
+  "about": "Committed cache of the raw drafted filings on the two providers' equivalent models for the E5.7 portability check, recorded so scripts/portability_check.py and tests/test_portability.py run KEYLESS and never block on a flaky provider. The grounding SCORE is always recomputed real and keyless; only the raw model output is cached. source=live is a real model output; source=illustrative is a labeled plausible filing used when no live provider was reachable (the Featherless slot was held and the AI/ML gateway was unavailable at record time, so both sides read illustrative). Refresh with py scripts/portability_check.py --record (needs FEATHERLESS_API_KEY + AIML_API_KEY).",
+  "sides": {
+    "featherless": {
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "source": "illustrative",
+      "raw_response": "Subject: NIS2 mandatory incident notification, reference inc-8842. Nature of the incident: Meridian Trust Bank N.V. detected unauthorized access attributable to LockBit 3.0 beginning 16 June 2026. Scope and impact: approximately 48211 records were affected across the core banking ledger and the customer KYC store, comprising name, address, and account number data. Containment status: the incident is partially contained. Competent authority: the national CSIRT has been notified within the statutory window. Next steps: forensic analysis and affected-party assessment are in progress."
+    },
+    "aimlapi": {
+      "model": "claude-sonnet-4-20250514",
+      "source": "illustrative",
+      "raw_response": "NIS2 Article 23 notification for incident inc-8842. Meridian Trust Bank N.V. is reporting a significant cybersecurity incident first observed on 16 June 2026 and attributed to the LockBit 3.0 group. The incident affected approximately 48211 records held in the core banking ledger and customer KYC store, including name, address, and account number fields. The incident is partially contained. The national CSIRT has been informed. Remediation and a full impact assessment are under way."
+    }
+  }
+}

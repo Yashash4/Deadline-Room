@@ -1,0 +1,7 @@
+{
+  "about": "Committed cache of the raw VISION-model response for the breach-screenshot triage (E5.7 part 3), recorded so floor.vision_triage.triage_from_cache and tests/test_vision_triage.py run KEYLESS and never block on a live vision call. The VALIDATION (the deterministic schema validator) and the GROUNDING score (floor.grounding.score_filing against the canonical fact-record) are ALWAYS recomputed live and real; only the raw model output is cached, exactly like the E5.2 caches. The 'source' is 'illustrative': a labeled, plausible vision extraction used because no live vision provider was reachable at record time (the Band room cap held, the Featherless slot was held, and the AI/ML gateway was unavailable). The block intentionally contains one out-of-schema line (severity=critical) so the deterministic validator is shown REJECTING it. The extracted facts match the canonical fact-record (inc-8842) so the advisory prose clears the grounding scorer. To refresh against a live vision model run floor.vision_triage.triage_live (needs a vision-capable model and the provider key).",
+  "fixture_image": "vision_breach_screenshot.png",
+  "model": "gemini-3.5-flash",
+  "source": "illustrative",
+  "raw_response": "[VISION]\nrecords_affected=48211\nincident_date=2026-06-16\nattacker=LockBit 3.0\nregulated_entity=Meridian Trust Bank N.V.\nseverity=critical\n[/VISION]"
+}

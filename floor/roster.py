@@ -276,6 +276,127 @@ def resolve(role: "Role", provider_set: str) -> tuple[str, str]:
     raise ValueError(f"unknown provider set: {provider_set!r}")
 
 
+# ---------------------------------------------------------------------------
+# E5.7 part 1: ordered model preference (FAILOVER) chains.
+#
+# A production multi-model deployment never bets the filing on one model being
+# up. Each drafting role declares an ORDERED preference chain of (provider, model)
+# pairs: the primary first, then cross-family fallbacks. When the primary returns
+# a TERMINAL error (a model 404, a forbidden key, a hard refusal), the drafter
+# tries the next entry in the chain, and records which model SERVED the filing and
+# which it FELL BACK FROM. That served_by / fell_back_from record is OUT-OF-LOG
+# (it rides the trace like recovered_retries), NEVER in the hashed [CLAIMS], so a
+# clean single-model run is byte-identical.
+#
+# The chains here are CROSS-FAMILY by construction (DeepSeek -> MiniMax -> Qwen on
+# Featherless), so a whole-family outage on the gateway still produces a filing
+# from a genuinely different open model. All entries are Featherless (flat-rate),
+# so exercising a fallback in dev burns zero metered credit.
+#
+# DEFAULT OFF: nothing here is read unless a caller asks for failover explicitly
+# (drafter.draft_filing_with_failover / run_floor --failover). The plain
+# draft_filing path is unchanged, so the offline suite and replay stay
+# byte-identical.
+# ---------------------------------------------------------------------------
+
+# The cross-family open-model order the failover walks: DeepSeek first (the hero
+# open model), then MiniMax (a different family, the data-sovereignty model), then
+# Qwen (a third family). Used to build each role's chain so every role fails over
+# across genuinely different model families on flat-rate Featherless.
+CROSS_FAMILY_CHAIN: tuple[tuple[str, str], ...] = (
+    (FEATHERLESS, "deepseek-ai/DeepSeek-V3.2"),
+    (FEATHERLESS, "MiniMaxAI/MiniMax-M2.7"),
+    (FEATHERLESS, "Qwen/Qwen2.5-72B-Instruct"),
+)
+
+
+def fallback_chain(role: "Role", provider_set: str) -> list[tuple[str, str]]:
+    """The ordered (provider, model) preference chain for a role under a provider
+    set: the role's active primary first, then the cross-family open-model
+    fallbacks that are not already the primary, de-duplicated in order.
+
+    The primary is whatever resolve() picks for the active provider set, so a dev
+    chain leads with the role's Featherless model and a prod chain leads with its
+    AI/ML model, then both fall back across the open-model families. Pure config;
+    nothing here calls a model or reads the network. The CALLER decides whether to
+    walk the chain (failover ON) or only ever use entry 0 (the default)."""
+    primary = resolve(role, provider_set)
+    chain: list[tuple[str, str]] = [primary]
+    for entry in CROSS_FAMILY_CHAIN:
+        if entry not in chain:
+            chain.append(entry)
+    return chain
+
+
+# ---------------------------------------------------------------------------
+# E5.7 part 2: complexity TIERS (cheap / mid / premium).
+#
+# A production gateway routes by COST and COMPLEXITY: a low-complexity filing goes
+# to a cheap fast model, a high-complexity one to a premium model. The tier table
+# names one (provider, model) per tier, plus a RELATIVE cost weight (a unitless
+# multiplier, NEVER a dollar figure, so the packet shows a relative-cost estimate,
+# never a fabricated invoice). All Featherless, flat-rate, so routing in dev burns
+# zero metered credit.
+#
+# DEFAULT OFF: the router is only consulted when a caller asks for it
+# (run_floor --route). The default drafting path ignores tiers entirely, so the
+# offline suite and replay stay byte-identical.
+# ---------------------------------------------------------------------------
+
+TIER_CHEAP = "cheap"
+TIER_MID = "mid"
+TIER_PREMIUM = "premium"
+TIERS = (TIER_CHEAP, TIER_MID, TIER_PREMIUM)
+
+
+@dataclass(frozen=True)
+class TierSpec:
+    """One complexity tier: the model that serves it and a RELATIVE cost weight.
+
+    cost_weight is a unitless multiplier (cheap = 1.0 baseline), used only to
+    render a RELATIVE-cost estimate in the packet. It is never a currency amount
+    and never multiplied by a real price, so the ledger states relative cost, not a
+    fabricated invoice."""
+    tier: str
+    provider: str
+    model: str
+    cost_weight: float
+    rationale: str
+
+
+# The deterministic tier table. cheap = the fast small-context model, mid = the
+# hero open model, premium = the largest-context reasoning model. Cost weights are
+# relative only (cheap is the 1.0 baseline).
+TIER_TABLE: dict[str, TierSpec] = {
+    TIER_CHEAP: TierSpec(
+        tier=TIER_CHEAP, provider=FEATHERLESS,
+        model="MiniMaxAI/MiniMax-M2.7", cost_weight=1.0,
+        rationale="MiniMax-M2.7 serves the cheap tier: a fast self-hostable open "
+                  "model for a low-complexity filing that needs no deep reasoning.",
+    ),
+    TIER_MID: TierSpec(
+        tier=TIER_MID, provider=FEATHERLESS,
+        model="deepseek-ai/DeepSeek-V3.2", cost_weight=2.0,
+        rationale="DeepSeek-V3.2 serves the mid tier: the hero open reasoning "
+                  "model for a standard statutory filing.",
+    ),
+    TIER_PREMIUM: TierSpec(
+        tier=TIER_PREMIUM, provider=FEATHERLESS,
+        model="Qwen/Qwen2.5-72B-Instruct", cost_weight=3.0,
+        rationale="Qwen2.5-72B-Instruct serves the premium tier: the largest "
+                  "open model for a high-complexity filing with many factors.",
+    ),
+}
+
+
+def tier_spec(tier: str) -> TierSpec:
+    """The TierSpec for a tier name, raising on an unknown tier. Pure config."""
+    try:
+        return TIER_TABLE[tier]
+    except KeyError as e:
+        raise ValueError(f"unknown tier: {tier!r}") from e
+
+
 _ROLE_LABEL = {
     _role_id(TRIAGE): "Triage",
     _role_id(NIS2_DRAFTER): "NIS2 Drafter",

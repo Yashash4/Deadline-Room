@@ -134,7 +134,8 @@ from floor.grounding import score_filings  # noqa: E402
 from floor.lead_authority import (  # noqa: E402
     SupervisoryAuthority, resolve as resolve_lead_authority)
 from floor.drafter import (  # noqa: E402
-    build_draft_body, draft_characterization, draft_filing)
+    build_draft_body, draft_characterization, draft_filing,
+    draft_filing_with_failover)
 from floor.materiality import (  # noqa: E402
     assess_materiality, assess_materiality_two_opinions)
 from floor.reportability import assess_reportability  # noqa: E402
@@ -549,6 +550,15 @@ GROUNDING_THRESHOLD = 1.0
 # flag's only purpose is to keep the committed captures from re-drafting their prose.
 RAG_ENABLED = False
 RAG_K = 4
+# E5.7 multi-model gateway toggles. Both DEFAULT OFF and single-model, so the
+# offline suite and the four sealed captures stay byte-identical. FAILOVER, when
+# on, drafts over an ordered cross-family model chain and records served_by /
+# fell_back_from OUT-OF-LOG on the trace. ROUTE, when on, lets the deterministic
+# router pick a complexity tier per filing and records the tier + relative cost
+# OUT-OF-LOG. Neither ever touches the hashed [CLAIMS]; with both OFF the drafting
+# path is exactly the single-model path it has always been.
+FAILOVER_ENABLED = False
+ROUTE_ENABLED = False
 TS_AMEND = "2026-06-16T08:14:00+00:00"     # Triage posts the revision (~hour 6)
 TS_AMEND_RELEASE = "2026-06-16T09:00:00+00:00"
 # The amendment re-release runs the SAME two-key gate as the initial release:
@@ -761,6 +771,19 @@ class StepTrace:
         # regime retrieved, the ordered citation ids + titles retrieved, and (filled
         # at packet-derive time) which the drafter actually cited.
         self.retrievals: list[dict] = []
+        # Model-routing records (E5.7). Two ADDITIVE, OUT-OF-LOG visibility
+        # artifacts that ride the trace exactly like recovered_retries and the RAG
+        # retrievals: NOTHING here is ever appended to the hashed run-log event
+        # stream, and both are only populated when a caller opts into failover /
+        # routing, so byte-identical replay and the sealed run-log sha are
+        # untouched. failovers: one per drafting call that walked a model chain
+        # (which model served, which it fell back from). routes: one per drafting
+        # call the router tiered (the complexity tier + relative cost weight).
+        self.failovers: list[dict] = []
+        self.routes: list[dict] = []
+        # Vision-triage records (E5.7 part 3): one advisory screenshot triage,
+        # validated and grounding-scored, OUT-OF-LOG like the rest.
+        self.vision_triages: list[dict] = []
 
     def say(self, line: str) -> None:
         self.lines.append(line)
@@ -804,6 +827,31 @@ class StepTrace:
                 for c in chunks
             ],
         })
+
+    def record_failover(self, branch: str, regime: str, result) -> None:
+        """Record one model-failover walk (E5.7) OUT-OF-LOG: which model SERVED the
+        filing and which it FELL BACK FROM. result is a
+        floor.model_fallback.FailoverResult. Like record_retrieval this appends
+        ONLY to the out-of-log trace and feeds the packet ledger, never the hashed
+        run-log, so replay stays byte-identical."""
+        entry = {"branch": branch, "regime": regime}
+        entry.update(result.as_dict())
+        self.failovers.append(entry)
+
+    def record_route(self, branch: str, decision) -> None:
+        """Record one tiered-routing decision (E5.7) OUT-OF-LOG: the complexity
+        tier the deterministic router chose and its relative-cost weight. decision
+        is a floor.router.RouteDecision. Appended to the out-of-log trace only;
+        never written to the hashed run-log, so replay stays byte-identical."""
+        entry = {"branch": branch}
+        entry.update(decision.as_dict())
+        self.routes.append(entry)
+
+    def record_vision_triage(self, result) -> None:
+        """Record the advisory vision triage (E5.7 part 3) OUT-OF-LOG. result is a
+        floor.vision_triage.VisionTriageResult. ADVISORY only: it gates nothing and
+        is never written to the hashed run-log, so replay stays byte-identical."""
+        self.vision_triages.append(result.as_dict())
 
 
 def _proto(sm: ProtocolStateMachine, trace: StepTrace, corr: str, event: Event,
@@ -882,7 +930,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
               reportability: bool = False, reportability_fn=None,
               reportability_facts: dict | None = None,
               affected_party: bool = False, high_risk_fn=None,
-              affected_party_facts: dict | None = None) -> dict:
+              affected_party_facts: dict | None = None,
+              failover: bool = False, route: bool = False) -> dict:
     """Execute a floor run and return the assembled Examiner Packet dict.
 
     Two injection shapes:
@@ -918,7 +967,8 @@ def run_floor(out_dir: str | None = None, draft_timeout: int = 90,
                            reportability_facts=reportability_facts,
                            affected_party=affected_party,
                            high_risk_fn=high_risk_fn,
-                           affected_party_facts=affected_party_facts)
+                           affected_party_facts=affected_party_facts,
+                           failover=failover, route=route)
 
 
 # (cross_border has no public-API kwarg: it is selected purely by mode ==
@@ -947,7 +997,8 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
                     reportability_facts: dict | None = None,
                     affected_party: bool = False,
                     high_risk_fn=None,
-                    affected_party_facts: dict | None = None) -> dict:
+                    affected_party_facts: dict | None = None,
+                    failover: bool = False, route: bool = False) -> dict:
     """uk_recruit: drive the content-driven UK ICO runtime-recruit beat. The
     recruit fires only when the fact-record blast radius names a UK subsidiary.
 
@@ -1087,6 +1138,14 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
     # packet time into an additive receipt and is NEVER written into the hashed
     # run-log JSONL, so replay stays byte-identical.
     RETRY_COUNTER.reset()
+
+    # E5.7 multi-model gateway toggles. Both DEFAULT OFF; when a caller opts in,
+    # the drafting closure consults the router / failover chain and records the
+    # decision OUT-OF-LOG. Setting them here (not as a constant) keeps each run
+    # self-contained; with both OFF the drafting path is byte-identical.
+    global FAILOVER_ENABLED, ROUTE_ENABLED
+    FAILOVER_ENABLED = bool(failover)
+    ROUTE_ENABLED = bool(route)
 
     log = RunLog()
     trace = StepTrace(log)
@@ -4359,7 +4418,38 @@ def _draft_fn_for(branch, role, draft_fns, timeout, provider_set=roster.PROVIDER
         body_facts = dict(CANONICAL_FACTS)
         body_facts["incident_start_utc"] = claim_facts["incident_start_utc"]
         grounding = _rag_grounding(branch, role.regime, body_facts, trace)
-        return draft_filing(body_facts, model=model, provider=provider,
+
+        # E5.7 part 2: deterministic complexity routing (DEFAULT OFF). When on, the
+        # router tiers this filing and the tier's model drafts it; the decision is
+        # recorded OUT-OF-LOG. With it off, the role's own provider/model is used,
+        # exactly as before, so the default path is byte-identical.
+        active_provider, active_model = provider, model
+        if ROUTE_ENABLED and trace is not None:
+            from floor import router
+            signals = router.signals_for(role.regime, body_facts,
+                                         grounding_chunks=grounding)
+            decision = router.route(signals)
+            active_provider, active_model = decision.provider, decision.model
+            trace.record_route(branch, decision)
+
+        # E5.7 part 1: cross-family failover (DEFAULT OFF). When on, draft over the
+        # role's ordered model chain and record which model served OUT-OF-LOG. The
+        # chain leads with the active (routed) primary so routing and failover
+        # compose. With it off, a single plain draft_filing is made, byte-identical
+        # to before.
+        if FAILOVER_ENABLED and trace is not None:
+            chain = [(active_provider, active_model)]
+            for entry in roster.CROSS_FAMILY_CHAIN:
+                if entry not in chain:
+                    chain.append(entry)
+            result = draft_filing_with_failover(
+                body_facts, chain=chain, regime=role.regime,
+                format_profile=profile, grounding_chunks=grounding,
+                timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
+            trace.record_failover(branch, role.regime, result)
+            return result.value
+
+        return draft_filing(body_facts, model=active_model, provider=active_provider,
                             regime=role.regime, format_profile=profile,
                             grounding_chunks=grounding,
                             timeout=timeout, max_attempts=LIVE_NET_ATTEMPTS)
@@ -4490,6 +4580,48 @@ def _rag_grounding_block(trace, all_filings) -> dict:
         "passages_retrieved": total_retrieved,
         "passages_cited": total_cited,
     }
+
+
+def _gateway_block(trace) -> dict:
+    """Derive the E5.7 multi-model gateway packet section from the OUT-OF-LOG trace
+    lists. Returns {} when nothing was routed, no model failed over, and no vision
+    triage ran (the default run), so the section is absent unless a gateway feature
+    was exercised.
+
+    Pure derive-at-render-time: it reads the trace lists the drafting closure
+    filled (each itself out-of-log) and the deterministic router's cost ledger; it
+    adds NOTHING to the hashed run-log, so byte-identical replay and the sealed sha
+    are untouched."""
+    out: dict = {}
+    if trace.routes:
+        from floor import roster, router
+        # Rebuild RouteDecision-shaped rows from the recorded dicts so the pure
+        # cost_ledger aggregator runs over them. The records already carry the
+        # tier and cost weight, so build a light view object for the aggregator.
+        decisions = []
+        for r in trace.routes:
+            spec = roster.tier_spec(r["tier"])
+            decisions.append(router.RouteDecision(
+                score=r["score"], tier=r["tier"], provider=r["provider"],
+                model=r["model"], cost_weight=spec.cost_weight,
+                rationale=r["rationale"],
+                signals=router.RouteSignals(
+                    regime=r["signals"]["regime"],
+                    records_affected=r["signals"]["records_affected"],
+                    factor_count=r["signals"]["factor_count"],
+                    grounded=r["signals"]["grounded"])))
+        out["routing"] = {
+            "rows": list(trace.routes),
+            "cost_ledger": router.cost_ledger(decisions),
+        }
+    if trace.failovers:
+        out["failover"] = {
+            "rows": list(trace.failovers),
+            "any_failed_over": any(f["did_fail_over"] for f in trace.failovers),
+        }
+    if trace.vision_triages:
+        out["vision"] = {"triages": list(trace.vision_triages)}
+    return out
 
 
 def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved,
@@ -4763,6 +4895,16 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # hashed run-log JSONL and replay stays byte-identical.
     if recovered_retries:
         packet["reliability"] = {"recovered_retries": recovered_retries}
+    # E5.7 multi-model gateway receipt: the routing ledger (per-filing complexity
+    # tier + relative-cost estimate), the failover record (which model served each
+    # filing and which it fell back from), and the advisory vision triage. All
+    # three are derived OUT-OF-LOG from the trace lists the drafting closure filled;
+    # NONE of it is written into the hashed run-log JSONL, and all three are empty
+    # unless a caller opted into routing / failover / vision, so the run-log sha and
+    # byte-identical replay are untouched. Omitted entirely on a default run.
+    gateway = _gateway_block(trace)
+    if gateway:
+        packet["gateway"] = gateway
     # Operability / SLO block. Additive, derived OUT-OF-LOG from the in-process
     # telemetry collector and the deterministic clock math (per-clock deadline
     # margin = deadline - filed-at), assembled AFTER the run-log sha was sealed.
@@ -5353,6 +5495,16 @@ def main() -> int:
                         help="LLM provider set: dev (default, all Featherless, zero "
                              "AI/ML credit) or prod (AI/ML racing drafters + Featherless "
                              "hero open models)")
+    parser.add_argument("--failover", action="store_true",
+                        help="E5.7: draft over an ordered cross-family model chain, "
+                             "failing over to the next model when one is terminally "
+                             "down; records served_by / fell_back_from out-of-log "
+                             "(default off, single-model, replay byte-identical)")
+    parser.add_argument("--route", action="store_true",
+                        help="E5.7: let the deterministic router pick a complexity "
+                             "tier (cheap/mid/premium) per filing and render a "
+                             "relative-cost ledger, out-of-log (default off, replay "
+                             "byte-identical)")
     parser.add_argument("--uk-recruit", action="store_true",
                         help="content-driven UK ICO runtime recruit: Triage's blast "
                              "radius names a UK subsidiary, so the Warden discovers and "
@@ -5528,7 +5680,8 @@ def main() -> int:
                        sec_facts=sec_facts, second_opinion=args.second_opinion,
                        nydfs_recruit=args.nydfs_recruit,
                        reportability=args.reportability,
-                       affected_party=args.affected_party)
+                       affected_party=args.affected_party,
+                       failover=args.failover, route=args.route)
     print("\n=== Done. Examiner Packet at: "
           + packet["_paths"]["html"] + " ===")
     return 0
