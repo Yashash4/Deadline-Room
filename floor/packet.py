@@ -2501,6 +2501,47 @@ def _render_regime_expert(re: dict) -> str:
     return "".join(parts)
 
 
+def _rationale_why_by_event(p: dict) -> dict:
+    """Map each protocol Event name to the plain_why of the decision it drove, read
+    from the packet's decision_rationale ledger (E9.1). The transition table's
+    plain-English 'why' column and the room post both read THIS, so they are the
+    same bytes. Pure render-time lookup over the assembled packet."""
+    from floor.rationale import EVENT_RULE
+
+    ledger = p.get("decision_rationale", {}) or {}
+    out: dict[str, str] = {}
+    for event, kind in EVENT_RULE.items():
+        entry = ledger.get(kind)
+        if entry:
+            out[event.value] = entry.get("plain_why", "")
+    return out
+
+
+def _render_rationale(p: dict) -> str:
+    """Render the Decision rationale section (E9.1): per Warden decision, the
+    governing rule id and the ONE plain-English 'why' that names the exact driving
+    fact. This is the SAME source the room post and the web gate panel read, so the
+    three read the same bytes. A pure derived render over the assembled packet; it
+    never enters the hashed run-log and gates nothing."""
+    ledger = p.get("decision_rationale", {}) or {}
+    if not ledger:
+        return ""
+    rows = [[entry.get("rule_id"), entry.get("plain_why")]
+            for entry in ledger.values()]
+    parts = [
+        "<h2>4a. Decision rationale (one source for every &quot;why&quot;)</h2>",
+        "<p class='sub'>Every Warden decision carries a typed rationale built from "
+        "three deterministic ingredients: which transition fired, which rule governs "
+        "it, and which fact drove it (it names the EXACT driving fact value). The "
+        "Warden's room post, this section, and the web copy all read this ONE source "
+        "(floor/rationale.py), so they are the same bytes, not three hand-typed "
+        "strings. It is a pure derived render: zero LLM, never appended to the hashed "
+        "run-log, gates nothing.</p>",
+        _rows(["Governing rule", "Plain-English why (names the driving fact)"], rows),
+    ]
+    return "".join(parts)
+
+
 def _render_html(p: dict) -> str:
     incident = p.get("incident", {})
     handoffs = p.get("handoff_trace", [])
@@ -2516,10 +2557,13 @@ def _render_html(p: dict) -> str:
         [[i + 1, h.get("from"), h.get("to"), h.get("kind"), h.get("message_id", "")]
          for i, h in enumerate(handoffs)],
     )
+    why_of = _rationale_why_by_event(p)
     transition_rows = _rows(
-        ["Branch", "From state", "Event", "To state", "Admitted", "Actor"],
+        ["Branch", "From state", "Event", "To state", "Admitted", "Actor",
+         "Why (plain English)"],
         [[t.get("correlation_id"), t.get("from_state"), t.get("event"),
-          t.get("to_state") or t.get("reason"), t.get("admitted"), t.get("actor")]
+          t.get("to_state") or t.get("reason"), t.get("admitted"), t.get("actor"),
+          why_of.get(t.get("event"), "")]
          for t in transitions],
     )
     lifecycle_rows = _rows(
@@ -2547,6 +2591,7 @@ def _render_html(p: dict) -> str:
     )
     cover = _render_cover(p)
     handoff_graph = _render_handoff_graph(p)
+    rationale_block = _render_rationale(p)
     diff_summary = _render_diff(diff)
     consistency_block = _render_consistency(p.get("consistency", {}))
     reconciliation_block = _render_reconciliation(p.get("reconciliation", {}))
@@ -2731,8 +2776,12 @@ code {{ background: #f0f2f5; padding: 1px 5px; border-radius: 4px; }}
 {lifecycle_rows}
 
 <h2>4. Typed state-machine transitions</h2>
-<p class="sub">The Warden admits or rejects every handoff; illegal moves never execute.</p>
+<p class="sub">The Warden admits or rejects every handoff; illegal moves never execute.
+The "why" column reads the same decision-rationale source the Warden posted in the
+room and the web shows, so the three never disagree.</p>
 {transition_rows}
+
+{rationale_block}
 
 <h2>5. Statutory clocks</h2>
 <p class="sub">Each deadline is stored and compared as a single UTC instant; the

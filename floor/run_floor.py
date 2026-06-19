@@ -140,6 +140,7 @@ from floor.reportability import assess_reportability  # noqa: E402
 from floor.high_risk import assess_high_risk  # noqa: E402
 from floor.negotiation_envelope import emit_envelope, parse_envelope  # noqa: E402
 from floor.packet import write_packet  # noqa: E402
+from floor import rationale  # noqa: E402
 from floor.recruit import (  # noqa: E402
     NYDFS_TARGET, UK_ICO_TARGET, find_peer, jurisdiction_in_blast_radius, peer_id)
 from floor.retry import COUNTER as RETRY_COUNTER  # noqa: E402
@@ -1399,15 +1400,14 @@ def _run_full_floor(out_dir: str, draft_timeout: int, mode: str,
         branch_list = ", ".join(b.upper() for b in released_branches_in_order)
         _warden_announce(
             warden, trace,
-            f"{gc_actor.upper()} ({gc_role}) signed {branch_list}. First of two "
-            f"keys on each. Awaiting {lena_actor.upper()}.",
+            rationale.release_key1(gc_actor, gc_role, branch_list).plain_why,
             mentions=list(drafter_ids.values()),
             dedup_key=f"warden:key1-all:{INCIDENT_ID}")
         _warden_announce(
             warden, trace,
-            f"{lena_actor.upper()} ({lena_role}) signed {branch_list}. Both keys "
-            f"present on all {len(released_branches_in_order)}. RELEASED, clocks "
-            f"stopped.",
+            rationale.release_key2(
+                lena_actor, lena_role, branch_list,
+                len(released_branches_in_order)).plain_why,
             mentions=list(drafter_ids.values()),
             dedup_key=f"warden:key2-all:{INCIDENT_ID}")
     trace.say("[8] Warden opened signoff; two-key release (GC + Lena); "
@@ -1703,8 +1703,9 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
             if warden is not None:
                 _warden_announce(
                     warden, trace,
-                    f"@{regime} Drafter: duplicate {regime} filing dropped (ledger "
-                    f"{entry.disposition.value}). Exactly-once held, no double-file.",
+                    f"@{regime} Drafter: "
+                    + rationale.dedup_dropped(
+                        regime, entry.disposition.value).plain_why,
                     mentions=[drafter_id] if drafter_id else None,
                     dedup_key=f"warden:dedup:{branch}:{INCIDENT_ID}")
             return
@@ -1789,11 +1790,9 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
             if dead is not None and warden is not None:
                 _warden_announce(
                     warden, trace,
-                    f"@{regime} Drafter missed its heartbeat "
-                    f"(no progress for {dead.detection_latency_ticks} logical "
-                    f"drain cycle(s), past the {watchdog.threshold_ticks}-cycle "
-                    f"liveness threshold). Declaring it offline; awaiting "
-                    f"redelivery and recovery.",
+                    "@" + rationale.liveness_dead(
+                        regime, dead.detection_latency_ticks,
+                        watchdog.threshold_ticks).plain_why,
                     mentions=[drafter_id] if drafter_id else None,
                     dedup_key=f"warden:liveness-dead:{branch}:{INCIDENT_ID}")
                 trace.say(f"    [LIVENESS] Warden declared {regime} Drafter dead "
@@ -1816,9 +1815,7 @@ def _drive_drafter(*, client, warden_id, branch, regime, claim_facts, draft_fn,
             if recovered is not None and warden is not None:
                 _warden_announce(
                     warden, trace,
-                    f"@{regime} Drafter recovered: its work was already recorded, "
-                    f"the redelivered duplicate was dropped, no double-file. "
-                    f"Exactly-once held across the declared-dead window.",
+                    "@" + rationale.liveness_recovered(regime).plain_why,
                     mentions=[drafter_id] if drafter_id else None,
                     dedup_key=f"warden:liveness-recovered:{branch}:{INCIDENT_ID}")
                 trace.say(f"    [LIVENESS] Warden recovered {regime} Drafter "
@@ -1954,10 +1951,8 @@ def _warden_observe_draft(*, warden, sm, trace, corr, branch, regime, drafter_id
             c = claims.canonical()
             _warden_announce(
                 warden, trace,
-                f"@{regime} Drafter: recorded {regime} filing. Claims: "
-                f"incident_start {c['incident_start_utc']}, "
-                f"records {c['records_affected']:,}, attacker {c['attacker']}, "
-                f"containment {c['containment']}. State: DRAFT_POSTED.",
+                f"@{regime} Drafter: "
+                + rationale.draft_recorded(regime, c).plain_why,
                 mentions=[drafter_id],
                 dedup_key=f"warden:ack:{branch}:{INCIDENT_ID}")
         return None
@@ -2109,8 +2104,7 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
         if warden is not None:
             _warden_announce(
                 warden, trace,
-                f"Contradiction diff GREEN across {len(drafted)} filings. "
-                f"Load-bearing facts agree. Opening signoff.",
+                rationale.diff_green(len(drafted)).plain_why,
                 mentions=list(drafter_ids.values()),
                 dedup_key=f"warden:diff-green:{INCIDENT_ID}")
         return [], None
@@ -2132,9 +2126,7 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
                           if b in drafter_ids]
         _warden_announce(
             warden, trace,
-            f"BLOCKED. @{c0.branch_a.upper()} Drafter says {c0.field}="
-            f"{c0.value_a}; @{c0.branch_b.upper()} Drafter says {c0.field}="
-            f"{c0.value_b}. No signoff until these agree.",
+            rationale.diff_blocked(c0).plain_why,
             mentions=block_mentions,
             dedup_key=f"warden:block:{INCIDENT_ID}")
 
@@ -2262,9 +2254,9 @@ def _diff_and_gate(sm, trace, log, clocks, branch_corr, claims_by_branch, mode,
     if warden is not None:
         _warden_announce(
             warden, trace,
-            f"Resolved. @{fixed_branch.upper()} Drafter re-filed incident_start "
-            f"{CANONICAL_FACTS['incident_start_utc']}. Diff re-run GREEN across "
-            f"{len(drafted)} filings. Opening signoff.",
+            rationale.diff_resolved(
+                fixed_branch, "incident_start_utc",
+                CANONICAL_FACTS["incident_start_utc"], len(drafted)).plain_why,
             mentions=[drafter_ids[fixed_branch]] if fixed_branch in drafter_ids else [],
             dedup_key=f"warden:diff-resolved:{INCIDENT_ID}")
     return blocked_human, resolution
@@ -2325,9 +2317,9 @@ def _amendment_phase(*, sm, trace, log, clocks, ledger, triage, warden, drafters
               f"{pre.reason}")
     _warden_announce(
         warden, trace,
-        f"AMENDMENT BLOCKED. @SEC Drafter and @NIS2 Drafter: records_affected "
-        f"revised {old_records:,} -> {AMENDED_RECORDS:,}. No re-release until you "
-        f"concur on one shared figure. {pre.reason}",
+        rationale.amend_blocked(
+            "records_affected", old_records, AMENDED_RECORDS,
+            "@SEC Drafter and @NIS2 Drafter", pre.reason).plain_why,
         mentions=[sec_id, nis2_id],
         dedup_key=f"warden:amend-block:{INCIDENT_ID}")
 
@@ -4816,6 +4808,16 @@ def _assemble_packet(room_id, trace, clocks, claims_by_branch, blocked, resolved
     # into the hashed run-log JSONL (that would move the sealed sha), so the four
     # sealed captures' run-log shas and byte-identical replay are untouched.
     packet["policy_version"] = policy_version_record(packet)
+    # ---- E9.1: the deterministic decision-rationale ledger ----
+    # A PURE DERIVED render over the assembled packet (its state_transitions + its
+    # diff + any reconciliation): per Warden decision, the governing rule id and the
+    # ONE plain-English "why" that names the exact driving fact value. It is the
+    # single source the room post (run_floor _warden_announce), this packet's
+    # "Decision rationale" section, and the web gate panel all read, so the three
+    # read the same bytes. It reads only the assembled packet, makes zero LLM calls
+    # and no now(), and is NEVER appended to the hashed run-log JSONL, so the sealed
+    # run-log shas and byte-identical replay are untouched.
+    packet["decision_rationale"] = rationale.rationale_record(packet)
     return packet
 
 
@@ -5021,6 +5023,7 @@ def _assemble_legacy_packet(room_id, trace, clocks, conflicts, breached, filings
     }
     if attestation is not None:
         packet["attestation"] = attestation
+    packet["decision_rationale"] = rationale.rationale_record(packet)
     return packet
 
 

@@ -280,6 +280,16 @@ let tourMode = true;             // Judge Tour: default-on guided run
 // Each step records what becomes true; render(cursor) reduces all steps up to
 // the cursor into the live view.
 // ============================================================================
+// Read one decision's plain-English "why" from the packet's decision-rationale
+// ledger (E9.1). This is the SAME source the Warden posted in the room and the
+// Examiner Packet renders, so the web gate copy and the packet copy are the same
+// bytes. Returns "" when the ledger has no entry for that decision kind.
+function rationaleWhy(p, kind) {
+  const ledger = (p && p.decision_rationale) || {};
+  const entry = ledger[kind];
+  return (entry && entry.plain_why) || "";
+}
+
 function buildSteps(p) {
   const out = [];
   const handoffs = p.handoff_trace || [];
@@ -339,7 +349,7 @@ function buildSteps(p) {
       reveal: "contradiction",
       banner: "contradiction",
       allBranchState: "blocked",
-      gateReason: "The referee's cross-filing check found two filings telling two different stories about a load-bearing fact. They cannot leave the building until the conflict is corrected.",
+      gateReason: rationaleWhy(p, "diff_blocked"),
     });
     if (p.diff.resolution) {
       const r = p.diff.resolution;
@@ -414,7 +424,7 @@ function buildSteps(p) {
         speakers: ["warden"],
         message: { from: "warden", to: "room", kind: "block", body: "Amendment blocked: " + rec.block_reason },
         reveal: "reconciliation",
-        gateReason: `${rec.fact_key.replace(/_/g, " ")} was revised to ${fmtNum(rec.new_value)} after release. SEC and NIS2 reopened and stay blocked until both teams concur on one shared characterization of the new figure.`,
+        gateReason: rationaleWhy(p, "amend_blocked"),
       });
     }
     (rec.exchange || []).forEach((e, i) => {
