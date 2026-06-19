@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -159,6 +160,254 @@ def merkle_root(leaves: list[str]) -> str:
     return level[0]
 
 
+# ---------------------------------------------------------------------------
+# Cross-incident pattern detection (E6.3). A capability impossible from a SINGLE
+# run: "is this attacker a repeat offender against us, and did the contradiction
+# veto fire on the same field type more than once across our incidents?" Both are
+# pure deterministic folds over the SEALED run-log entries, with ZERO LLM near the
+# signed object: counting and grouping only, never a generated trend narrative.
+# ---------------------------------------------------------------------------
+
+
+def _entries_of(jsonl: str) -> list[dict]:
+    """The run-log entries of one sealed log, parsed read-only from the canonical
+    bytes (the same recipe the seal and chain head are taken over)."""
+    return [json.loads(line) for line in jsonl.splitlines() if line.strip()]
+
+
+def _incident_of(correlation_id: str) -> str:
+    """The incident id carried in a correlation id. A correlation id is
+    `<incident>:<regime>` (e.g. `inc-8842:nis2`), so the incident is the part
+    before the first colon. A correlation id without a colon is its own incident
+    id. Empty input yields the empty string, which the folds ignore."""
+    if not correlation_id:
+        return ""
+    return correlation_id.split(":", 1)[0]
+
+
+def _regime_of(correlation_id: str) -> str:
+    """The regime branch carried in a correlation id (`<incident>:<regime>`): the
+    part after the first colon, empty when the id carries no regime."""
+    if not correlation_id or ":" not in correlation_id:
+        return ""
+    return correlation_id.split(":", 1)[1]
+
+
+def _conflict_field(conflict: str) -> str:
+    """The disputed fact key named in a Warden conflict string, parsed
+    deterministically (no LLM). A conflict reads
+    `<REGIME> says <field>=<value>; <REGIME> says <field>=<value>. ...`, so the
+    field is the token between the first ` says ` and the first `=` after it. A
+    string that does not match that shape yields the empty string and is skipped,
+    so a future conflict format never silently miscounts."""
+    marker = " says "
+    start = conflict.find(marker)
+    if start < 0:
+        return ""
+    rest = conflict[start + len(marker):]
+    eq = rest.find("=")
+    if eq < 0:
+        return ""
+    return rest[:eq].strip()
+
+
+def _run_incident_ids(entries: list[dict]) -> set[str]:
+    """Every incident id referenced anywhere in a run's entries, drawn from
+    correlation ids on the entries that carry them plus any explicit
+    `incident_id` payload field. A single sealed run normally references exactly
+    one incident; reading the set (not assuming one) keeps the fold correct for a
+    multi-incident corpus."""
+    found: set[str] = set()
+    for entry in entries:
+        payload = entry.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        explicit = payload.get("incident_id")
+        if isinstance(explicit, str) and explicit:
+            found.add(explicit)
+        inc = _incident_of(str(payload.get("correlation_id", "")))
+        if inc:
+            found.add(inc)
+    return found
+
+
+def _run_attacker(entries: list[dict]) -> str:
+    """The named threat actor for a run, read from the first entry payload that
+    carries an `attacker` field. Returns the empty string when no entry names one
+    (the current single-incident captures do not, so the attacker fold reports no
+    repeat offender on them). Read-only: this never writes the field."""
+    for entry in entries:
+        payload = entry.get("payload", {})
+        if isinstance(payload, dict):
+            value = payload.get("attacker")
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+def _run_regulated_entity(entries: list[dict]) -> str:
+    """The regulated entity (the filer) for a run, read from the first entry
+    payload that carries a `regulated_entity` field, empty when none does."""
+    for entry in entries:
+        payload = entry.get("payload", {})
+        if isinstance(payload, dict):
+            value = payload.get("regulated_entity")
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+@dataclass(frozen=True)
+class PortfolioInsights:
+    """Cross-incident findings folded from the SEALED run logs, no LLM.
+
+    `repeat_offenders` maps each attacker that appears across `>= 2` distinct
+    incidents to the SORTED list of those incident ids (the fleet-level question a
+    single run cannot answer). `attacker_incident_counts` carries every attacker's
+    distinct-incident count for context. `veto_field_recurrence` maps each
+    disputed fact key to how many times the contradiction veto (a `diff_blocked`
+    protocol event) fired on it across all incidents, so a field type vetoed twice
+    is visible. `suppress_by_regime` counts terminal `suppress` dispositions per
+    regime. `incidents_by_entity` groups distinct incident ids under each
+    regulated entity. Every value is a pure count or grouping; the object carries
+    no generated prose, so it is safe to fold next to the signed root."""
+    repeat_offenders: dict[str, list[str]]
+    attacker_incident_counts: dict[str, int]
+    veto_field_recurrence: dict[str, int]
+    suppress_by_regime: dict[str, int]
+    incidents_by_entity: dict[str, list[str]]
+
+
+def cross_incident_patterns(runs: list[SealedRun]) -> PortfolioInsights:
+    """Fold cross-incident patterns over the ATTESTED sealed runs, deterministically.
+
+    Only runs that passed their per-run signature are folded (a flagged run is
+    never counted), so the findings attest the same verified set as the Merkle
+    root. The fold is pure counting and grouping over the run-log entries:
+
+      * repeat offenders: distinct incident ids per `attacker`, flagging any
+        attacker spanning `>= 2` incidents;
+      * field-level veto recurrence: `diff_blocked` protocol events bucketed by
+        the disputed fact key (parsed from the matching round's `diff` conflicts),
+        across incidents;
+      * suppress dispositions per regime (from each `suppress` protocol event's
+        correlation id);
+      * incidents grouped by regulated entity.
+
+    Same input, same output on every platform: sorted keys, sorted incident lists,
+    no `now()`, no randomness, no LLM."""
+    attested = sorted(
+        (r for r in runs if r.signature_valid), key=lambda r: r.name)
+
+    attacker_incidents: dict[str, set[str]] = defaultdict(set)
+    entity_incidents: dict[str, set[str]] = defaultdict(set)
+    veto_fields: dict[str, int] = defaultdict(int)
+    suppress_regimes: dict[str, int] = defaultdict(int)
+
+    for run in attested:
+        entries = _entries_of(_canonical_jsonl(run.log_path))
+        incident_ids = _run_incident_ids(entries)
+        attacker = _run_attacker(entries)
+        entity = _run_regulated_entity(entries)
+        if attacker:
+            attacker_incidents[attacker].update(incident_ids)
+        if entity:
+            entity_incidents[entity].update(incident_ids)
+
+        # The disputed fact key for each round, parsed once from the diff entries,
+        # so a diff_blocked protocol event can be attributed to its field.
+        round_field: dict[object, str] = {}
+        for entry in entries:
+            if entry.get("type") != "diff":
+                continue
+            payload = entry.get("payload", {})
+            key = payload.get("round", payload.get("phase"))
+            for conflict in payload.get("conflicts", []):
+                field = _conflict_field(str(conflict))
+                if field:
+                    round_field.setdefault(key, field)
+
+        sole_field = next(iter(set(round_field.values())), "") \
+            if len(set(round_field.values())) == 1 else ""
+
+        for entry in entries:
+            if entry.get("type") != "protocol_event":
+                continue
+            payload = entry.get("payload", {})
+            event = payload.get("event")
+            if event == "diff_blocked":
+                # Attribute the block to the round's disputed field; fall back to
+                # the run's single disputed field when the event carries no round.
+                field = sole_field
+                if not field and len(set(round_field.values())) == 1:
+                    field = next(iter(set(round_field.values())), "")
+                if field:
+                    veto_fields[field] += 1
+            elif event == "suppress":
+                regime = _regime_of(str(payload.get("correlation_id", "")))
+                if regime:
+                    suppress_regimes[regime] += 1
+
+    repeat_offenders = {
+        attacker: sorted(incidents)
+        for attacker, incidents in attacker_incidents.items()
+        if len(incidents) >= 2
+    }
+    attacker_incident_counts = {
+        attacker: len(incidents)
+        for attacker, incidents in attacker_incidents.items()
+    }
+    incidents_by_entity = {
+        entity: sorted(incidents)
+        for entity, incidents in entity_incidents.items()
+    }
+    return PortfolioInsights(
+        repeat_offenders=dict(sorted(repeat_offenders.items())),
+        attacker_incident_counts=dict(sorted(attacker_incident_counts.items())),
+        veto_field_recurrence=dict(sorted(veto_fields.items())),
+        suppress_by_regime=dict(sorted(suppress_regimes.items())),
+        incidents_by_entity=dict(sorted(incidents_by_entity.items())),
+    )
+
+
+def insights_dict(insights: PortfolioInsights) -> dict:
+    """The canonical, sorted-key dict the insights serialize to inside the signed
+    manifest. Mirrors the manifest's own canonicalization so a verifier (Python or
+    browser) rebuilds identical bytes and the same digest. Every value is a count
+    or a sorted grouping; no field carries generated prose."""
+    return {
+        "repeat_offenders": {
+            k: list(v) for k, v in sorted(insights.repeat_offenders.items())
+        },
+        "attacker_incident_counts": dict(
+            sorted(insights.attacker_incident_counts.items())),
+        "veto_field_recurrence": dict(
+            sorted(insights.veto_field_recurrence.items())),
+        "suppress_by_regime": dict(sorted(insights.suppress_by_regime.items())),
+        "incidents_by_entity": {
+            k: list(v) for k, v in sorted(insights.incidents_by_entity.items())
+        },
+    }
+
+
+def insights_dict_digest(insights_obj: dict) -> str:
+    """The sha256 of a canonical insights DICT (sorted keys, no whitespace). Used
+    by a verifier that holds the stored insights object straight from a manifest,
+    so it can recompute the exact digest the signature folded in without
+    rebuilding a `PortfolioInsights`."""
+    payload = json.dumps(
+        insights_obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def insights_digest(insights: PortfolioInsights) -> str:
+    """The sha256 of the canonical insights bytes: the value the PORTFOLIO
+    signature folds in alongside the root and run count, so editing any finding
+    moves this digest, which moves the signed payload, which breaks the
+    signature."""
+    return insights_dict_digest(insights_dict(insights))
+
+
 def _canonical_manifest(runs: list[SealedRun]) -> dict:
     """The canonical, sorted manifest the portfolio signature is taken over.
 
@@ -170,10 +419,12 @@ def _canonical_manifest(runs: list[SealedRun]) -> dict:
     attested = sorted(
         (r for r in runs if r.signature_valid), key=lambda r: r.name)
     heads = sorted(r.chain_head for r in attested)
+    insights = cross_incident_patterns(runs)
     return {
         "portfolio_version": "1",
         "run_count": len(attested),
         "portfolio_root": merkle_root(heads),
+        "insights": insights_dict(insights),
         "runs": [
             {"name": r.name, "sha256": r.sha256, "chain_head": r.chain_head}
             for r in attested
@@ -203,14 +454,19 @@ class PortfolioAttestation:
     `manifest` is the canonical sorted manifest (run count, Merkle root, per-run
     name/sha/head); `root` is its Merkle root over the sorted chain heads;
     `run_count` is the number of ATTESTED runs; `manifest_sha256` is the digest of
-    the canonical manifest bytes; `flagged` carries any discovered runs that
-    failed their per-run signature and were therefore excluded, so the exclusion
-    is visible rather than silent. The detached portfolio signature is added by
+    the canonical manifest bytes; `insights` is the cross-incident finding object
+    folded into the manifest; `insights_sha256` is its digest, which the portfolio
+    signature folds into the signed payload so editing any finding breaks the
+    signature; `flagged` carries any discovered runs that failed their per-run
+    signature and were therefore excluded, so the exclusion is visible rather than
+    silent. The detached portfolio signature is added by
     warden/portfolio_signing.py and stored beside this attestation."""
     manifest: dict
     root: str
     run_count: int
     manifest_sha256: str
+    insights: PortfolioInsights
+    insights_sha256: str
     attested: list[SealedRun]
     flagged: list[SealedRun]
 
@@ -227,12 +483,15 @@ def attest_portfolio(runs: list[SealedRun]) -> PortfolioAttestation:
         (r for r in runs if r.signature_valid), key=lambda r: r.name)
     flagged = sorted(
         (r for r in runs if not r.signature_valid), key=lambda r: r.name)
+    insights = cross_incident_patterns(runs)
     manifest = _canonical_manifest(runs)
     return PortfolioAttestation(
         manifest=manifest,
         root=manifest["portfolio_root"],
         run_count=manifest["run_count"],
         manifest_sha256=manifest_digest(manifest),
+        insights=insights,
+        insights_sha256=insights_digest(insights),
         attested=attested,
         flagged=flagged,
     )

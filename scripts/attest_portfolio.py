@@ -37,7 +37,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from floor.portfolio import (  # noqa: E402
     PortfolioAttestation,
+    PortfolioInsights,
     attest_portfolio,
+    insights_dict,
+    insights_dict_digest,
     load_portfolio,
     manifest_digest,
 )
@@ -65,6 +68,43 @@ def _print_runs(attestation: PortfolioAttestation) -> None:
     print()
 
 
+def _print_insights(insights: PortfolioInsights) -> None:
+    """Print the cross-incident findings folded from the sealed logs (E6.3).
+
+    Pure counts and groupings, no narrative: repeat offenders (any attacker
+    spanning two or more incidents), field-level contradiction-veto recurrence,
+    suppress dispositions per regime, and incidents grouped by regulated entity.
+    A finding with no data prints `(none)` rather than nothing, so the reader can
+    tell the fold ran and found zero, not that it was skipped."""
+    print("Cross-incident findings (folded from the sealed logs, zero LLM):")
+    if insights.repeat_offenders:
+        print("  Repeat offenders (same attacker across >= 2 incidents):")
+        for attacker, incidents in insights.repeat_offenders.items():
+            print(f"    {attacker}: {len(incidents)} incidents "
+                  f"({', '.join(incidents)})")
+    else:
+        print("  Repeat offenders: (none on the attested set)")
+    if insights.veto_field_recurrence:
+        print("  Contradiction-veto recurrence by disputed field:")
+        for field, count in insights.veto_field_recurrence.items():
+            print(f"    {field}: vetoed {count} time(s)")
+    else:
+        print("  Contradiction-veto recurrence: (none)")
+    if insights.suppress_by_regime:
+        print("  Suppress dispositions by regime:")
+        for regime, count in insights.suppress_by_regime.items():
+            print(f"    {regime}: {count}")
+    else:
+        print("  Suppress dispositions by regime: (none)")
+    if insights.incidents_by_entity:
+        print("  Incidents by regulated entity:")
+        for entity, incidents in insights.incidents_by_entity.items():
+            print(f"    {entity}: {', '.join(incidents)}")
+    else:
+        print("  Incidents by regulated entity: (none)")
+    print()
+
+
 def build(data_dir: Path, out_path: Path) -> int:
     """Build the signed portfolio manifest and write it to its sidecar."""
     print("=" * 78)
@@ -73,9 +113,11 @@ def build(data_dir: Path, out_path: Path) -> int:
     runs = load_portfolio(data_dir)
     attestation = attest_portfolio(runs)
     _print_runs(attestation)
+    _print_insights(attestation.insights)
 
     signature = sign_portfolio(
-        attestation.root, attestation.run_count, attestation.manifest_sha256)
+        attestation.root, attestation.run_count, attestation.manifest_sha256,
+        attestation.insights_sha256)
     document = {
         "manifest": attestation.manifest,
         "manifest_sha256": attestation.manifest_sha256,
@@ -117,6 +159,7 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
     recomputed = _recompute_from_disk(data_dir)
     stored_runs = {r["name"]: r for r in stored_manifest.get("runs", [])}
     disk_runs = {r.name: r for r in recomputed.attested}
+    stored_insights = stored_manifest.get("insights", {}) or {}
 
     print(f"Manifest       : {manifest_path}")
     print(f"Stored root    : {stored_manifest.get('portfolio_root', '(absent)')}")
@@ -128,6 +171,7 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
     for name in sorted(disk_runs):
         print(f"  {name.ljust(name_w)}  head {disk_runs[name].chain_head}")
     print()
+    _print_insights(recomputed.insights)
 
     failures: list[str] = []
 
@@ -150,16 +194,27 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
             "ROOT MISMATCH: the root re-derived from disk does not match the "
             "manifest root")
 
+    # The cross-incident findings re-derived from disk must match the stored
+    # findings (an edited finding no longer matches the sealed logs).
+    disk_insights = insights_dict(recomputed.insights)
+    if disk_insights != stored_insights:
+        failures.append(
+            "INSIGHTS MISMATCH: the cross-incident findings in the manifest do "
+            "not re-derive from the sealed logs")
+
     # The manifest the signature commits to must canonicalize to the stored digest.
     recomputed_manifest_digest = manifest_digest(stored_manifest)
     if recomputed_manifest_digest != document.get("manifest_sha256"):
         failures.append("MANIFEST DIGEST MISMATCH: the stored manifest was edited")
 
-    # The portfolio signature must verify over the STORED root and count (so an
-    # edited manifest root is caught both here and by the digest check).
+    # The portfolio signature must verify over the STORED root, count, AND the
+    # digest of the STORED findings (so editing a finding breaks the signature
+    # directly, not only the manifest digest cross-check).
+    stored_insights_digest = insights_dict_digest(stored_insights)
     sig_ok = verify_portfolio(
         stored_manifest.get("portfolio_root", ""),
         stored_manifest.get("run_count", -1),
+        stored_insights_digest,
         signature)
     if not sig_ok:
         failures.append("SIGNATURE INVALID: the portfolio signature does not verify")
@@ -175,7 +230,8 @@ def verify(manifest_path: Path, data_dir: Path) -> int:
         return 1
 
     print("VALID. The signed Merkle root re-derives from every sealed run on disk,")
-    print("the run set matches exactly (no run dropped, none unattested), and the")
+    print("the run set matches exactly (no run dropped, none unattested), the")
+    print("cross-incident findings re-derive from the sealed logs, and the")
     print("portfolio signature verifies under the committed public key.")
     print(f"Note: {DEMO_KEY_CAVEAT}")
     print("=" * 78)

@@ -124,7 +124,7 @@ def test_counterfactual_label_is_distinct_from_per_run_and_portfolio():
     cf_bytes = counterfactual_payload_bytes(
         cf.name, cf.actual_chain_head, "deadbeef")
     assert cf_bytes != per_run_payload("a", "b", "c", "d")
-    assert cf_bytes != portfolio_payload_bytes("root", 4)
+    assert cf_bytes != portfolio_payload_bytes("root", 4, "insights")
 
 
 def test_tampered_outcome_breaks_the_counterfactual_signature():

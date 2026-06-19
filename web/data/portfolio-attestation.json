@@ -1,5 +1,14 @@
 {
   "manifest": {
+    "insights": {
+      "attacker_incident_counts": {},
+      "incidents_by_entity": {},
+      "repeat_offenders": {},
+      "suppress_by_regime": {},
+      "veto_field_recurrence": {
+        "incident_start_utc": 3
+      }
+    },
     "portfolio_root": "ba7b416fb6fa0cc905fb27b941a9162dd5107adc027d175a4ee0dc4cac61499d",
     "portfolio_version": "1",
     "run_count": 5,
@@ -31,19 +40,20 @@
       }
     ]
   },
-  "manifest_sha256": "c0cf17dc28de418dd68185e2a3a36ba68a8e73b1d8fa3e24d1d81473ab70c8b4",
+  "manifest_sha256": "7adba58f542e59cf587f721b14dd40f98345715e7d08485472d06e8a5a4b141c",
   "signature": {
     "algorithm": "ed25519",
     "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2.",
     "demo_key": true,
     "detached": true,
-    "manifest_sha256": "c0cf17dc28de418dd68185e2a3a36ba68a8e73b1d8fa3e24d1d81473ab70c8b4",
+    "insights_sha256": "30f50c437fc493dcd5418e571af1aeabeef3fdeace861c4f3348c9d6bccbc7ba",
+    "manifest_sha256": "7adba58f542e59cf587f721b14dd40f98345715e7d08485472d06e8a5a4b141c",
     "portfolio_root": "ba7b416fb6fa0cc905fb27b941a9162dd5107adc027d175a4ee0dc4cac61499d",
     "pubkey_fingerprint": "46e30f5bff8c221d",
     "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
     "run_count": 5,
-    "signature": "5841961e2f14b5a2faaba61cd92038b23d5d7c1fd255e2a1bd2c991a684ad2a41d529862ecd94bbd21a4d6a8f2ed473e1974d7b8f87230df4989d6bf6634b50d",
-    "signed_payload": "canonical_json{portfolio_root,run_count}",
+    "signature": "cbc80a2d722353b356626fb894180826d7485a1a1df5a31ab210c6c180e028cb9c75306fda4dffcb647920d1fce388948dcbc540fc8d50c69a69cdbcbcbfd609",
+    "signed_payload": "canonical_json{insights_sha256,portfolio_root,run_count}",
     "signer": "Deadline Warden"
   }
 }
