@@ -83,6 +83,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Allow `py floor/run_floor.py` from code/ to import warden/ and spikes/.
@@ -339,6 +340,56 @@ NYDFS_IN_SCOPE_FACTS = {
 # The default blast radius names only the EU entity, so neither the UK nor the
 # NYDFS recruit fires on a normal run.
 CANONICAL_FACTS["blast_radius"] = ["EU: Meridian Trust Bank N.V."]
+
+
+@dataclass(frozen=True)
+class Incident:
+    """One breach the war room is running. The Warden holds NOTHING per-incident:
+    its state machine is dict[correlation_id -> State], its ledger is
+    dict[dedup_key -> entry], its clocks are keyed by correlation id, its chain
+    folds an opaque stream. So an incident is just a NAMESPACE: an id that prefixes
+    every correlation id and dedup key, a T0 the statutory clocks anchor on, the
+    canonical fact-record the drafters draw from, and the branches that draft.
+
+    The single-incident path is exactly Incident.canonical(): id, t0, and facts are
+    the module's INCIDENT_ID / INCIDENT_T0 / CANONICAL_FACTS, so the default run is
+    byte-identical. Running a SECOND incident through the SAME Warden is purely
+    additional namespaced keys, never new state held inside the Warden.
+
+    correlation_id(branch) -> "<id>:<branch>"   mirrors branch_corr exactly.
+    dedup_key(unit, ...)   -> "<unit>:...:<id>" mirrors the floor's dedup shapes.
+    """
+
+    id: str
+    t0: str
+    facts: dict
+    branches: tuple[str, ...]
+
+    @staticmethod
+    def canonical() -> "Incident":
+        """The default single incident: the module's canonical constants, so a run
+        built from it produces the identical correlation ids, dedup keys, clock
+        ids, and run-log bytes as the un-parameterized floor."""
+        return Incident(
+            id=INCIDENT_ID,
+            t0=INCIDENT_T0,
+            facts=dict(CANONICAL_FACTS),
+            branches=tuple(r.branch for r in DRAFTER_ROLES),
+        )
+
+    def correlation_id(self, branch: str) -> str:
+        """The branch's correlation id, "<incident_id>:<branch>", the exact shape
+        branch_corr builds and the state machine / clocks key on."""
+        return f"{self.id}:{branch}"
+
+    def factrecord_key(self) -> str:
+        return f"factrecord:{self.id}"
+
+    def draft_key(self, branch: str, round_label: str = "round-1") -> str:
+        """The drafter's exactly-once unit-of-work key, "draft:<branch>:<id>:<round>",
+        the exact shape _drive_drafter builds, so a re-post after a kill collides on
+        this key and is dropped."""
+        return f"draft:{branch}:{self.id}:{round_label}"
 
 # E3.4 cross-border obligation conflict. The --cross-border beat puts THREE
 # regimes with declared, mutually exclusive obligations in scope for the same
@@ -5027,8 +5078,264 @@ def _assemble_legacy_packet(room_id, trace, clocks, conflicts, breached, filings
     return packet
 
 
+# ----------------------------------------------------------------------------
+# E6.1: concurrent incidents. Two breaches, ONE Warden, exactly-once + replay
+# across both. The Warden holds nothing per-incident, so this is a NAMESPACING
+# driver: it walks each incident's protocol against the SAME sm, ledger, clocks,
+# log, and release_gate, with every correlation id and dedup key prefixed by the
+# incident id. Pure, deterministic, no LLM, no Band, no now(): every timestamp is
+# a fixed demo constant, so the interleaved log replays byte-identically.
+#
+# This is a SEPARATE, additive entry point. It never touches the single-incident
+# run_floor path, so the four sealed captures and their shas are untouched.
+# ----------------------------------------------------------------------------
+
+# The two-key human signers for a concurrent-run release, reusing the same fixed
+# segregation-of-duties signers and timestamps the full floor uses.
+_CONCURRENT_SIGNERS = (
+    ("general_counsel", "gc", TS_SIGN_GC),
+    ("head_of_ir", "lena", TS_RELEASE),
+)
+
+
+def _incident_steps(incident: Incident, *, sm: ProtocolStateMachine,
+                    ledger: IdempotencyLedger, clocks: ClockEngine,
+                    trace: StepTrace, release_gate: TwoKeyReleaseGate,
+                    kill_branch: str | None = None):
+    """Yield this incident's protocol, one named step at a time, against the SHARED
+    Warden objects. Each yield is a (label, callable) the scheduler invokes; making
+    the steps explicit lets run_concurrent INTERLEAVE two incidents deterministically
+    (kill a drafter in B exactly while A is mid-contradiction-beat).
+
+    Every correlation id is incident.correlation_id(branch) and every dedup key is
+    incident.draft_key(branch, round) / incident.factrecord_key(), so the two
+    incidents share the ledger and state machine WITHOUT ever colliding: the id
+    prefix is the namespace. A kill on kill_branch models crash position B (the draft
+    posted, then the agent died before marking the fact-record processed); on recovery
+    it re-posts and the SHARED ledger drops the duplicate exactly once.
+
+    The step sequence per branch: fact-record posted -> draft started -> draft posted
+    (with the dedup ledger record, plus the kill+recovery duplicate on kill_branch)
+    -> diff passed -> signoff opened -> two keys -> released. The clocks anchor on
+    incident.t0; the SEC business-day clock anchors on the same materiality
+    determination constant the floor uses.
+    """
+    branches = list(incident.branches)
+
+    # ---- statutory clocks, namespaced by incident id ----
+    def start_clocks() -> None:
+        for spec in regimes.startup_regimes(REGIME_CATALOG):
+            if spec.branch not in branches:
+                continue
+            corr = incident.correlation_id(spec.branch)
+            anchor = (incident.t0 if spec.start_anchor == regimes.ANCHOR_INCIDENT_T0
+                      else TS_SEC_DETERMINATION)
+            if spec.clock.business_days:
+                clocks.start_sec_business_days(
+                    corr, anchor, days=spec.clock.length,
+                    trigger_event=spec.trigger_event,
+                    calendar=spec.clock.holiday_calendar,
+                    display_tz=spec.clock.display_timezone)
+            else:
+                clocks.start_hours(spec.clock.name, corr, anchor,
+                                   spec.clock.length, trigger_event=spec.trigger_event,
+                                   display_tz=spec.clock.display_timezone)
+            trace.log.append("clock_started", {
+                "clock": clocks.get(corr).name, "correlation_id": corr,
+                "deadline": clocks.get(corr).deadline.isoformat()})
+
+    yield (f"{incident.id}:clocks", start_clocks)
+
+    # ---- fact-record posted on every branch ----
+    def fact_record_posted() -> None:
+        for b in branches:
+            _proto(sm, trace, incident.correlation_id(b), Event.FACT_RECORD_POSTED,
+                   TS_FACTS, "triage", "triage")
+        entry = ledger.record(incident.factrecord_key(), 1, TS_FACTS)
+        trace.log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
+                                    "disposition": entry.disposition.value})
+
+    yield (f"{incident.id}:fact_record", fact_record_posted)
+
+    # ---- per-branch drafting, with the kill+recovery on kill_branch ----
+    for b in branches:
+        def draft(branch=b) -> None:
+            corr = incident.correlation_id(branch)
+            _proto(sm, trace, corr, Event.DRAFT_STARTED, TS_DRAFT, "drafter", "drafter")
+            dedup_key = incident.draft_key(branch)
+            if branch == kill_branch:
+                # Crash position B: the draft was posted, then the drafter died
+                # before marking the fact-record processed. On recovery it re-drains
+                # /next and re-posts; the SHARED ledger drops the duplicate exactly
+                # once. First post: ACCEPTED. Recovery re-post: DUPLICATE_DROPPED.
+                first = ledger.record(dedup_key, 1, TS_DRAFT)
+                trace.log.append("ledger", {"key": first.dedup_key, "attempt": 1,
+                                            "disposition": first.disposition.value})
+                trace.record_chaos({
+                    "incident_id": incident.id, "branch": branch, "phase": "kill",
+                    "attempt": 1, "disposition": first.disposition.value,
+                    "note": (f"{branch} drafter on {incident.id} posted its draft then "
+                             f"died before marking the fact-record processed (crash "
+                             f"position B).")})
+                dup = ledger.record(dedup_key, 2, TS_DRAFT)
+                trace.log.append("ledger", {"key": dup.dedup_key, "attempt": 2,
+                                            "disposition": dup.disposition.value})
+                trace.record_chaos({
+                    "incident_id": incident.id, "branch": branch, "phase": "recovery",
+                    "attempt": 2, "disposition": dup.disposition.value,
+                    "note": (f"{branch} drafter on {incident.id} re-drained /next after "
+                             f"the kill; its draft is already in the room, so the shared "
+                             f"ledger drops the duplicate. Filed exactly once.")})
+            else:
+                entry = ledger.record(dedup_key, 1, TS_DRAFT)
+                trace.log.append("ledger", {"key": entry.dedup_key, "attempt": 1,
+                                            "disposition": entry.disposition.value})
+            _proto(sm, trace, corr, Event.DRAFT_POSTED, TS_DRAFT, "drafter", "drafter")
+        yield (f"{incident.id}:draft:{b}", draft)
+
+    # ---- contradiction beat: the Warden's diff passes each branch green ----
+    for b in branches:
+        def diff_pass(branch=b) -> None:
+            _proto(sm, trace, incident.correlation_id(branch), Event.DIFF_PASSED,
+                   TS_DIFF, "warden", "warden")
+        yield (f"{incident.id}:diff:{b}", diff_pass)
+
+    # ---- signoff opened, two distinct human keys, release ----
+    for b in branches:
+        def release(branch=b) -> None:
+            corr = incident.correlation_id(branch)
+            _proto(sm, trace, corr, Event.SIGNOFF_OPENED, TS_SIGN_GC, "warden", "warden")
+            for role, actor, ts in _CONCURRENT_SIGNERS:
+                decision = release_gate.sign(corr, role, actor, ts)
+                trace.log.append("release_signoff", {
+                    "correlation_id": corr, "role": role, "actor": actor, "ts": ts,
+                    "released": decision.released})
+            if release_gate.can_release(corr):
+                _proto(sm, trace, corr, Event.HUMAN_RELEASED, TS_RELEASE,
+                       "lena", "human_owner")
+        yield (f"{incident.id}:release:{b}", release)
+
+
+def run_concurrent(incidents: list[Incident] | None = None,
+                   interleave=None, kill_branch: str = "sec",
+                   kill_incident: int = 1, out_dir: str | None = None) -> dict:
+    """Run TWO incidents at once through ONE Warden, stressing the headline
+    exactly-once + replay guarantee across both keyspaces.
+
+    incidents: the incidents to run. Defaults to two distinct breaches (A = the
+    canonical inc-8842, B = inc-9001 with its own T0 and fact-record). Both run
+    against the SAME sm, ledger, clocks, log, and release_gate.
+
+    interleave: a deterministic schedule. The default is round-robin: one ready step
+    from each incident in turn (A, B, A, B, ...), which lands the kill in incident B
+    in the MIDDLE of incident A's run, exactly the "kill a drafter in B during A's
+    contradiction beat" stress. A custom schedule is a callable
+    schedule(streams) -> iterator of step callables.
+
+    kill_incident / kill_branch: which incident (index) and branch get the crash
+    position B kill. Default: incident B (index 1), the SEC branch.
+
+    Returns a result dict: per-incident final branch states (each must reach
+    'released'), the SHARED ledger history, the duplicates dropped, the chain head,
+    and a byte-identical replay verification over the interleaved log.
+    """
+    if incidents is None:
+        a = Incident.canonical()
+        b_facts = {
+            **CANONICAL_FACTS,
+            "incident_id": "inc-9001",
+            "incident_start_utc": "2026-06-16T05:40:00+00:00",
+            "records_affected": 12044,
+            "attacker": "BlackCat/ALPHV",
+            "regulated_entity": "Meridian Trust Bank N.V.",
+        }
+        b = Incident(id="inc-9001", t0="2026-06-16T05:40:00+00:00",
+                     facts=b_facts, branches=tuple(r.branch for r in DRAFTER_ROLES))
+        incidents = [a, b]
+    if len(incidents) < 2:
+        raise ValueError(
+            "run_concurrent needs at least two incidents to demonstrate the "
+            "cross-incident exactly-once + replay guarantee.")
+
+    out_dir = out_dir or str(Path(__file__).resolve().parent / "out")
+
+    # ONE Warden core, shared by every incident. The Warden holds nothing
+    # per-incident; the incident id is the only namespace.
+    log = RunLog()
+    trace = StepTrace(log)
+    sm = ProtocolStateMachine()
+    clocks = ClockEngine()
+    ledger = IdempotencyLedger()
+    release_gate = TwoKeyReleaseGate()
+
+    streams = []
+    for i, inc in enumerate(incidents):
+        kb = kill_branch if i == kill_incident else None
+        streams.append(_incident_steps(
+            inc, sm=sm, ledger=ledger, clocks=clocks, trace=trace,
+            release_gate=release_gate, kill_branch=kb))
+
+    if interleave is None:
+        def interleave(stream_list):
+            # Round-robin: one ready step from each live stream in turn. Deterministic
+            # in incident order; exhausted streams drop out, so the kill in B lands
+            # mid-A and both finish.
+            pending = [list(s) for s in stream_list]
+            idx = [0] * len(pending)
+            while any(idx[k] < len(pending[k]) for k in range(len(pending))):
+                for k in range(len(pending)):
+                    if idx[k] < len(pending[k]):
+                        yield pending[k][idx[k]][1]
+                        idx[k] += 1
+
+    for step in interleave(streams):
+        step()
+
+    # ---- the result: per-incident final states + the shared exactly-once proof ----
+    incident_states = {}
+    all_released = True
+    for inc in incidents:
+        states = {b: sm.state(inc.correlation_id(b)).value for b in inc.branches}
+        incident_states[inc.id] = states
+        if any(s != "released" for s in states.values()):
+            all_released = False
+
+    # Byte-identical replay over the interleaved shared log.
+    run_log_path = Path(out_dir) / "run-concurrent.jsonl"
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    log.save(run_log_path)
+    saved = RunLog.load(run_log_path)
+    replayed = replay(saved)
+    replay_ok = replayed.to_jsonl() == saved.to_jsonl()
+
+    return {
+        "incidents": [inc.id for inc in incidents],
+        "incident_states": incident_states,
+        "all_released": all_released,
+        "kill_incident": (incidents[kill_incident].id
+                          if 0 <= kill_incident < len(incidents) else ""),
+        "kill_branch": kill_branch,
+        "duplicates_dropped": ledger.duplicates_dropped(),
+        "ledger": [{"key": e.dedup_key, "attempt": e.attempt,
+                    "disposition": e.disposition.value}
+                   for e in ledger.history()],
+        "chain_head": head_for_log(log),
+        "replay_byte_identical": replay_ok,
+        "run_log_sha256": saved.sha256(),
+        "_paths": {"run_log": str(run_log_path)},
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deadline Room floor run (live Band + Featherless)")
+    parser.add_argument("--concurrent", action="store_true",
+                        help="run TWO incidents at once through ONE Warden (E6.1): "
+                             "both reach release, a drafter kill in incident B is "
+                             "dropped exactly once by the shared ledger while A is "
+                             "untouched, and the interleaved log replays "
+                             "byte-identically. Pure and offline (no Band, no LLM); a "
+                             "separate path that never touches the four sealed "
+                             "single-incident captures")
     parser.add_argument("--inject-contradiction", action="store_true",
                         help="feed one drafter a perturbed fact so the Warden's diff blocks, then resolve")
     parser.add_argument("--chaos", action="store_true",
@@ -5137,6 +5444,24 @@ def main() -> int:
                              "collapses them into one verdict (agree, or conservative "
                              "proceed plus human escalation on disagreement)")
     args = parser.parse_args()
+    if args.concurrent:
+        # Offline, deterministic, no Band / no LLM keys required. Drives two
+        # incidents through one Warden and prints the cross-incident exactly-once +
+        # replay proof.
+        print("=== Deadline Room concurrent run (two incidents, one Warden) ===\n")
+        result = run_concurrent()
+        for inc_id in result["incidents"]:
+            states = result["incident_states"][inc_id]
+            released = all(s == "released" for s in states.values())
+            print(f"  {inc_id}: {'all branches released' if released else states}")
+        print(f"  duplicates dropped (shared ledger): {result['duplicates_dropped']}")
+        print(f"  kill in {result['kill_incident']} branch "
+              f"{result['kill_branch']}; other incident untouched")
+        print(f"  chain head: {result['chain_head']}")
+        print(f"  replay byte-identical: {result['replay_byte_identical']}")
+        print(f"\n=== Done. Interleaved run log at: "
+              f"{result['_paths']['run_log']} ===")
+        return 0 if (result["all_released"] and result["replay_byte_identical"]) else 1
     if sum([args.inject_contradiction, args.chaos, args.amendment,
             args.inject_claims, args.reportability, args.cross_border,
             args.affected_party, args.deficiency, args.legal_hold,
