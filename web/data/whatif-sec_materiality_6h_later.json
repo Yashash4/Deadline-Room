@@ -1,0 +1,50 @@
+{
+  "name": "sec_materiality_6h_later",
+  "title": "SEC materiality determined 6h later",
+  "question": "What if the registrant had determined materiality 6 hours later than it did?",
+  "perturbation": {
+    "kind": "reanchor_clock",
+    "clock": "inc-8842:sec",
+    "field": "materiality_determination_utc",
+    "shift_hours": 6,
+    "from": "2026-06-16T02:31:00+00:00",
+    "to": "2026-06-16T08:31:00+00:00"
+  },
+  "actual": {
+    "determination_utc": "2026-06-16T02:31:00+00:00",
+    "sec_deadline_utc": "2026-06-23T23:59:59+00:00",
+    "filed_utc": "2026-06-16T05:00:00+00:00",
+    "margin": "7d 18h 59m",
+    "met": true
+  },
+  "counterfactual": {
+    "determination_utc": "2026-06-16T08:31:00+00:00",
+    "sec_deadline_utc": "2026-06-23T23:59:59+00:00",
+    "naive_calendar_deadline_utc": "2026-06-20T08:31:00+00:00",
+    "weekends_only_deadline_utc": "2026-06-22T23:59:59+00:00",
+    "holiday_skipped": "Juneteenth 2026-06-19 (US federal)",
+    "holiday_added_days": 1,
+    "deadline_moved_by": "0h 0m",
+    "filed_utc": "2026-06-16T05:00:00+00:00",
+    "margin": "7d 18h 59m",
+    "met": true
+  },
+  "divergence": "Determining materiality 6h later keeps the SEC 8-K deadline on 2026-06-23: the four-business-day count holds the deadline there because Juneteenth (2026-06-19) is skipped. Drop the holiday table and the same count lands 1 day(s) earlier on 2026-06-22, so a system blind to the holiday would believe it had to file a day sooner than the law requires.",
+  "load_bearing": "The SEC clock counts FOUR BUSINESS DAYS skipping weekends AND US federal holidays, landing on 2026-06-23. A weekends-only count would land on 2026-06-22 and a naive 'four calendar days' count on 2026-06-20: the Juneteenth skip alone is worth 1 day(s). The holiday-aware clock is load-bearing.",
+  "actual_chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
+  "signature": {
+    "algorithm": "ed25519",
+    "detached": true,
+    "namespace": "counterfactual",
+    "signed_payload": "canonical_json{counterfactual,actual_chain_head,counterfactual_outcome_sha}",
+    "counterfactual": "sec_materiality_6h_later",
+    "actual_chain_head": "6fa05c9e4697fa2522890391f80aba4900aa2818d957b7cca5792f99a5d5f517",
+    "counterfactual_outcome_sha": "415debed45d3090e194c66d725666bb8ebf4c7616c4fd7bdac026b442a61cf7a",
+    "signature": "72a037996e35c70822274e3919ef0392b48da24b011e39ac1ec8354479014d161d35ffa0ff475123dc9708769c9182223d1e659669414bea6b3d65f0e1761608",
+    "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+    "pubkey_fingerprint": "46e30f5bff8c221d",
+    "signer": "Deadline Warden (counterfactual)",
+    "demo_key": true,
+    "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+  }
+}

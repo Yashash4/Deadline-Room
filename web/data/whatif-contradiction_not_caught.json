@@ -1,0 +1,48 @@
+{
+  "name": "contradiction_not_caught",
+  "title": "The contradiction had NOT been caught",
+  "question": "What if the Warden's contradiction diff had not blocked the divergent filings?",
+  "perturbation": {
+    "kind": "remove_diff_block_edge",
+    "removed": "round-1 blocking diff, the diff_blocked transitions, the forced re-drafts, and the round-2 clean diff",
+    "source_run": "run-inc-8842-inject_contradiction.jsonl"
+  },
+  "actual": {
+    "diff_blocked": true,
+    "round1_conflicts": [
+      "NIS2 says incident_start_utc=2026-06-16T02:14:00+00:00; SEC says incident_start_utc=2026-06-16T02:41:00+00:00. Submission blocked.",
+      "SEC says incident_start_utc=2026-06-16T02:41:00+00:00; DORA says incident_start_utc=2026-06-16T02:14:00+00:00. Submission blocked."
+    ],
+    "outcome": "Contradiction caught; SEC re-drafted to 02:14; one consistent filing set released after the diff re-ran green.",
+    "chain_head": "45f6b9a0c10c14a4b578df2210e9edb3a356dc2ae04677c37bd1d5ad7b59d892"
+  },
+  "counterfactual": {
+    "diff_blocked": false,
+    "recomputed_conflicts": [
+      "NIS2 says incident_start_utc=2026-06-16T02:14:00+00:00; SEC says incident_start_utc=2026-06-16T02:41:00+00:00. Submission blocked.",
+      "SEC says incident_start_utc=2026-06-16T02:41:00+00:00; DORA says incident_start_utc=2026-06-16T02:14:00+00:00. Submission blocked."
+    ],
+    "divergent_filing": "SEC files incident_start_utc=2026-06-16T02:41:00+00:00 while NIS2 and DORA file 2026-06-16T02:14:00+00:00.",
+    "outcome": "The divergent SEC filing goes to the regulator with a different incident start time than the EU filings, un-reconciled.",
+    "chain_head": "0bf02515b3d9a9cff5b47e44065a4e7cf83aff1656d5a4877e9fd7e3d23581fb",
+    "run_sha256": "5aedb5765188441b31e69def09adb9e574095a1f05969123635871d5c8635887"
+  },
+  "divergence": "With the diff BLOCK edge removed, the inconsistent SEC filing (incident start 02:41 UTC) is released alongside the EU filings (02:14 UTC), and the hypothetical run has a DIFFERENT chain head (0bf02515b3d9a9cf...) than the actual run (45f6b9a0c10c14a4...).",
+  "load_bearing": "The deterministic contradiction diff is load-bearing: it is the only thing that stops two filings with different load-bearing facts from both reaching regulators. Remove it and the run produces a divergent, un-reconciled filing set with a provably different chain head.",
+  "actual_chain_head": "45f6b9a0c10c14a4b578df2210e9edb3a356dc2ae04677c37bd1d5ad7b59d892",
+  "signature": {
+    "algorithm": "ed25519",
+    "detached": true,
+    "namespace": "counterfactual",
+    "signed_payload": "canonical_json{counterfactual,actual_chain_head,counterfactual_outcome_sha}",
+    "counterfactual": "contradiction_not_caught",
+    "actual_chain_head": "45f6b9a0c10c14a4b578df2210e9edb3a356dc2ae04677c37bd1d5ad7b59d892",
+    "counterfactual_outcome_sha": "f2de5d76a010ff308a3e5fdfe97a468d54d51f3dc188e057bdbca75a2dc19e75",
+    "signature": "b745581500ea51fdd493aeef95f9663fb6ff3a745ed89ab7900116213724652dbb48064578d660a5b773d14f4914140fc4622ec4b420412c3617bf5949848e03",
+    "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+    "pubkey_fingerprint": "46e30f5bff8c221d",
+    "signer": "Deadline Warden (counterfactual)",
+    "demo_key": true,
+    "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+  }
+}

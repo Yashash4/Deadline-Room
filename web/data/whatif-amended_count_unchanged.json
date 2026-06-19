@@ -1,0 +1,51 @@
+{
+  "name": "amended_count_unchanged",
+  "title": "The amended count stayed 48K, not 2.1M",
+  "question": "What if the forensic re-count had not raised records_affected from 48,211 to 2,100,000?",
+  "perturbation": {
+    "kind": "fact_value_unchanged",
+    "field": "records_affected",
+    "actual_amendment": "48211 -> 2100000",
+    "counterfactual_value": 48211
+  },
+  "actual": {
+    "records_affected": "48211 -> 2100000",
+    "fact_delta": true,
+    "amended_filing_grounded_vs_amended_record": "1.0000",
+    "amended_filing_grounded_vs_unchanged_record": "0.6667",
+    "ungrounded_spans_if_refiled_on_old_record": [
+      "2,100,000"
+    ],
+    "sec_refiled": true,
+    "outcome": "The forensic re-count raised records_affected to 2,100,000, a real fact delta from the filed 48,211. The FACT_AMENDED reopen fires; the SEC branch re-files an amended 8-K stating 2,100,000, which is grounded against the amended record, under the two-key gate."
+  },
+  "counterfactual": {
+    "records_affected": "48211 (unchanged)",
+    "fact_delta": false,
+    "original_filing_grounded_vs_unchanged_record": "1.0000",
+    "amended_filing_grounded_vs_unchanged_record": "0.6667",
+    "ungrounded_spans_if_refiled_on_old_record": [
+      "2,100,000"
+    ],
+    "sec_refiled": false,
+    "outcome": "With the count unchanged at 48,211, the corrected value equals the filed value, so the FACT_AMENDED reopen never fires. The original 8-K stays grounded against the record; no amended 8-K is filed. A re-file asserting 2,100,000 would itself be ungrounded against the unchanged record."
+  },
+  "divergence": "Had the count stayed 48,211 instead of rising to 2,100,000, there is no fact delta, the original 8-K stays grounded against the record (score 1.0000), and the SEC would NOT have re-filed; an amended 8-K asserting 2,100,000 would itself be ungrounded (score 0.6667, the 2,100,000 span flagged).",
+  "load_bearing": "The re-file decision is deterministic, not an LLM judgment: the FACT_AMENDED reopen fires on a fact DELTA, and the grounding scorer proves WHY the delta forces a new filing (the old count is ungrounded against the amended record). No delta means no reopen means no re-file, computed with zero LLM.",
+  "actual_chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+  "signature": {
+    "algorithm": "ed25519",
+    "detached": true,
+    "namespace": "counterfactual",
+    "signed_payload": "canonical_json{counterfactual,actual_chain_head,counterfactual_outcome_sha}",
+    "counterfactual": "amended_count_unchanged",
+    "actual_chain_head": "833560371e5c2d4107952fa13c1d810720ec62d371a1923d21bfac0ba168e429",
+    "counterfactual_outcome_sha": "015ec4dd3562183e2ad30ea277e06fcbf2c4bf6c2c2a205cd7972fe8f6008c65",
+    "signature": "3034188071931d6969a8066a1f3324d96e152f4175d113bb6e95d940297d1b20616bf5c22cadd0178a6bfd534cf1d45996e046b9e902321dc692351efb88b10c",
+    "public_key": "be0037b82ce62d1ecb5e5855b9b2e42a5cede73325b91145deaa6b233025a6a8",
+    "pubkey_fingerprint": "46e30f5bff8c221d",
+    "signer": "Deadline Warden (counterfactual)",
+    "demo_key": true,
+    "caveat": "Demo key: the signature mechanism is fully real (one flipped byte makes it INVALID), but this private key ships with the repo, so it proves 'signed by whoever holds this demo key', not HSM/KMS-grade secrecy. Key rotation, a published key directory, and RFC-3161 timestamping are Phase 2."
+  }
+}

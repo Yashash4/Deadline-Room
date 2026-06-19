@@ -532,3 +532,42 @@ input[type=range]::-moz-range-thumb {
   .clock .bar > span { transition: none; }
   .intro-overlay { animation: none; }
 }
+
+/* ---- What-If Console (E9.3) ------------------------------------------------ */
+.whatif-cards { display: grid; gap: 1rem; }
+.whatif-card {
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); padding: 1rem;
+}
+.whatif-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.whatif-title { color: var(--text); text-transform: none; letter-spacing: 0.2px; font-size: 0.95rem; }
+.whatif-pill {
+  font-family: var(--mono); font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); background: var(--panel);
+}
+.whatif-pill.ok { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
+.whatif-pill.fail { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }
+.whatif-pill.warn { color: var(--amber); border-color: var(--amber-soft); background: var(--amber-soft); }
+.whatif-pill.pending { color: var(--muted); }
+.whatif-q { margin: 0.4rem 0 0.8rem; }
+.whatif-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+@media (max-width: 720px) { .whatif-cols { grid-template-columns: 1fr; } }
+.whatif-col { border: 1px solid var(--line-soft); border-radius: 8px; padding: 0.6rem; }
+.whatif-actual { background: var(--bg-2); }
+.whatif-cf { background: var(--amber-soft); border-color: var(--amber-soft); }
+.whatif-col-label {
+  font-family: var(--mono); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.4rem;
+}
+.whatif-col .kv { margin: 0; font-size: 0.8rem; }
+.whatif-divergence {
+  margin: 0.8rem 0 0.4rem; padding: 0.6rem;
+  border-left: 3px solid var(--amber); background: var(--panel);
+  border-radius: 0 6px 6px 0; font-size: 0.86rem;
+}
+.whatif-load { margin: 0 0 0.6rem; }
+.whatif-receipt { margin: 0.4rem 0; }
+.whatif-receipt code { font-size: 0.72rem; color: var(--violet); word-break: break-all; }
+.whatif-detail { margin: 0.4rem 0; min-height: 1em; }
+.btn.small { font-size: 0.8rem; padding: 0.35rem 0.7rem; }

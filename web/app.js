@@ -1216,6 +1216,152 @@ async function loadScenario(scn) {
   render();
 }
 
+// ============================================================================
+// What-If Console (E9.3). Loads the three precomputed counterfactual artifacts
+// and re-verifies each in the browser. A counterfactual receipt is signed under a
+// DISTINCT namespace label, so the bound payload it rebuilds here is
+// {counterfactual, actual_chain_head, counterfactual_outcome_sha}, NOT the per-run
+// {sha256, chain_head, ...} payload. The outcome digest is recomputed from the
+// artifact's own outcome fields the exact way Python does (canonical JSON, then
+// sha256), so a tampered outcome fails the re-verify.
+// ============================================================================
+const WHATIF_NAMES = [
+  "sec_materiality_6h_later",
+  "contradiction_not_caught",
+  "amended_count_unchanged",
+];
+
+// The outcome fields the signature binds, in the same set Python's
+// Counterfactual.outcome() returns (everything except actual_chain_head and the
+// attached signature). Canonicalizing exactly this subset is what lets the browser
+// rebuild the identical digest Python signed.
+const WHATIF_OUTCOME_KEYS = [
+  "name", "title", "question", "perturbation",
+  "actual", "counterfactual", "divergence", "load_bearing",
+];
+
+function whatifOutcome(artifact) {
+  const out = {};
+  for (const k of WHATIF_OUTCOME_KEYS) out[k] = artifact[k];
+  return out;
+}
+
+// The counterfactual bound payload, byte-identical to
+// warden/counterfactual_signing.counterfactual_payload_bytes: a canonical JSON
+// object with sorted keys {actual_chain_head, counterfactual, counterfactual_outcome_sha}.
+function counterfactualPayloadString(name, actualChainHead, outcomeSha) {
+  return "{"
+    + JSON.stringify("actual_chain_head") + ":" + JSON.stringify(actualChainHead)
+    + "," + JSON.stringify("counterfactual") + ":" + JSON.stringify(name)
+    + "," + JSON.stringify("counterfactual_outcome_sha") + ":" + JSON.stringify(outcomeSha)
+    + "}";
+}
+
+function whatifKvList(obj) {
+  const dl = el("dl", "kv");
+  for (const k of Object.keys(obj)) {
+    let v = obj[k];
+    if (Array.isArray(v)) v = v.length ? v.join("; ") : "(none)";
+    else if (typeof v === "object" && v !== null) v = JSON.stringify(v);
+    addKv(dl, k.replace(/_/g, " "), String(v));
+  }
+  return dl;
+}
+
+async function renderWhatIf() {
+  const wrap = $("#whatif-cards");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  let artifacts;
+  try {
+    artifacts = await Promise.all(WHATIF_NAMES.map((n) =>
+      fetch(`data/whatif-${n}.json`).then((r) => r.json())));
+  } catch (e) {
+    wrap.appendChild(el("p", "small muted", "What-if artifacts unavailable (run py scripts/whatif_report.py)."));
+    return;
+  }
+  for (const art of artifacts) {
+    const card = el("div", "whatif-card");
+    const head = el("div", "whatif-head");
+    head.appendChild(el("h3", "whatif-title", art.title));
+    head.appendChild(el("span", "whatif-pill pending", "not verified"));
+    card.appendChild(head);
+    card.appendChild(el("p", "whatif-q muted small", art.question));
+
+    const cols = el("div", "whatif-cols");
+    const aCol = el("div", "whatif-col whatif-actual");
+    aCol.appendChild(el("div", "whatif-col-label", "Actual"));
+    aCol.appendChild(whatifKvList(art.actual));
+    const cCol = el("div", "whatif-col whatif-cf");
+    cCol.appendChild(el("div", "whatif-col-label", "Counterfactual"));
+    cCol.appendChild(whatifKvList(art.counterfactual));
+    cols.appendChild(aCol);
+    cols.appendChild(cCol);
+    card.appendChild(cols);
+
+    card.appendChild(el("p", "whatif-divergence", art.divergence));
+    card.appendChild(el("p", "whatif-load small muted", art.load_bearing));
+
+    const recRow = el("div", "whatif-receipt small muted");
+    recRow.appendChild(el("code", null,
+      `${art.signature.signed_payload}  fp ${art.signature.pubkey_fingerprint}`));
+    card.appendChild(recRow);
+
+    const detail = el("div", "whatif-detail small muted");
+    card.appendChild(detail);
+    const btn = el("button", "btn small", "Re-verify this counterfactual in my browser");
+    btn.type = "button";
+    btn.addEventListener("click", () => verifyWhatIf(art, head.querySelector(".whatif-pill"), detail));
+    card.appendChild(btn);
+
+    wrap.appendChild(card);
+  }
+}
+
+async function verifyWhatIf(art, pill, detail) {
+  const setW = (cls, text) => { pill.className = "whatif-pill " + cls; pill.textContent = text; };
+  setW("pending", "verifying...");
+  try {
+    // 1. Recompute the outcome digest from the artifact's own outcome fields.
+    const outcome = whatifOutcome(art);
+    const outcomeSha = await sha256Hex(canonicalize(outcome));
+    if (outcomeSha !== art.signature.counterfactual_outcome_sha) {
+      setW("fail", "OUTCOME TAMPERED");
+      detail.textContent = "The recomputed outcome digest does not match the signed digest: the displayed outcome was altered.";
+      return;
+    }
+    // 2. Rebuild the bound payload and verify the Ed25519 signature.
+    if (!(crypto.subtle && crypto.subtle.importKey)) {
+      setW("warn", "unsupported");
+      detail.textContent = "This browser has no WebCrypto Ed25519; the outcome digest above still matches the signed digest.";
+      return;
+    }
+    const pubHex = (await fetch("keys/warden_pubkey.ed25519").then((r) => r.text())).trim();
+    let key;
+    try {
+      key = await crypto.subtle.importKey("raw", hexToBytes(pubHex), { name: "Ed25519" }, false, ["verify"]);
+    } catch (e) {
+      setW("warn", "unsupported");
+      detail.textContent = "This browser's WebCrypto does not implement Ed25519 (older Safari). The outcome digest still matches; open in Chrome, Edge, or Firefox to check the signature.";
+      return;
+    }
+    const payload = counterfactualPayloadString(
+      art.signature.counterfactual, art.signature.actual_chain_head, outcomeSha);
+    const valid = await crypto.subtle.verify({ name: "Ed25519" }, key,
+      hexToBytes(art.signature.signature), new TextEncoder().encode(payload));
+    if (valid) {
+      setW("ok", "VALID");
+      detail.textContent = `Signed under the counterfactual namespace by ${art.signature.signer}. The browser recomputed the outcome digest, rebuilt the bound {counterfactual, actual_chain_head, counterfactual_outcome_sha} payload, and verified the Ed25519 signature against the bundled public key. This what-if is deterministic and attested, anchored to the actual run chain head ${art.signature.actual_chain_head.slice(0, 16)}...`;
+    } else {
+      setW("fail", "INVALID");
+      detail.textContent = "The counterfactual signature did not verify against the bundled public key.";
+    }
+  } catch (err) {
+    setW("warn", "error");
+    detail.textContent = "Re-verify could not run here (" + err.message + ").";
+  }
+}
+
 async function init() {
   reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1236,6 +1382,7 @@ async function init() {
   sel.value = def.id;
   renderScenarioCards(def.id);
   await loadScenario(def);
+  await renderWhatIf();
 
   $("#play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
   $("#restart").addEventListener("click", () => { stopPlay(); revealedBeats = new Set(); hideBeatBanner(); setCursor(0); });
